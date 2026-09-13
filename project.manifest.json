@@ -38,6 +38,7 @@
     "files": [
       { "path": "docs/product-spec.md", "topic": "approved target product specification (scope, contracts, acceptance targets; ADRs pending)" },
       { "path": "docs/execution-plan.md", "topic": "spec decomposed into executable chunks (phases, dependencies, gates)" },
+      { "path": "docs/adr/README.md", "topic": "architecture decision records (ADRs 0001-0005, proposed)" },
       { "path": "docs/toolchain.md", "topic": "verified versions and sources" },
       { "path": "docs/architecture.md", "topic": "modules and boundaries" },
       { "path": "docs/development.md", "topic": "build, run, test commands" },
