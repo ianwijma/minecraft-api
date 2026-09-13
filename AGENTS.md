@@ -62,6 +62,11 @@ Fabric API. Fabric API is a *dependency* of the Fabric artifact only.
 
 ## 3. Module boundaries and where changes belong
 
+Module-group mapping and dependency rules are fixed in
+`docs/adr/0002-repository-module-organization-and-java-toolchains.md`
+(staged introduction: new Gradle modules appear only with real content).
+Quick map:
+
 | Change | Location |
 | --- | --- |
 | Public API types/behavior | `common/src/main/java/dev/example/mapi/api/` |
