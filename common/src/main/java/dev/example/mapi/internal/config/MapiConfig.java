@@ -21,12 +21,15 @@ import org.slf4j.Logger;
  *   <tr><td>http.port</td><td>MAPI_HTTP_PORT</td><td>25586</td><td>Loopback port to bind</td></tr>
  *   <tr><td>http.token</td><td>MAPI_HTTP_TOKEN</td><td>none</td><td>Bearer token; prefer the env var</td></tr>
  *   <tr><td>http.rateLimitPerMinute</td><td>MAPI_HTTP_RATE_LIMIT_PER_MINUTE</td><td>60</td><td>Requests per client per minute</td></tr>
+ *   <tr><td>http.scopes</td><td>MAPI_HTTP_SCOPES</td><td>all</td><td>Comma-separated granted scopes (spec §14); absent/blank grants the full set</td></tr>
  * </table>
  *
  * <p>Secrets are never logged. The bind address is fixed to loopback and is
  * deliberately not configurable.
  */
-public record MapiConfig(boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute) {
+public record MapiConfig(
+        boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute,
+        java.util.Set<dev.example.mapi.internal.operation.Scope> httpScopes) {
 
     /** Default HTTP port. */
     public static final int DEFAULT_PORT = 25586;
@@ -39,6 +42,38 @@ public record MapiConfig(boolean httpEnabled, int httpPort, String httpToken, in
 
     /** Configuration file name inside the config directory. */
     public static final String CONFIG_FILE_NAME = "mapi.properties";
+
+    /**
+     * Creates a configuration with the historical shape: no scope
+     * restrictions (the token grants the full scope set).
+     *
+     * @param httpEnabled        whether the HTTP API is enabled
+     * @param httpPort           loopback port
+     * @param httpToken          bearer token
+     * @param rateLimitPerMinute requests per client per minute
+     */
+    public MapiConfig(boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute) {
+        this(httpEnabled, httpPort, httpToken, rateLimitPerMinute, java.util.Set.of());
+    }
+
+    /**
+     * @param token the presented bearer token, may be {@code null}
+     * @return the scopes granted to this token: the configured subset, or the
+     *     full set when no subset is configured; empty for an unknown token
+     */
+    public java.util.Set<dev.example.mapi.internal.operation.Scope> grantedScopes(String token) {
+        if (token == null || httpToken == null
+                || !java.security.MessageDigest.isEqual(
+                        httpToken.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        token.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+            return java.util.Set.of();
+        }
+        if (httpScopes.isEmpty()) {
+            return java.util.Collections.unmodifiableSet(
+                    java.util.EnumSet.allOf(dev.example.mapi.internal.operation.Scope.class));
+        }
+        return httpScopes;
+    }
 
     /**
      * Loads and validates the configuration.
@@ -58,6 +93,8 @@ public record MapiConfig(boolean httpEnabled, int httpPort, String httpToken, in
         int rateLimit = readInt(file, env, "http.rateLimitPerMinute", "MAPI_HTTP_RATE_LIMIT_PER_MINUTE",
                 DEFAULT_RATE_LIMIT);
         String token = readString(file, env, "http.token", "MAPI_HTTP_TOKEN", null);
+        java.util.Set<dev.example.mapi.internal.operation.Scope> scopes =
+                readScopes(file, env, logger);
 
         if (port < 1 || port > 65535) {
             throw new MapiConfigException("http.port must be between 1 and 65535 (got " + port + ")");
@@ -77,7 +114,36 @@ public record MapiConfig(boolean httpEnabled, int httpPort, String httpToken, in
                         + "python3 -c \"import secrets; print(secrets.token_urlsafe(32))\"");
             }
         }
-        return new MapiConfig(enabled, port, token == null ? null : token.trim(), rateLimit);
+        return new MapiConfig(enabled, port, token == null ? null : token.trim(), rateLimit, scopes);
+    }
+
+    private static java.util.Set<dev.example.mapi.internal.operation.Scope> readScopes(
+            Properties file, Map<String, String> env, Logger logger) {
+        String raw = effective(file, env, "http.scopes", "MAPI_HTTP_SCOPES");
+        if (raw == null || raw.isBlank()) {
+            return java.util.Set.of();
+        }
+        java.util.EnumSet<dev.example.mapi.internal.operation.Scope> parsed =
+                java.util.EnumSet.noneOf(dev.example.mapi.internal.operation.Scope.class);
+        for (String part : raw.split(",")) {
+            String name = part.trim();
+            if (name.isEmpty()) {
+                continue;
+            }
+            java.util.Optional<dev.example.mapi.internal.operation.Scope> match =
+                    java.util.Arrays.stream(dev.example.mapi.internal.operation.Scope.values())
+                            .filter(scope -> scope.wireName().equalsIgnoreCase(name))
+                            .findFirst();
+            if (match.isEmpty()) {
+                throw new MapiConfigException("http.scopes contains unknown scope '" + name
+                        + "'. Valid scopes: " + java.util.Arrays.stream(dev.example.mapi.internal.operation.Scope.values())
+                                .map(dev.example.mapi.internal.operation.Scope::wireName)
+                                .reduce((a, b) -> a + ", " + b).orElse(""));
+            }
+            parsed.add(match.get());
+        }
+        logger.info("MAPI: HTTP scope grants restricted to {} scope(s)", parsed.size());
+        return java.util.Collections.unmodifiableSet(parsed);
     }
 
     private static Properties readPropertiesFile(Path configDir, Logger logger) {
@@ -103,7 +169,7 @@ public record MapiConfig(boolean httpEnabled, int httpPort, String httpToken, in
     }
 
     private static final java.util.Set<String> KNOWN_KEYS = java.util.Set.of(
-            "http.enabled", "http.port", "http.token", "http.rateLimitPerMinute");
+            "http.enabled", "http.port", "http.token", "http.rateLimitPerMinute", "http.scopes");
 
     private static String effective(Properties file, Map<String, String> env, String fileKey, String envKey) {
         String fromEnv = env.get(envKey);

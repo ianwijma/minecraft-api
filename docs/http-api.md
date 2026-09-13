@@ -28,6 +28,7 @@ See `docs/examples/mapi.properties.example`.
 | `http.port` | `MAPI_HTTP_PORT` | `25586` | loopback port |
 | `http.token` | `MAPI_HTTP_TOKEN` | — | bearer token (≥16 chars; env preferred) |
 | `http.rateLimitPerMinute` | `MAPI_HTTP_RATE_LIMIT_PER_MINUTE` | `60` | per-client request budget |
+| `http.scopes` | `MAPI_HTTP_SCOPES` | all | comma-separated granted scopes (spec §14); absent/blank grants the full set |
 
 The bind address is fixed to loopback and is not configurable.
 

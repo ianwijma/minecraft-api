@@ -63,6 +63,7 @@ public final class HttpApiServer {
     private final MapiRuntime runtime;
     private final Logger logger;
     private final RateLimiter rateLimiter;
+    private final dev.example.mapi.internal.operation.ScopeGrants scopeGrants;
 
     private HttpServer httpServer;
     private ThreadPoolExecutor workers;
@@ -77,6 +78,15 @@ public final class HttpApiServer {
         this.runtime = runtime;
         this.logger = logger;
         this.rateLimiter = new RateLimiter(config.rateLimitPerMinute());
+        this.scopeGrants = config::grantedScopes;
+    }
+
+    /**
+     * @return the scope-grant source for presented bearer tokens (spec §14);
+     *     operation routes consult it through {@code OperationGuard}
+     */
+    public dev.example.mapi.internal.operation.ScopeGrants scopeGrants() {
+        return scopeGrants;
     }
 
     /**

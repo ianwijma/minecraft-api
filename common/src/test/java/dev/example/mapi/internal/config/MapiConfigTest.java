@@ -100,6 +100,44 @@ class MapiConfigTest {
         assertEquals("verylongtokenvalue123", config.httpToken());
     }
 
+    @Test
+    void absentScopesGrantEverything() {
+        MapiConfig config = new MapiConfig(true, 20000, "tok-0123456789abcdef", 60);
+        assertEquals(java.util.EnumSet.allOf(dev.example.mapi.internal.operation.Scope.class),
+                config.grantedScopes("tok-0123456789abcdef"));
+        assertTrue(config.grantedScopes("wrong-token").isEmpty());
+        assertTrue(config.grantedScopes(null).isEmpty());
+    }
+
+    @Test
+    void configuredScopesRestrictGrants() throws IOException {
+        writeFile("http.enabled=true\nhttp.token=1234567890abcdefgh\n"
+                + "http.scopes=server:tick-control, client:connect\n");
+        MapiConfig config = load(Map.of());
+        assertEquals(
+                java.util.Set.of(
+                        dev.example.mapi.internal.operation.Scope.SERVER_TICK_CONTROL,
+                        dev.example.mapi.internal.operation.Scope.CLIENT_CONNECT),
+                config.grantedScopes("1234567890abcdefgh"));
+    }
+
+    @Test
+    void unknownScopeIsRefused() {
+        assertThrows(MapiConfigException.class,
+                () -> load(Map.of("MAPI_HTTP_SCOPES", "server:tick-control, bogus:scope")));
+    }
+
+    @Test
+    void envScopesOverrideFile() throws IOException {
+        writeFile("http.scopes=client:settings\n");
+        MapiConfig config = load(Map.of(
+                "MAPI_HTTP_TOKEN", "1234567890abcdefgh",
+                "MAPI_HTTP_SCOPES", "server:publish"));
+        assertEquals(
+                java.util.Set.of(dev.example.mapi.internal.operation.Scope.SERVER_PUBLISH),
+                config.grantedScopes("1234567890abcdefgh"));
+    }
+
     private void writeFile(String content) throws IOException {
         Files.writeString(configDir.resolve(MapiConfig.CONFIG_FILE_NAME), content, StandardCharsets.UTF_8);
     }

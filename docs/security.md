@@ -57,9 +57,10 @@ Every operation endpoint declares its security metadata through
   unsupported requested modes fail with 422 `EXECUTION_MODE_UNSUPPORTED`
   (no silent fallback).
 
-Scope grants come from configuration (plan chunk 4.2). Until then the
-configured bearer token grants the full set, which keeps today's behavior:
-the token authenticates, authorization metadata still gates destructive and
+Scope grants are config-backed: `http.scopes` / `MAPI_HTTP_SCOPES` lists
+the scopes the token grants (comma-separated wire names). When unset, the
+token grants the full set, which preserves today's behavior: the token
+authenticates, authorization metadata still gates destructive and
 unrestricted operations by intent.
 
 `executionMode` is not a permission system: it selects the mechanism, while
