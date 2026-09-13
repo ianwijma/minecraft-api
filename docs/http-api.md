@@ -225,6 +225,19 @@ bytes `{"b":n}`, shorts `{"s":n}`, longs `{"l":"n"}` (string), floats
 strings, and compounds are JSON-native. Read-only: this endpoint never
 mutates state.
 
+### `GET /api/v1/server/world/storage?dimension=&x=&y=&z=` (slice 2.5)
+
+Container storage read (spec §6.2 storage adapter, read side; loaded-only
+policy, `world.read` scope). Vanilla containers (chest, furnace, hopper, …)
+expose their slots: `{"available":true,"typeId":"minecraft:chest",
+"slots":[{"slot":0,"itemId":"minecraft:diamond","count":3},…],
+"totalSlots":27,"units":"item-counts"}` — counts are native item units;
+empty slots are omitted. Not a container → `{"available":false,"reason":
+"NOT_A_CONTAINER","typeId":…}`; no block entity → `NO_BLOCK_ENTITY`;
+unloaded chunk → **409** `CHUNK_UNLOADED`. Insert/extract (mutation side
+with remainders) requires the loaders' transactional transfer APIs and is
+planned, not implemented.
+
 ### `GET /api/v1/server/world/time?dimension=`
 
 World clocks (26.2 time model): `gameTime`, `overworldClockTime`,

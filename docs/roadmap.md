@@ -130,6 +130,27 @@ scenarios, and **parity across Fabric and NeoForge** enforced by tests.
   exceptions → 500, `ext.invoked` events, contract documented in
   `docs/api.md` (thread-safety requirement, no-authority rule, no secrets).
 
+### Slice 2.5 — Container storage read (DONE 2026-09-13)
+
+- `GET /api/v1/server/world/storage` for vanilla `Container` block
+  entities: occupied slots with native item-count units, `totalSlots`,
+  explicit `NOT_A_CONTAINER` / `NO_BLOCK_ENTITY` / `CHUNK_UNLOADED`
+  outcomes (javap-verified `Container#getItem`, `ItemStack#getItem/getCount`).
+- Insert/extract (mutations with remainders) deferred: needs the loaders'
+  transactional transfer APIs and in-game verification.
+
+### Phase 2 status (2026-09-13)
+
+Done: registry/tags/mods inspection (2.1), structured diagnostics (2.2),
+block-entity read with typed NBT JSON (2.3), extension SPI (2.4), container
+storage read (2.5). Deferred with reasons (each needs in-game verification
+or deeper loader-API work and is documented as planned-not-built): storage
+insert/extract (transactional transfer APIs), GameTest integration, region
+fixtures, safe config workflows, recipe-viewer adapters (built on the 2.4
+SPI), and the OpenAPI generator pipeline. These are the remaining items
+before Phase 2 can claim spec §13 completion; they require an
+operator/CI environment that can launch the game.
+
 Each slice must keep `./gradlew verify` green (format, tests, jar
 validation, manifest) and update docs in the same change set.
 

@@ -390,5 +390,30 @@ public class MapiRuntimeTest {
             return () -> new dev.example.mapi.internal.RawBlockEntityRead(true,
                     new dev.example.mapi.internal.RawBlockEntity("minecraft:chest", dimension, x, y, z, nbt));
         }
+
+        @Override
+        public Supplier<dev.example.mapi.internal.RawStorageRead> storageSupplier(String dimension,
+                int x, int y, int z) {
+            if (dimension.equals("minecraft:nowhere")) {
+                throw new dev.example.mapi.internal.UnknownDimensionException("Unknown dimension: " + dimension);
+            }
+            if (x == 999) {
+                return () -> dev.example.mapi.internal.RawStorageRead.unloaded();
+            }
+            if (x == 998) {
+                return () -> dev.example.mapi.internal.RawStorageRead.notContainer("minecraft:furnace");
+            }
+            if (x == 997) {
+                return () -> dev.example.mapi.internal.RawStorageRead.notContainer(null);
+            }
+            return () -> new dev.example.mapi.internal.RawStorageRead(true, "minecraft:chest",
+                    new dev.example.mapi.internal.RawStorageSnapshot("minecraft:chest",
+                            java.util.List.of(
+                                    new dev.example.mapi.internal.RawStorageSnapshot.Slot(0,
+                                            "minecraft:diamond", 3),
+                                    new dev.example.mapi.internal.RawStorageSnapshot.Slot(2,
+                                            "minecraft:stick", 64)),
+                            27));
+        }
     }
 }

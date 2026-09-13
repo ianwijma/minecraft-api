@@ -146,4 +146,19 @@ public interface ServerHandle {
      * @throws UnknownDimensionException when the dimension id is unknown
      */
     Supplier<RawBlockEntityRead> blockEntitySupplier(String dimension, int x, int y, int z);
+
+    /**
+     * Reads the contents of a container block entity (chest, furnace, …)
+     * under the loaded-only policy (spec §6.2 storage read). Callers must
+     * only invoke this via {@link #executeOnServerThread(Runnable)}.
+     *
+     * @param dimension dimension id
+     * @param x         block x
+     * @param y         block y
+     * @param z         block z
+     * @return the read outcome; {@code entity()} is {@code null} when the
+     *         block entity is absent or not a container
+     * @throws UnknownDimensionException when the dimension id is unknown
+     */
+    Supplier<RawStorageRead> storageSupplier(String dimension, int x, int y, int z);
 }

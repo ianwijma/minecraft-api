@@ -312,6 +312,7 @@ public final class HttpApiServer {
             case API_PREFIX + "server/players" -> sendPlayers(exchange, requestId);
             case API_PREFIX + "server/world/block" -> sendBlock(exchange, requestId);
             case API_PREFIX + "server/world/block-entity" -> sendBlockEntity(exchange, requestId);
+            case API_PREFIX + "server/world/storage" -> sendStorage(exchange, requestId);
             case API_PREFIX + "server/world/time" -> sendWorldTime(exchange, requestId);
             case API_PREFIX + "client/status" -> sendClientStatus(exchange, requestId);
             case API_PREFIX + "client/screen/tree" -> sendScreenTree(exchange, requestId);
@@ -721,6 +722,58 @@ public final class HttpApiServer {
         body.put("position", position(blockEntity.x(), blockEntity.y(), blockEntity.z()));
         body.put("nbt", blockEntity.nbt());
         body.put("policy", "loadedOnly");
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private void sendStorage(HttpExchange exchange, String requestId) throws IOException {
+        Map<String, List<String>> query = splitQuery(exchange.getRequestURI().getRawQuery());
+        String dimension = single(query, "dimension");
+        Integer x = coord(query, "x");
+        Integer y = coord(query, "y");
+        Integer z = coord(query, "z");
+        if (dimension == null || dimension.isBlank() || x == null || y == null || z == null) {
+            error(exchange, requestId, 400, "INVALID_QUERY", "dimension and integer x, y, z are required");
+            return;
+        }
+        var result = runtime.tryReadOnServerThread(() -> runtime.serverHandle()
+                .storageSupplier(dimension, x, y, z).get());
+        if (result.failure() instanceof dev.example.mapi.internal.UnknownDimensionException) {
+            error(exchange, requestId, 404, "DIMENSION_NOT_FOUND", result.failure().getMessage());
+            return;
+        }
+        if (!handleReadOutcome(exchange, requestId, result)) {
+            return;
+        }
+        dev.example.mapi.internal.RawStorageRead read = result.value();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("dataVersion", readDataVersion());
+        if (!read.chunkLoaded()) {
+            error(exchange, requestId, 409, "CHUNK_UNLOADED",
+                    "The containing chunk is not loaded (loaded-only policy). Load it or use a different "
+                            + "chunk policy once available.");
+            return;
+        }
+        body.put("dimension", dimension.trim());
+        body.put("position", position(x, y, z));
+        if (read.storage() == null) {
+            body.put("available", false);
+            body.put("reason", read.entity() == null ? "NO_BLOCK_ENTITY" : "NOT_A_CONTAINER");
+            body.put("typeId", read.entity());
+            respond(exchange, requestId, 200, JsonWriter.write(body));
+            return;
+        }
+        body.put("available", true);
+        body.put("typeId", read.storage().typeId());
+        body.put("slots", read.storage().slots().stream().map(slot -> {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("slot", slot.slot());
+            entry.put("itemId", slot.itemId());
+            entry.put("count", slot.count());
+            return entry;
+        }).toList());
+        body.put("totalSlots", read.storage().total());
+        body.put("units", "item-counts");
         respond(exchange, requestId, 200, JsonWriter.write(body));
     }
 

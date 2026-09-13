@@ -320,6 +320,37 @@ final class NeoForgePlatform implements MapiPlatform {
             };
         }
 
+        @Override
+        public java.util.function.Supplier<dev.example.mapi.internal.RawStorageRead> storageSupplier(
+                String dimension, int x, int y, int z) {
+            return () -> {
+                ServerLevel level = resolveLevel(dimension);
+                BlockPos pos = new BlockPos(x, y, z);
+                if (!level.hasChunkAt(pos)) {
+                    return dev.example.mapi.internal.RawStorageRead.unloaded();
+                }
+                net.minecraft.world.level.block.entity.BlockEntity entity = level.getBlockEntity(pos);
+                if (!(entity instanceof net.minecraft.world.Container container)) {
+                    return dev.example.mapi.internal.RawStorageRead.notContainer(entity == null
+                            ? null
+                            : BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(entity.getType()).toString());
+                }
+                List<dev.example.mapi.internal.RawStorageSnapshot.Slot> slots = new ArrayList<>();
+                for (int slot = 0; slot < container.getContainerSize(); slot++) {
+                    net.minecraft.world.item.ItemStack stack = container.getItem(slot);
+                    if (stack.isEmpty()) {
+                        continue;
+                    }
+                    slots.add(new dev.example.mapi.internal.RawStorageSnapshot.Slot(slot,
+                            BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), stack.getCount()));
+                }
+                String typeId = BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(entity.getType()).toString();
+                return new dev.example.mapi.internal.RawStorageRead(true, typeId,
+                        new dev.example.mapi.internal.RawStorageSnapshot(typeId, List.copyOf(slots),
+                                container.getContainerSize()));
+            };
+        }
+
         private static Map<String, Object> nbtToJson(net.minecraft.nbt.CompoundTag tag) {
             Map<String, Object> out = new LinkedHashMap<>();
             for (Map.Entry<String, net.minecraft.nbt.Tag> entry : tag.entrySet()) {

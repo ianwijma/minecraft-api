@@ -769,6 +769,44 @@ class HttpApiServerTest {
     }
 
     // ------------------------------------------------------------------
+    // Storage read (slice 2.5)
+    // ------------------------------------------------------------------
+
+    @Test
+    void storageEndpointContract() throws Exception {
+        startServer(enabledConfig());
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+
+        HttpResponse<String> ok = get("/api/v1/server/world/storage?dimension=minecraft:overworld&x=0&y=0&z=0",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, ok.statusCode(), ok.body());
+        assertTrue(ok.body().contains("\"typeId\":\"minecraft:chest\""), ok.body());
+        assertTrue(ok.body().contains("\"itemId\":\"minecraft:diamond\""), ok.body());
+        assertTrue(ok.body().contains("\"count\":3"), ok.body());
+        assertTrue(ok.body().contains("\"totalSlots\":27"), ok.body());
+        assertTrue(ok.body().contains("\"units\":\"item-counts\""), ok.body());
+
+        HttpResponse<String> notContainer = get(
+                "/api/v1/server/world/storage?dimension=minecraft:overworld&x=998&y=0&z=0",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, notContainer.statusCode(), notContainer.body());
+        assertTrue(notContainer.body().contains("\"reason\":\"NOT_A_CONTAINER\""), notContainer.body());
+        assertTrue(notContainer.body().contains("\"typeId\":\"minecraft:furnace\""), notContainer.body());
+
+        HttpResponse<String> noEntity = get(
+                "/api/v1/server/world/storage?dimension=minecraft:overworld&x=997&y=0&z=0",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, noEntity.statusCode(), noEntity.body());
+        assertTrue(noEntity.body().contains("\"reason\":\"NO_BLOCK_ENTITY\""), noEntity.body());
+
+        HttpResponse<String> unloaded = get(
+                "/api/v1/server/world/storage?dimension=minecraft:overworld&x=999&y=0&z=0",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(409, unloaded.statusCode(), unloaded.body());
+        assertTrue(unloaded.body().contains("CHUNK_UNLOADED"), unloaded.body());
+    }
+
+    // ------------------------------------------------------------------
     // Block entity read (slice 2.3)
     // ------------------------------------------------------------------
 
