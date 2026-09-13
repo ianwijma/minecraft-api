@@ -256,6 +256,18 @@ Still open (each needs in-game verification before it can be trusted):
   connections explicitly on shutdown — going-away close), secret-leakage
   guard (`MapiConfig#toString` redacts the token), and disabled-API idle.
 
+### Slice 1.5 — MCP adapter (DONE 2026-09-13)
+
+- New `mcp-adapter` module (JDK-only): newline-delimited JSON-RPC 2.0 on
+  stdio implementing `initialize`, `tools/list`, `tools/call`, `ping` with
+  the Phase 1 tool set — observe, capabilities, schema, world (block/time),
+  player (list), lifecycle (status), task.wait, task.cancel, artifact.get
+  (sandboxed to `mcapi/screenshots`, file names only).
+- Instance binding via `--game-dir` (discovery + token file) or
+  `--url` + `--token-file`; the adapter adds no authority — every tool maps
+  to a documented HTTP endpoint under the token's scopes.
+- E2E tests drive the adapter against a live in-process instance.
+
 Phase 1 (scopes, leases, revisions, SDKs, MCP adapter, fixture-mod,
 failure-scenario suite), Phase 2 (extended tier: storage adapters, GameTest,
 region fixtures, ext SPI), Phase 3 (experimental tier) follow spec §12 with

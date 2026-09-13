@@ -20,6 +20,11 @@
       "description": "JDK-only tooling for external harnesses: discovery file scanning/validation, readiness waiting, staleness rules. No Minecraft code."
     },
     {
+      "path": "mcp-adapter",
+      "kind": "tool",
+      "description": "Model Context Protocol server (stdio JSON-RPC) exposing the local API as tools: observe, capabilities, schema, world, player, lifecycle, task.wait/cancel, artifact.get."
+    },
+    {
       "path": "fabric",
       "kind": "loader-adapter",
       "description": "Fabric entrypoint, platform adapter, fabric.mod.json, dev runs.",

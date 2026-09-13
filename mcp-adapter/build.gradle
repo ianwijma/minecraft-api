@@ -1,0 +1,30 @@
+plugins {
+    id 'java'
+    id 'application'
+}
+
+// The test fixture dependency below needs :common fully evaluated first.
+evaluationDependsOn(':common')
+
+def commonTestOutput = project(':common').sourceSets.test.output
+
+application {
+    mainClass = 'dev.example.mapi.mcp.Main'
+}
+
+dependencies {
+    implementation project(':common')
+    implementation project(':harness')
+    implementation libs.slf4j.api
+
+    // Reuse common's test fixtures (TestPlatform, TestServerHandle).
+    testImplementation files(commonTestOutput)
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+}
