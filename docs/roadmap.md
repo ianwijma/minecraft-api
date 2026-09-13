@@ -246,6 +246,16 @@ Still open (each needs in-game verification before it can be trusted):
   with an explicit `CONNECTION_SESSION_UNAVAILABLE` reason — no silent
   ignoring of preconditions.
 
+### Slice 1.4 — Failure-scenario suite (DONE 2026-09-13)
+
+- Named scenarios from spec §10 as `FailureScenarioTest`: frozen tick
+  (503, no stale guesses), world unload during task (`LIFECYCLE_CHANGED`),
+  two agents contending for one lease, lost-response retry with
+  Idempotency-Key replay, slow WS consumer under the disconnect policy,
+  token revocation ending live WS connections cleanly (server now closes
+  connections explicitly on shutdown — going-away close), secret-leakage
+  guard (`MapiConfig#toString` redacts the token), and disabled-API idle.
+
 Phase 1 (scopes, leases, revisions, SDKs, MCP adapter, fixture-mod,
 failure-scenario suite), Phase 2 (extended tier: storage adapters, GameTest,
 region fixtures, ext SPI), Phase 3 (experimental tier) follow spec §12 with

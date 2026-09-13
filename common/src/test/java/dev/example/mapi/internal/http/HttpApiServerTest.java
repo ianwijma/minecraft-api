@@ -554,7 +554,7 @@ class HttpApiServerTest {
     // Scopes (spec §4.2)
     // ------------------------------------------------------------------
 
-    private MapiConfig scopedConfig(java.util.Set<String> scopes) throws Exception {
+    private MapiConfig scopedConfig(java.util.List<String> scopes) throws Exception {
         int port = freePort();
         return new MapiConfig(true, port, TOKEN, 60, "mapi-" + port, null, 0, false,
                 MapiConfig.DEFAULT_DISCOVERY_HEARTBEAT_SECONDS,
@@ -563,7 +563,7 @@ class HttpApiServerTest {
 
     @Test
     void scopeRestrictionsAuthorizeTheEffect() throws Exception {
-        startServer(scopedConfig(java.util.Set.of(dev.example.mapi.internal.auth.Scope.OBSERVE)));
+        startServer(scopedConfig(java.util.List.of(dev.example.mapi.internal.auth.Scope.OBSERVE)));
         platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
 
         HttpResponse<String> okObserve = get("/api/v1/server/players", "Authorization", "Bearer " + TOKEN);
@@ -584,7 +584,7 @@ class HttpApiServerTest {
 
     @Test
     void worldReadScopeUnlocksWorldEndpoints() throws Exception {
-        startServer(scopedConfig(java.util.Set.of(dev.example.mapi.internal.auth.Scope.OBSERVE,
+        startServer(scopedConfig(java.util.List.of(dev.example.mapi.internal.auth.Scope.OBSERVE,
                 dev.example.mapi.internal.auth.Scope.WORLD_READ)));
         platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
         HttpResponse<String> ok = get("/api/v1/server/world/time?dimension=minecraft:overworld",
@@ -594,7 +594,7 @@ class HttpApiServerTest {
 
     @Test
     void infoCarriesTokenScopes() throws Exception {
-        startServer(scopedConfig(java.util.Set.of(dev.example.mapi.internal.auth.Scope.OBSERVE,
+        startServer(scopedConfig(java.util.List.of(dev.example.mapi.internal.auth.Scope.OBSERVE,
                 dev.example.mapi.internal.auth.Scope.WORLD_READ)));
         HttpResponse<String> info = get("/api/v1/info", "Authorization", "Bearer " + TOKEN);
         assertEquals(200, info.statusCode(), info.body());

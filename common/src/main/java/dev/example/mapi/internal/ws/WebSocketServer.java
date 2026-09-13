@@ -42,6 +42,7 @@ public final class WebSocketServer {
     private ServerSocket serverSocket;
     private Thread acceptThread;
     private volatile boolean running;
+    private final java.util.Set<WebSocketConnection> liveConnections = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     /**
      * @param tickets   single-use ticket store for browser-style connects
@@ -87,10 +88,15 @@ public final class WebSocketServer {
     }
 
     /**
-     * Stops the listener. Existing connections finish their close handshake.
+     * Stops the listener and closes all live connections with an explicit
+     * close (going-away) so clients never hang on a silent socket.
      */
     public synchronized void stop() {
         running = false;
+        for (WebSocketConnection connection : liveConnections) {
+            connection.close(WebSocketFrames.CLOSE_GOING_AWAY, "server stopping");
+        }
+        liveConnections.clear();
         if (serverSocket != null) {
             try {
                 serverSocket.close();
@@ -151,12 +157,14 @@ public final class WebSocketServer {
             out.flush();
             WebSocketConnection connection = new WebSocketConnection(socket.getInputStream(), out, listener,
                     logger);
+            liveConnections.add(connection);
             listener.onOpen(connection);
             Thread pump = new Thread(connection::runPump, "mapi-ws-pump");
             pump.setDaemon(true);
             pump.start();
             connection.runReader();
             pump.join(2000);
+            liveConnections.remove(connection);
         } catch (IOException e) {
             logger.debug("MAPI WS: connection ended: {}", e.toString());
         } catch (InterruptedException e) {

@@ -162,6 +162,22 @@ public record MapiConfig(
                 tokenFilePath, portFallback, failFast, heartbeat, scopes);
     }
 
+    @Override
+    public String toString() {
+        // Records would include the raw token; keep every log path safe.
+        return "MapiConfig[httpEnabled=" + httpEnabled
+                + ", httpPort=" + httpPort
+                + ", httpToken=" + (httpToken == null ? "null" : "<redacted>")
+                + ", rateLimitPerMinute=" + rateLimitPerMinute
+                + ", instanceId=" + instanceId
+                + ", tokenFile=" + tokenFile
+                + ", portFallback=" + portFallback
+                + ", failFast=" + failFast
+                + ", discoveryHeartbeatSeconds=" + discoveryHeartbeatSeconds
+                + ", scopes=" + scopes
+                + "]";
+    }
+
     private static void requireUsableToken(String token, Path configDir) {
         if (token == null || token.isBlank()) {
             throw new MapiConfigException("MAPI HTTP API is enabled but no bearer token is available. "
