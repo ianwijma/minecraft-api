@@ -25,7 +25,44 @@
    version, registry fingerprint, adapter schema version; cross-version
    import support/rejection policy (spec §11.4).
 
-## Current state
+## Current state (encoding v1 — implemented in `internal/encoding`)
 
-Not yet implemented. The only JSON surface today is the hand-written
-`JsonWriter` for the read-only status endpoints.
+The typed NBT wire representation is implemented loader-neutrally
+(`Tag` value tree + `TagJson` writer + `TagHash` canonical hashing); the
+Minecraft bridge feeds typed values into it from chunk 2.7 onward.
+
+### Wire table (encoding v1)
+
+| Type | JSON representation |
+| --- | --- |
+| byte / short / int | `{"type":"byte"\|"short"\|"int","value":<bounded JSON integer>}` — range-checked at construction |
+| long | `{"type":"long","value":"<decimal string>"}` |
+| float / double (finite) | `{"type":"float"\|"double","value":<round-trippable JSON number>}` (`Float.toString` / `Double.toString` forms; negative zero preserved as `-0.0`) |
+| float / double (non-finite) | `{"type":"float"\|"double","value":"NaN"\|"Infinity"\|"-Infinity"}` |
+| byte array | `{"type":"byte[]","value":"<base64>"}` |
+| int array | `{"type":"int[]","value":[<bounded JSON integers>]}` |
+| long array | `{"type":"long[]","value":["<decimal strings>"]}` |
+| list | `{"type":"list","elementType":"<type>","value":[typed elements]}` |
+| compound | `{"type":"compound","value":{name: typed value}}` |
+| string | bare JSON string |
+
+### Rules
+
+- Strict valid JSON only; no bare NaN/Infinity tokens.
+- Compound key order on the wire is insertion order; the canonical hashing
+  form sorts keys byte-wise. Hash = SHA-256 over the canonical JSON text
+  (`TagHash.sha256Hex`).
+- Limits (`EncodingLimits`, defaults: depth 32, 100k nodes, 1M chars per
+  string) are enforced by validation *before* scheduling game-thread work.
+- Java object stringification is never used as a serialization fallback;
+  unserializable fields must be reported explicitly by the bridge.
+- Item components: `present` / `default-inherited` / `removed` are distinct
+  states; a present component without a decodable value must declare
+  `serialization: unsupported`.
+- `EncodingMetadata` carries encodingVersion (currently 1), minecraftVersion,
+  dataVersion, registryFingerprint, adapterSchemaVersion.
+
+### Still open (later chunks)
+
+- Codec-JSON rules (bridge-side, chunk 2.7), SNBT companion (optional),
+  binary export format (optional), cross-version import policy decisions.
