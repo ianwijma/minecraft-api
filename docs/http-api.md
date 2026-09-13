@@ -288,6 +288,21 @@ Both actions emit `client.input.key` / `client.screenshot` events
 render-lifecycle `frameId`, and macro record/replay are future slice 0.6
 work (documented, not yet implemented).
 
+### `POST /api/v1/server/commands/execute`
+
+Executes a command **as the console** through the game's own dispatcher with
+a permission **ceiling** (`http.commandPermissionLevel`, default 2 =
+gamemaster; 0..4). Requires the `commands.execute` scope. Arbitrary modded
+commands are documented as **broad authority** — the ceiling bounds what the
+source may do, and every execution emits a `server.command` event. Body:
+`{"command":"say hi","expectedWorldSessionId":…}` (leading slash optional).
+Response: `{"result":<n>,"success":true,"feedback":["…"],"permissionLevel":2}`
+— `result`/`success` are absent when the command failed validation before
+execution (the failure text is in `feedback`). Feedback is captured through
+the command source during the execution window; server logs remain separate.
+"Run as player" is not part of this surface: console execution never
+inherits a player identity.
+
 ### `POST /api/v1/leases`, `POST /api/v1/leases/{id}/renew`, `DELETE /api/v1/leases/{id}`, `GET /api/v1/leases`
 
 Control leases (spec §5.3): expiring, renewable grants for

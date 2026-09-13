@@ -279,15 +279,24 @@ Still open (each needs in-game verification before it can be trusted):
   `./gradlew sdkPythonTest` (kept out of `verify` so the JVM gate stays
   dependency-light).
 
-### Phase 1 status (2026-09-13)
+### Slice 1.7 — Command execution with ceiling (DONE 2026-09-13)
 
-Done: scopes (1.1), leases (1.2), session preconditions (1.3),
-failure-scenario suite (1.4), MCP adapter (1.5), Python SDK (1.6).
-Still open for Phase 1 "complete" per spec §12/§13: TypeScript + one JVM
-SDK, the fixture-mod (deferred to Phase 2 — it exists to exercise
-extended-tier storage/UI features that do not exist yet), command-execution
-surface (`commands.execute` scope) with the ceiling policy, and the
-game-run/CI checks marked NOT RUN in Phase 0.
+- `POST /api/v1/server/commands/execute` (console only, `commands.execute`
+  scope): executes through the game's dispatcher with a permission ceiling
+  (`http.commandPermissionLevel`, 0..4, default gamemaster), a capturing
+  command source for feedback, and the `CommandResultCallback` outcome.
+  APIs javap-verified against 26.2 (`performPrefixedCommand` is void,
+  permissions moved to `PermissionSet`/`LevelBasedPermissionSet`).
+- Every execution emits a `server.command` event; session preconditions
+  supported; contract + negative tests.
+
+Phase 1 status (2026-09-13): scopes (1.1), leases (1.2), session
+preconditions (1.3), failure-scenario suite (1.4), MCP adapter (1.5),
+Python SDK (1.6), command execution (1.7) — done. Still open for Phase 1
+"complete" per spec §12/§13: TypeScript + one JVM SDK, the fixture-mod
+(deferred to Phase 2 — it exists to exercise extended-tier storage/UI
+features that do not exist yet), and the game-run/CI checks marked NOT RUN
+in Phase 0.
 
 Phase 2 (extended tier: storage adapters, GameTest, region fixtures, ext
 SPI), Phase 3 (experimental tier) follow spec §12 with the slice discipline

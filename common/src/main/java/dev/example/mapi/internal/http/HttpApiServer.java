@@ -271,6 +271,9 @@ public final class HttpApiServer {
         if (path.equals(API_PREFIX + "client/input/key")) {
             return dev.example.mapi.internal.auth.Scope.CLIENT_CONTROL;
         }
+        if (path.startsWith(API_PREFIX + "server/commands")) {
+            return dev.example.mapi.internal.auth.Scope.COMMANDS_EXECUTE;
+        }
         return dev.example.mapi.internal.auth.Scope.OBSERVE;
     }
 
@@ -319,6 +322,10 @@ public final class HttpApiServer {
         }
         if (path.equals(API_PREFIX + "client/screenshot")) {
             captureScreenshot(exchange, requestId);
+            return;
+        }
+        if (path.equals(API_PREFIX + "server/commands/execute")) {
+            executeCommand(exchange, requestId, body);
             return;
         }
         if (path.equals(API_PREFIX + "leases")) {
@@ -889,6 +896,58 @@ public final class HttpApiServer {
         runtime.eventLog().publish("client.screenshot", "api-originated", Map.of(
                 "frameId", screenshot.frameId(),
                 "path", screenshot.path()));
+        respond(exchange, requestId, 200, JsonWriter.write(responseBody));
+    }
+
+    // ------------------------------------------------------------------
+    // Command execution (spec §6.2, ceiling per §4.2)
+    // ------------------------------------------------------------------
+
+    private void executeCommand(HttpExchange exchange, String requestId, byte[] body) throws IOException {
+        Object parsed;
+        try {
+            parsed = JsonParser.parse(new String(body, StandardCharsets.UTF_8));
+        } catch (ParseException e) {
+            error(exchange, requestId, 400, "INVALID_JSON", e.getMessage());
+            return;
+        }
+        if (!(parsed instanceof Map<?, ?> request)) {
+            error(exchange, requestId, 400, "INVALID_JSON", "Request body must be a JSON object");
+            return;
+        }
+        if (!sessionPreconditionsHold(exchange, requestId, request)) {
+            return;
+        }
+        Object commandObj = request.get("command");
+        if (!(commandObj instanceof String command) || command.isBlank()) {
+            error(exchange, requestId, 400, "INVALID_PAYLOAD", "Field 'command' (string) is required");
+            return;
+        }
+        if (command.startsWith("/")) {
+            command = command.substring(1);
+        }
+        String finalCommand = command;
+        int ceiling = config.commandPermissionLevel();
+        var result = runtime.<dev.example.mapi.internal.RawCommandResult>tryReadOnServerThread(
+                () -> runtime.serverHandle().commandSupplier(finalCommand, ceiling).get());
+        if (!handleReadOutcome(exchange, requestId, result)) {
+            return;
+        }
+        dev.example.mapi.internal.RawCommandResult outcome = result.value();
+        Map<String, Object> responseBody = new LinkedHashMap<>();
+        responseBody.put("protocolVersion", PROTOCOL_VERSION);
+        if (outcome.result() != null) {
+            responseBody.put("result", outcome.result());
+        }
+        if (outcome.success() != null) {
+            responseBody.put("success", outcome.success());
+        }
+        responseBody.put("feedback", outcome.feedback());
+        responseBody.put("permissionLevel", ceiling);
+        runtime.eventLog().publish("server.command", "api-originated", Map.of(
+                "command", command,
+                "permissionLevel", ceiling,
+                "success", outcome.success() == null ? false : outcome.success()));
         respond(exchange, requestId, 200, JsonWriter.write(responseBody));
     }
 

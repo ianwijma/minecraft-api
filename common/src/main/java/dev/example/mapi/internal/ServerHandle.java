@@ -76,4 +76,16 @@ public interface ServerHandle {
      * @return the data version stamp of the loaded world
      */
     Supplier<Integer> dataVersionSupplier();
+
+    /**
+     * Executes a command as the console with a permission ceiling (spec
+     * §4.2: authorize the effect; §6.2: execute with ceiling). Callers must
+     * only invoke this via {@link #executeOnServerThread(Runnable)}.
+     *
+     * @param command         the command text (without leading slash)
+     * @param permissionLevel maximum permission level the source may use
+     *                        (0..4)
+     * @return the captured outcome, never {@code null}
+     */
+    Supplier<RawCommandResult> commandSupplier(String command, int permissionLevel);
 }

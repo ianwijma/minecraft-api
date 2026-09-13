@@ -558,7 +558,8 @@ class HttpApiServerTest {
         int port = freePort();
         return new MapiConfig(true, port, TOKEN, 60, "mapi-" + port, null, 0, false,
                 MapiConfig.DEFAULT_DISCOVERY_HEARTBEAT_SECONDS,
-                java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(scopes)));
+                java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(scopes)),
+                MapiConfig.DEFAULT_COMMAND_PERMISSION_LEVEL);
     }
 
     @Test
@@ -726,6 +727,44 @@ class HttpApiServerTest {
         HttpResponse<String> second = post("/api/v1/client/screenshot", "{}",
                 "Authorization", "Bearer " + TOKEN);
         assertTrue(second.body().contains("\"frameId\":2"), second.body());
+    }
+
+    // ------------------------------------------------------------------
+    // Command execution (spec §6.2)
+    // ------------------------------------------------------------------
+
+    @Test
+    void commandExecuteContract() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> noServer = post("/api/v1/server/commands/execute",
+                "{\"command\":\"say hi\"}", "Authorization", "Bearer " + TOKEN);
+        assertEquals(409, noServer.statusCode(), noServer.body());
+        assertTrue(noServer.body().contains("WRONG_STATE"), noServer.body());
+
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+        HttpResponse<String> ok = post("/api/v1/server/commands/execute",
+                "{\"command\":\"say hi\",\"expectedWorldSessionId\":\""
+                        + runtime.worldSessionId().orElseThrow() + "\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, ok.statusCode(), ok.body());
+        assertTrue(ok.body().contains("\"result\":1"), ok.body());
+        assertTrue(ok.body().contains("\"success\":true"), ok.body());
+        assertTrue(ok.body().contains("say hi"), ok.body());
+        assertTrue(ok.body().contains("\"permissionLevel\":2"), ok.body());
+
+        HttpResponse<String> missing = post("/api/v1/server/commands/execute", "{}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(400, missing.statusCode(), missing.body());
+        assertTrue(missing.body().contains("INVALID_PAYLOAD"), missing.body());
+    }
+
+    @Test
+    void commandExecutionRequiresScope() throws Exception {
+        startServer(scopedConfig(java.util.List.of(dev.example.mapi.internal.auth.Scope.OBSERVE)));
+        HttpResponse<String> forbidden = post("/api/v1/server/commands/execute",
+                "{\"command\":\"say hi\"}", "Authorization", "Bearer " + TOKEN);
+        assertEquals(403, forbidden.statusCode(), forbidden.body());
+        assertTrue(forbidden.body().contains("\"required\":\"commands.execute\""), forbidden.body());
     }
 
     // ------------------------------------------------------------------

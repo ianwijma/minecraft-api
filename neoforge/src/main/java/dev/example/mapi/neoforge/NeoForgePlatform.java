@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.Identifier;
@@ -169,6 +170,58 @@ final class NeoForgePlatform implements MapiPlatform {
         @Override
         public java.util.function.Supplier<Integer> dataVersionSupplier() {
             return () -> server.getWorldData().getVersion();
+        }
+
+        @Override
+        public java.util.function.Supplier<dev.example.mapi.internal.RawCommandResult> commandSupplier(
+                String command, int permissionLevel) {
+            return () -> {
+                List<String> feedback = new ArrayList<>();
+                AtomicReference<Integer> result = new AtomicReference<>();
+                AtomicReference<Boolean> success = new AtomicReference<>();
+                net.minecraft.commands.CommandSource capture = new net.minecraft.commands.CommandSource() {
+                    @Override
+                    public void sendSystemMessage(net.minecraft.network.chat.Component message) {
+                        feedback.add(message.getString());
+                    }
+
+                    @Override
+                    public boolean acceptsSuccess() {
+                        return true;
+                    }
+
+                    @Override
+                    public boolean acceptsFailure() {
+                        return true;
+                    }
+
+                    @Override
+                    public boolean shouldInformAdmins() {
+                        return false;
+                    }
+                };
+                net.minecraft.commands.CommandSourceStack source = server.createCommandSourceStack()
+                        .withSource(capture)
+                        .withPermission(permissionSet(permissionLevel));
+                net.minecraft.commands.CommandResultCallback callback = (ok, value) -> {
+                    success.set(ok);
+                    result.set(value);
+                };
+                server.getCommands().performPrefixedCommand(source.withCallback(callback), command);
+                return new dev.example.mapi.internal.RawCommandResult(result.get(), success.get(),
+                        List.copyOf(feedback));
+            };
+        }
+
+        private static net.minecraft.server.permissions.PermissionSet permissionSet(int level) {
+            int clamped = java.lang.Math.clamp(level, 0, 4);
+            return switch (clamped) {
+                case 0 -> net.minecraft.server.permissions.LevelBasedPermissionSet.ALL;
+                case 1 -> net.minecraft.server.permissions.LevelBasedPermissionSet.MODERATOR;
+                case 2 -> net.minecraft.server.permissions.LevelBasedPermissionSet.GAMEMASTER;
+                case 3 -> net.minecraft.server.permissions.LevelBasedPermissionSet.ADMIN;
+                default -> net.minecraft.server.permissions.LevelBasedPermissionSet.OWNER;
+            };
         }
 
         private ServerLevel resolveLevel(String dimension) {

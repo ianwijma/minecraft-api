@@ -240,6 +240,8 @@ public class MapiRuntimeTest {
         private final dev.example.mapi.internal.RawBlockRead block;
         private final dev.example.mapi.internal.RawWorldTime time;
         private final int dataVersion;
+        private final java.util.function.BiFunction<String, Integer, dev.example.mapi.internal.RawCommandResult>
+                commandExecutor;
 
         public static TestServerHandle inline() {
             return new TestServerHandle(1_000L, () -> new RawServerInfo(1_000L, 3, 20, 42, 1.0d, "A Test World"),
@@ -253,20 +255,27 @@ public class MapiRuntimeTest {
                                     "minecraft:the_nether", 10.0, 32.0, -3.0)),
                     new dev.example.mapi.internal.RawBlockRead("minecraft:stone", java.util.Map.of(),
                             "minecraft:overworld", 0, -64, 0),
-                    new dev.example.mapi.internal.RawWorldTime(12345L, 6000L, 6000L), 4189);
+                    new dev.example.mapi.internal.RawWorldTime(12345L, 6000L, 6000L), 4189,
+                    (command, level) -> new dev.example.mapi.internal.RawCommandResult(1, true,
+                            List.of("Executed " + command + " at level " + level)));
         }
 
         public static TestServerHandle blocked() {
             return new TestServerHandle(1_000L, () -> {
                 throw new AssertionError("must not be invoked when blocked");
             }, false, java.util.List.of(), null,
-                    new dev.example.mapi.internal.RawWorldTime(0, 0, 0), 0);
+                    new dev.example.mapi.internal.RawWorldTime(0, 0, 0), 0,
+                    (command, level) -> {
+                        throw new AssertionError("must not be invoked when blocked");
+                    });
         }
 
         private TestServerHandle(long startedAtEpochMs, Supplier<RawServerInfo> info, boolean runTasks,
                 java.util.List<dev.example.mapi.internal.RawPlayerSnapshot> players,
                 dev.example.mapi.internal.RawBlockRead block,
-                dev.example.mapi.internal.RawWorldTime time, int dataVersion) {
+                dev.example.mapi.internal.RawWorldTime time, int dataVersion,
+                java.util.function.BiFunction<String, Integer, dev.example.mapi.internal.RawCommandResult>
+                        commandExecutor) {
             this.startedAtEpochMs = startedAtEpochMs;
             this.info = info;
             this.runTasks = runTasks;
@@ -274,6 +283,7 @@ public class MapiRuntimeTest {
             this.block = block;
             this.time = time;
             this.dataVersion = dataVersion;
+            this.commandExecutor = commandExecutor;
         }
 
         @Override
@@ -318,6 +328,12 @@ public class MapiRuntimeTest {
         @Override
         public Supplier<Integer> dataVersionSupplier() {
             return () -> dataVersion;
+        }
+
+        @Override
+        public Supplier<dev.example.mapi.internal.RawCommandResult> commandSupplier(String command,
+                int permissionLevel) {
+            return () -> commandExecutor.apply(command, permissionLevel);
         }
     }
 }
