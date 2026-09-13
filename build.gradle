@@ -124,6 +124,13 @@ tasks.register('verify', Task) {
     dependsOn tasks.named('formatCheck'), tasks.named('testAll'), tasks.named('verifyDistributions'), tasks.named('validateManifest')
 }
 
+tasks.register('sdkPythonTest', Exec) {
+    group = 'verification'
+    description = 'Runs the Python SDK unit tests (requires python3; not part of verify).'
+    workingDir 'sdk/python'
+    commandLine 'python3', '-m', 'unittest', 'discover', '-s', 'tests'
+}
+
 tasks.register('doctor', Exec) {
     group = 'help'
     description = 'Diagnoses the local development environment (JDK, wrapper, network).'

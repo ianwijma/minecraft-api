@@ -25,6 +25,11 @@
       "description": "Model Context Protocol server (stdio JSON-RPC) exposing the local API as tools: observe, capabilities, schema, world, player, lifecycle, task.wait/cancel, artifact.get."
     },
     {
+      "path": "sdk/python",
+      "kind": "sdk",
+      "description": "Stdlib-only Python client: token-file auth, discovery parsing, task polling with idempotency, event cursors with gap detection. Tests via ./gradlew sdkPythonTest."
+    },
+    {
       "path": "fabric",
       "kind": "loader-adapter",
       "description": "Fabric entrypoint, platform adapter, fabric.mod.json, dev runs.",
