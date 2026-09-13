@@ -151,6 +151,11 @@ class WorldQueryServiceTest {
         }
 
         @Override
+        public long serverTickCount() {
+            return 1234;
+        }
+
+        @Override
         public boolean canQueryDimension(String dimension) {
             return "minecraft:overworld".equals(dimension);
         }

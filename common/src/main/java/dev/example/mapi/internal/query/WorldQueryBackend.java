@@ -99,6 +99,9 @@ public interface WorldQueryBackend {
      */
     List<String> registryEntries(String registryId, int max);
 
+    /** @return the current server tick count (boundary for captures) */
+    long serverTickCount();
+
     /** @return true when the dimension identifier is a loaded level */
     boolean canQueryDimension(String dimension);
 }

@@ -126,6 +126,11 @@ final class FabricWorldQueryBackend implements WorldQueryBackend {
     }
 
     @Override
+    public long serverTickCount() {
+        return server.getTickCount();
+    }
+
+    @Override
     public boolean canQueryDimension(String dimension) {
         return level(dimension) != null;
     }
