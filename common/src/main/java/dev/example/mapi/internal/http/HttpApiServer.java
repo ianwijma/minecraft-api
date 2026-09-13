@@ -7,6 +7,9 @@ import dev.example.mapi.internal.MapiRuntime;
 import dev.example.mapi.internal.SnapshotResult;
 import dev.example.mapi.internal.config.MapiConfig;
 import dev.example.mapi.internal.json.JsonWriter;
+import dev.example.mapi.internal.problem.ProblemCode;
+import dev.example.mapi.internal.problem.ProblemException;
+import dev.example.mapi.internal.problem.ProblemJson;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -160,10 +163,17 @@ public final class HttpApiServer {
             // Client disconnected or socket error: nothing useful to send.
             logger.debug("MAPI HTTP: I/O error serving request", e);
             throw e;
+        } catch (ProblemException e) {
+            logger.warn("MAPI HTTP: problem {} on {}", e.code().wireCode(), exchange.getRequestURI().getPath());
+            try {
+                error(exchange, e.code(), e.getMessage(), e.details());
+            } catch (IOException ignored) {
+                // Response already committed or socket gone.
+            }
         } catch (RuntimeException e) {
             logger.error("MAPI HTTP: unexpected error handling request", e);
             try {
-                error(exchange, 500, "INTERNAL", "Internal server error");
+                error(exchange, ProblemCode.INTERNAL, "Internal server error");
             } catch (IOException ignored) {
                 // Response already committed or socket gone.
             }
@@ -174,32 +184,32 @@ public final class HttpApiServer {
 
     private void route(HttpExchange exchange) throws IOException {
         if (!isAllowedHost(exchange.getRequestHeaders().getFirst("Host"))) {
-            error(exchange, 403, "FORBIDDEN_HOST", "Host header not allowed");
+            error(exchange, ProblemCode.FORBIDDEN_HOST, "Host header not allowed");
             return;
         }
         String origin = exchange.getRequestHeaders().getFirst("Origin");
         if (origin != null && !isAllowedOrigin(origin)) {
-            error(exchange, 403, "FORBIDDEN_ORIGIN", "Origin not allowed");
+            error(exchange, ProblemCode.FORBIDDEN_ORIGIN, "Origin not allowed");
             return;
         }
         String remote = String.valueOf(exchange.getRemoteAddress().getAddress());
         if (!rateLimiter.tryAcquire(remote)) {
             exchange.getResponseHeaders().set("Retry-After", "60");
-            error(exchange, 429, "RATE_LIMITED", "Too many requests; slow down");
+            error(exchange, ProblemCode.RATE_LIMITED, "Too many requests; slow down");
             return;
         }
         if (!authorized(exchange.getRequestHeaders().getFirst("Authorization"))) {
             exchange.getResponseHeaders().set("WWW-Authenticate", "Bearer realm=\"mapi\"");
-            error(exchange, 401, "UNAUTHORIZED", "Missing or invalid bearer token");
+            error(exchange, ProblemCode.UNAUTHORIZED, "Missing or invalid bearer token");
             return;
         }
         if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
             exchange.getResponseHeaders().set("Allow", "GET");
-            error(exchange, 405, "METHOD_NOT_ALLOWED", "Only GET requests are supported");
+            error(exchange, ProblemCode.METHOD_NOT_ALLOWED, "Only GET requests are supported");
             return;
         }
         if (bodyTooLarge(exchange)) {
-            error(exchange, 413, "PAYLOAD_TOO_LARGE",
+            error(exchange, ProblemCode.PAYLOAD_TOO_LARGE,
                     "Request body exceeds " + MAX_BODY_BYTES + " bytes");
             return;
         }
@@ -208,7 +218,7 @@ public final class HttpApiServer {
             case API_PREFIX + "health" -> respond(exchange, 200, JsonWriter.write(health()));
             case API_PREFIX + "info" -> respond(exchange, 200, JsonWriter.write(info()));
             case API_PREFIX + "server/status" -> sendServerStatus(exchange);
-            default -> error(exchange, 404, "NOT_FOUND", "Unknown endpoint: " + path);
+            default -> error(exchange, ProblemCode.NOT_FOUND, "Unknown endpoint: " + path);
         }
     }
 
@@ -234,7 +244,7 @@ public final class HttpApiServer {
     private void sendServerStatus(HttpExchange exchange) throws IOException {
         SnapshotResult result = runtime.trySnapshot();
         if (result.timedOut()) {
-            error(exchange, 503, "SERVER_BUSY",
+            error(exchange, ProblemCode.SERVER_BUSY,
                     "Server thread busy; status snapshot timed out. Retry shortly.");
             return;
         }
@@ -337,13 +347,13 @@ public final class HttpApiServer {
         }
     }
 
-    private static void error(HttpExchange exchange, int status, String code, String message) throws IOException {
-        Map<String, Object> error = new LinkedHashMap<>();
-        error.put("code", code);
-        error.put("message", message);
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("error", error);
-        body.put("protocolVersion", PROTOCOL_VERSION);
-        respond(exchange, status, JsonWriter.write(body));
+    private static void error(HttpExchange exchange, ProblemCode code, String message) throws IOException {
+        error(exchange, code, message, null);
+    }
+
+    private static void error(HttpExchange exchange, ProblemCode code, String message,
+            Map<String, Object> details) throws IOException {
+        respond(exchange, code.httpStatus(),
+                JsonWriter.write(ProblemJson.errorBody(code, message, details, PROTOCOL_VERSION)));
     }
 }
