@@ -2,10 +2,12 @@ package dev.example.mapi.fabric;
 
 import dev.example.mapi.api.PlatformType;
 import dev.example.mapi.internal.MapiPlatform;
+import dev.example.mapi.internal.PhysicalSide;
 import dev.example.mapi.internal.RawServerInfo;
 import dev.example.mapi.internal.ServerHandle;
 import dev.example.mapi.internal.ServerLifecycleListener;
 import java.nio.file.Path;
+import net.fabricmc.api.EnvType;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.server.MinecraftServer;
@@ -42,6 +44,13 @@ final class FabricPlatform implements MapiPlatform {
     @Override
     public Path configDir() {
         return FabricLoader.getInstance().getConfigDir();
+    }
+
+    @Override
+    public PhysicalSide physicalSide() {
+        return FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT
+                ? PhysicalSide.CLIENT
+                : PhysicalSide.DEDICATED_SERVER;
     }
 
     @Override

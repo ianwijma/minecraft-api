@@ -9,9 +9,11 @@ one shared codebase.
 - `common` — a small, documented, loader-neutral **public Java API**
   (version/platform info, read-only server status snapshots, a thread-safe
   extension/service registry) plus an optional **local HTTP API**
-  (`GET /api/v1/health`, `/api/v1/info`, `/api/v1/server/status`) that is
-  **disabled by default**, binds to loopback only, and requires a bearer
-  token.
+  (`GET /api/v1/health`, `/api/v1/live`, `/api/v1/ready`, `/api/v1/time`,
+  `/api/v1/info`, `/api/v1/server/status`) that is **disabled by default**,
+  binds to loopback only, and requires a bearer token (env/config or an
+  auto-generated token file). Session identity and a discovery file
+  (`<gameDir>/mcapi/discovery.json`) let local tools find the instance.
 - `fabric` / `neoforge` — thin entrypoints and platform adapters; each
   distributable jar contains the shared implementation exactly once with
   correct loader metadata.
@@ -123,7 +125,9 @@ The HTTP API is **off by default**. To enable it for a session:
 export MAPI_HTTP_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 # In the instance's config dir (<runDir>/config/mapi.properties):
 #   http.enabled=true
-#   http.token=<the same long token>   (env var is preferred)
+#   http.token=<the same long token>   (env var is preferred; a token file
+#                                       at <runDir>/mcapi/token is generated
+#                                       automatically when nothing is set)
 ```
 
 Then:

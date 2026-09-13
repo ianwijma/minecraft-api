@@ -206,6 +206,9 @@ public final class HttpApiServer {
         String path = exchange.getRequestURI().getPath();
         switch (path) {
             case API_PREFIX + "health" -> respond(exchange, 200, JsonWriter.write(health()));
+            case API_PREFIX + "live" -> respond(exchange, 200, JsonWriter.write(live()));
+            case API_PREFIX + "ready" -> respond(exchange, 200, JsonWriter.write(ready()));
+            case API_PREFIX + "time" -> sendTime(exchange);
             case API_PREFIX + "info" -> respond(exchange, 200, JsonWriter.write(info()));
             case API_PREFIX + "server/status" -> sendServerStatus(exchange);
             default -> error(exchange, 404, "NOT_FOUND", "Unknown endpoint: " + path);
@@ -219,6 +222,48 @@ public final class HttpApiServer {
         return body;
     }
 
+    private Map<String, Object> live() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("live", true);
+        return body;
+    }
+
+    private Map<String, Object> ready() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("readiness", runtime.readiness());
+        Map<String, Object> states = new LinkedHashMap<>();
+        states.put("http", true);
+        states.put("worldReady", runtime.serverRunning());
+        states.put("clientJoined", false);
+        body.put("states", states);
+        return body;
+    }
+
+    private void sendTime(HttpExchange exchange) throws IOException {
+        SnapshotResult result = runtime.trySnapshot();
+        if (result.timedOut()) {
+            error(exchange, 503, "SERVER_BUSY",
+                    "Server thread busy; time snapshot timed out. Retry shortly.");
+            return;
+        }
+        Map<String, Object> serverTick = new LinkedHashMap<>();
+        if (result.serverRunning() && result.snapshot() != null) {
+            serverTick.put("available", true);
+            serverTick.put("value", result.snapshot().tickCount());
+        } else {
+            serverTick.put("available", false);
+            serverTick.put("reason", "SERVER_NOT_RUNNING");
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("wallClock", System.currentTimeMillis());
+        body.put("monotonicNanos", System.nanoTime());
+        body.put("serverTick", serverTick);
+        respond(exchange, 200, JsonWriter.write(body));
+    }
+
     private Map<String, Object> info() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("protocolVersion", PROTOCOL_VERSION);
@@ -228,6 +273,11 @@ public final class HttpApiServer {
         body.put("minecraftVersion", runtime.minecraftVersion());
         body.put("platform", runtime.platform().id());
         body.put("platformVersion", runtime.platformVersion());
+        body.put("instanceId", config.instanceId());
+        body.put("processSessionId", runtime.processSessionId());
+        runtime.worldSessionId().ifPresent(id -> body.put("worldSessionId", id));
+        body.put("physicalSide", runtime.physicalSide().id());
+        body.put("availableLogicalSides", runtime.availableLogicalSides());
         return body;
     }
 

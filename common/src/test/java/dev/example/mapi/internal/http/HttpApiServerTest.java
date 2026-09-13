@@ -114,7 +114,8 @@ class HttpApiServerTest {
     @Test
     void requiresBearerTokenOnEveryEndpoint() throws Exception {
         startServer(enabledConfig());
-        for (String path : new String[] {"/api/v1/health", "/api/v1/info", "/api/v1/server/status"}) {
+        for (String path : new String[] {"/api/v1/health", "/api/v1/live", "/api/v1/ready", "/api/v1/time",
+                "/api/v1/info", "/api/v1/server/status"}) {
             HttpResponse<String> noAuth = get(path);
             assertEquals(401, noAuth.statusCode(), path);
             assertEquals("Bearer realm=\"mapi\"", noAuth.headers().firstValue("WWW-Authenticate").orElse(""));
@@ -147,9 +148,82 @@ class HttpApiServerTest {
         startServer(enabledConfig());
         HttpResponse<String> response = get("/api/v1/info", "Authorization", "Bearer " + TOKEN);
         assertEquals(200, response.statusCode());
-        assertEquals("{\"protocolVersion\":1,\"name\":\"mapi\",\"version\":\"0.1.0\",\"apiVersion\":\"0.1.0\","
-                        + "\"minecraftVersion\":\"26.2\",\"platform\":\"fabric\",\"platformVersion\":\"test-loader\"}",
-                response.body());
+        String body = response.body();
+        assertTrue(body.startsWith("{\"protocolVersion\":1,\"name\":\"mapi\",\"version\":\"0.1.0\","
+                + "\"apiVersion\":\"0.1.0\",\"minecraftVersion\":\"26.2\",\"platform\":\"fabric\","
+                + "\"platformVersion\":\"test-loader\",\"instanceId\":\"mapi-" + port + "\","
+                + "\"processSessionId\":\""), body);
+        assertTrue(body.contains("\"physicalSide\":\"dedicatedServer\""), body);
+        assertTrue(body.contains("\"availableLogicalSides\":[]"), body);
+        assertFalse(body.contains("worldSessionId"), "no world session before a server starts");
+    }
+
+    @Test
+    void infoIdentityTracksSessions() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> before = get("/api/v1/info", "Authorization", "Bearer " + TOKEN);
+        assertTrue(before.body().contains("\"availableLogicalSides\":[]"), before.body());
+
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+        HttpResponse<String> during = get("/api/v1/info", "Authorization", "Bearer " + TOKEN);
+        assertTrue(during.body().contains("\"worldSessionId\":\""), during.body());
+        assertTrue(during.body().contains("\"availableLogicalSides\":[\"server\"]"), during.body());
+
+        platform.lifecycleListener().onServerStopping();
+        platform.lifecycleListener().onServerStopped();
+        HttpResponse<String> after = get("/api/v1/info", "Authorization", "Bearer " + TOKEN);
+        assertFalse(after.body().contains("worldSessionId"), after.body());
+    }
+
+    @Test
+    void liveSchema() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> response = get("/api/v1/live", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, response.statusCode(), response.body());
+        assertEquals("{\"protocolVersion\":1,\"live\":true}", response.body());
+    }
+
+    @Test
+    void readyTracksWorldSessions() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> before = get("/api/v1/ready", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, before.statusCode(), before.body());
+        assertEquals("{\"protocolVersion\":1,\"readiness\":\"http\","
+                + "\"states\":{\"http\":true,\"worldReady\":false,\"clientJoined\":false}}", before.body());
+
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+        HttpResponse<String> during = get("/api/v1/ready", "Authorization", "Bearer " + TOKEN);
+        assertEquals("{\"protocolVersion\":1,\"readiness\":\"worldReady\","
+                + "\"states\":{\"http\":true,\"worldReady\":true,\"clientJoined\":false}}", during.body());
+    }
+
+    @Test
+    void timeSchemaReportsServerTickAvailability() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> before = get("/api/v1/time", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, before.statusCode(), before.body());
+        assertTrue(before.body().startsWith("{\"protocolVersion\":1,\"wallClock\":"), before.body());
+        assertTrue(before.body().contains("\"monotonicNanos\":"), before.body());
+        assertTrue(before.body().contains(
+                "\"serverTick\":{\"available\":false,\"reason\":\"SERVER_NOT_RUNNING\"}"), before.body());
+
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+        HttpResponse<String> during = get("/api/v1/time", "Authorization", "Bearer " + TOKEN);
+        assertTrue(during.body().contains("\"serverTick\":{\"available\":true,\"value\":42}"), during.body());
+    }
+
+    @Test
+    void serverBusyReturns503WhenSnapshotTimesOut() throws Exception {
+        startServer(enabledConfig());
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.blocked());
+        HttpResponse<String> response = get("/api/v1/server/status", "Authorization", "Bearer " + TOKEN);
+        assertEquals(503, response.statusCode());
+        assertTrue(response.body().contains("SERVER_BUSY"));
+        HttpResponse<String> time = get("/api/v1/time", "Authorization", "Bearer " + TOKEN);
+        assertEquals(503, time.statusCode());
+        assertTrue(time.body().contains("SERVER_BUSY"));
+        platform.lifecycleListener().onServerStopping();
+        platform.lifecycleListener().onServerStopped();
     }
 
     @Test
@@ -174,17 +248,6 @@ class HttpApiServerTest {
         assertTrue(response.body().contains("\"averageTickTimeMs\":1.0"), response.body());
         assertTrue(response.body().contains("\"motd\":\"A Test World\""), response.body());
         assertFalse(response.body().contains("playerNames"), response.body());
-    }
-
-    @Test
-    void serverBusyReturns503WhenSnapshotTimesOut() throws Exception {
-        startServer(enabledConfig());
-        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.blocked());
-        HttpResponse<String> response = get("/api/v1/server/status", "Authorization", "Bearer " + TOKEN);
-        assertEquals(503, response.statusCode());
-        assertTrue(response.body().contains("SERVER_BUSY"));
-        platform.lifecycleListener().onServerStopping();
-        platform.lifecycleListener().onServerStopped();
     }
 
     // ------------------------------------------------------------------
@@ -276,31 +339,60 @@ class HttpApiServerTest {
     // ------------------------------------------------------------------
 
     @Test
-    void lifecycleStartsAndStopsWithServerWhenEnabledByConfig(@TempDir Path configDir) throws Exception {
+    void lifecycleStartsAndStopsWithServerWhenEnabledByConfig(@TempDir Path instanceDir) throws Exception {
         int port = freePort();
-        Files.writeString(configDir.resolve(MapiConfig.CONFIG_FILE_NAME),
+        Files.createDirectories(instanceDir.resolve("config"));
+        Files.writeString(instanceDir.resolve("config").resolve(MapiConfig.CONFIG_FILE_NAME),
                 "http.enabled=true\nhttp.port=" + port + "\nhttp.token=token-from-config-0123456789\n");
 
         TestPlatform platform = new TestPlatform(LOG) {
             @Override
             public Path configDir() {
-                return configDir;
+                return instanceDir.resolve("config");
+            }
+
+            @Override
+            public Path gameDir() {
+                return instanceDir;
             }
         };
         MapiRuntime lifecycleRuntime = new MapiRuntime(platform);
         assertFalse(lifecycleRuntime.httpRunning(), "HTTP must be off until a server starts");
+        assertFalse(Files.exists(instanceDir.resolve("mcapi").resolve("discovery.json")),
+                "no discovery file while the API is disabled");
+
         platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
         assertTrue(lifecycleRuntime.httpRunning());
 
-        HttpResponse<String> response = client.send(HttpRequest.newBuilder()
+        Path discovery = instanceDir.resolve("mcapi").resolve("discovery.json");
+        assertTrue(Files.isRegularFile(discovery), "discovery file must exist while the API runs");
+        String discoveryJson = Files.readString(discovery);
+        assertTrue(discoveryJson.startsWith("{\"schemaVersion\":1,"), discoveryJson);
+        assertFalse(discoveryJson.contains("token-from-config-0123456789"),
+                "discovery must never contain the token");
+        assertFalse(discoveryJson.contains("token"), "discovery must never contain token fields");
+
+        HttpResponse<String> health = client.send(HttpRequest.newBuilder()
                 .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/health"))
                 .header("Authorization", "Bearer token-from-config-0123456789")
                 .GET().build(), HttpResponse.BodyHandlers.ofString());
-        assertEquals(200, response.statusCode());
+        assertEquals(200, health.statusCode());
+
+        HttpResponse<String> info = client.send(HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/info"))
+                .header("Authorization", "Bearer token-from-config-0123456789")
+                .GET().build(), HttpResponse.BodyHandlers.ofString());
+        String infoJson = info.body();
+        String prefix = "\"processSessionId\":\"";
+        int start = infoJson.indexOf(prefix) + prefix.length();
+        String processSessionId = infoJson.substring(start, infoJson.indexOf('"', start));
+        assertTrue(discoveryJson.contains("\"processSessionId\":\"" + processSessionId + "\""),
+                "discovery must carry the same process session id as /info");
 
         platform.lifecycleListener().onServerStopping();
         platform.lifecycleListener().onServerStopped();
         assertFalse(lifecycleRuntime.httpRunning(), "HTTP must stop with the server");
+        assertFalse(Files.exists(discovery), "discovery file must be removed when the API stops");
     }
 
     @Test

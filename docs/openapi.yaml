@@ -28,7 +28,7 @@ paths:
   /api/v1/info:
     get:
       operationId: getInfo
-      summary: Mod, API, Minecraft, and platform versions
+      summary: Mod, API, Minecraft, platform versions, and session identity
       responses:
         "200":
           description: OK
@@ -38,6 +38,46 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/live:
+    get:
+      operationId: getLive
+      summary: Process liveness (listener answers, independent of world state)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LiveResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/ready:
+    get:
+      operationId: getReady
+      summary: Readiness states (http, worldReady; clientJoined reserved)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReadyResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/time:
+    get:
+      operationId: getTime
+      summary: Process clocks plus server tick (explicit availability)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TimeResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/ServerBusy" }
   /api/v1/server/status:
     get:
       operationId: getServerStatus
@@ -104,7 +144,8 @@ components:
       allOf:
         - $ref: "#/components/schemas/ProtocolVersioned"
         - type: object
-          required: [name, version, apiVersion, minecraftVersion, platform, platformVersion]
+          required: [name, version, apiVersion, minecraftVersion, platform, platformVersion,
+                     instanceId, processSessionId, physicalSide, availableLogicalSides]
           properties:
             name: { type: string, const: mapi }
             version: { type: string, description: MAPI mod version }
@@ -112,6 +153,73 @@ components:
             minecraftVersion: { type: string, example: "26.2" }
             platform: { type: string, enum: [fabric, neoforge] }
             platformVersion: { type: string, description: loader version string }
+            instanceId:
+              type: string
+              description: sanitized http.instanceId value
+            processSessionId:
+              type: string
+              description: unique per process launch
+            worldSessionId:
+              type: string
+              description: >
+                present only while a world/server session is active; changes
+                when a world is opened, closed, or replaced
+            physicalSide:
+              type: string
+              enum: [client, dedicatedServer]
+              description: physical side of the process, not of the current session
+            availableLogicalSides:
+              type: array
+              items: { type: string, enum: [client, server] }
+              description: logical sides this process can currently serve
+    LiveResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [live]
+          properties:
+            live: { type: boolean, const: true }
+    ReadyResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [readiness, states]
+          properties:
+            readiness:
+              type: string
+              enum: [http, worldReady, clientJoined]
+              description: coarse readiness; clientJoined is reserved for client operations
+            states:
+              type: object
+              required: [http, worldReady, clientJoined]
+              properties:
+                http: { type: boolean, const: true }
+                worldReady: { type: boolean }
+                clientJoined: { type: boolean }
+    TimeResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [wallClock, monotonicNanos, serverTick]
+          properties:
+            wallClock: { type: integer, format: int64, description: epoch milliseconds }
+            monotonicNanos:
+              type: integer
+              format: int64
+              description: process-local monotonic clock; do not compare across processes
+            serverTick:
+              oneOf:
+                - type: object
+                  required: [available, value]
+                  properties:
+                    available: { type: boolean, const: true }
+                    value: { type: integer, format: int64, minimum: 0 }
+                - type: object
+                  required: [available, reason]
+                  properties:
+                    available: { type: boolean, const: false }
+                    reason: { type: string, enum: [SERVER_NOT_RUNNING] }
+                  description: unknown data is explicit, never empty
     ServerNotRunning:
       allOf:
         - $ref: "#/components/schemas/ProtocolVersioned"

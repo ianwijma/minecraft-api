@@ -5,11 +5,18 @@ import dev.example.mapi.api.MapiService;
 import dev.example.mapi.api.MapiServices;
 import dev.example.mapi.api.PlatformType;
 import dev.example.mapi.api.ServerStatusSnapshot;
+import dev.example.mapi.internal.config.MapiConfig;
+import dev.example.mapi.internal.config.MapiConfigException;
+import dev.example.mapi.internal.discovery.DiscoveryFile;
+import dev.example.mapi.internal.discovery.DiscoveryFile.DiscoverySnapshot;
 import dev.example.mapi.internal.http.HttpApiServer;
+import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.slf4j.Logger;
@@ -29,8 +36,12 @@ public final class MapiRuntime implements Mapi {
     private final MapiPlatform platform;
     private final MapiServicesImpl services = new MapiServicesImpl();
 
+    private final String processSessionId = UUID.randomUUID().toString();
+    private final Instant processStartedAt = Instant.now();
+    private volatile String worldSessionId;
     private volatile ServerHandle serverHandle;
     private volatile HttpApiServer httpServer;
+    private volatile MapiConfig activeConfig;
 
     /**
      * Creates the runtime. Public because loader modules and tests live in
@@ -44,8 +55,9 @@ public final class MapiRuntime implements Mapi {
             @Override
             public void onServerStarting(ServerHandle handle) {
                 serverHandle = handle;
+                worldSessionId = UUID.randomUUID().toString();
                 services.fireServerStart(handle, platform.logger());
-                startHttp(handle);
+                startHttp();
             }
 
             @Override
@@ -60,6 +72,7 @@ public final class MapiRuntime implements Mapi {
             @Override
             public void onServerStopped() {
                 serverHandle = null;
+                worldSessionId = null;
             }
         });
     }
@@ -105,6 +118,61 @@ public final class MapiRuntime implements Mapi {
     @Override
     public MapiServicesImpl services() {
         return services;
+    }
+
+    /**
+     * @return session identity: unique per process launch, never {@code null}
+     */
+    public String processSessionId() {
+        return processSessionId;
+    }
+
+    /**
+     * @return session identity for the current world/server session, empty
+     *         while no world session is active
+     */
+    public Optional<String> worldSessionId() {
+        return Optional.ofNullable(worldSessionId);
+    }
+
+    /**
+     * @return the physical side of this process
+     */
+    public PhysicalSide physicalSide() {
+        return platform.physicalSide();
+    }
+
+    /**
+     * @return the logical sides this process can currently serve; the client
+     *         side appears once client operations exist
+     */
+    public List<String> availableLogicalSides() {
+        return serverRunning() ? List.of("server") : List.of();
+    }
+
+    /**
+     * @return true while a world/server session is active
+     */
+    public boolean serverRunning() {
+        return serverHandle != null;
+    }
+
+    /**
+     * @return the coarse readiness state: {@code http} (listener answering,
+     *         no world session) or {@code worldReady} (server session active);
+     *         {@code clientJoined} is reserved for client operations
+     */
+    public String readiness() {
+        return serverRunning() ? "worldReady" : "http";
+    }
+
+    /**
+     * @return the instance identifier in use, or {@code null} while the HTTP
+     *         API has never started (no loaded config)
+     */
+    public String instanceId() {
+        MapiConfig config = activeConfig;
+        return config == null ? null : config.instanceId();
     }
 
     /**
@@ -156,12 +224,12 @@ public final class MapiRuntime implements Mapi {
     // HTTP lifecycle
     // ------------------------------------------------------------------
 
-    private void startHttp(ServerHandle handle) {
-        dev.example.mapi.internal.config.MapiConfig config;
+    private void startHttp() {
+        MapiConfig config;
         try {
-            config = dev.example.mapi.internal.config.MapiConfig.load(platform.configDir(), System.getenv(),
+            config = MapiConfig.load(platform.configDir(), platform.gameDir(), System.getenv(),
                     platform.logger());
-        } catch (dev.example.mapi.internal.config.MapiConfigException e) {
+        } catch (MapiConfigException e) {
             platform.logger().error("MAPI: HTTP API not started: {}", e.getMessage());
             return;
         }
@@ -173,15 +241,43 @@ public final class MapiRuntime implements Mapi {
         HttpApiServer httpServer = new HttpApiServer(config, this, platform.logger());
         if (httpServer.start()) {
             this.httpServer = httpServer;
+            this.activeConfig = config;
+            writeDiscoveryFile(config);
         }
     }
 
     private void stopHttp() {
         HttpApiServer httpServer = this.httpServer;
         this.httpServer = null;
+        this.activeConfig = null;
+        deleteDiscoveryFile();
         if (httpServer != null) {
             httpServer.stop();
         }
+    }
+
+    private void writeDiscoveryFile(MapiConfig config) {
+        DiscoverySnapshot snapshot = new DiscoverySnapshot(
+                config.instanceId(),
+                processSessionId,
+                ProcessHandle.current().pid(),
+                processStartedAt,
+                Instant.now(),
+                readiness(),
+                platform.physicalSide().id(),
+                platform.type().id(),
+                platform.minecraftVersion(),
+                config.httpPort(),
+                Map.of());
+        DiscoveryFile.write(dataDir(), snapshot, platform.logger());
+    }
+
+    private void deleteDiscoveryFile() {
+        DiscoveryFile.delete(dataDir(), platform.logger());
+    }
+
+    private java.nio.file.Path dataDir() {
+        return platform.gameDir().resolve(MapiConfig.DATA_DIR_NAME);
     }
 
     // ------------------------------------------------------------------

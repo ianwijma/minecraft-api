@@ -41,6 +41,13 @@ public interface MapiPlatform {
     Path configDir();
 
     /**
+     * @return the physical side of this process, never {@code null}; a client
+     *         process is {@link PhysicalSide#CLIENT} even while it hosts an
+     *         integrated server
+     */
+    PhysicalSide physicalSide();
+
+    /**
      * @return the platform-provided logger, never {@code null}
      */
     Logger logger();

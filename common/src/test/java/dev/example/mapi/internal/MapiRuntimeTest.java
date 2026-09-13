@@ -2,6 +2,7 @@ package dev.example.mapi.internal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -13,6 +14,7 @@ import dev.example.mapi.api.MapiServices;
 import dev.example.mapi.api.PlatformType;
 import dev.example.mapi.api.ServerStatusSnapshot;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -100,6 +102,32 @@ public class MapiRuntimeTest {
         platform.listener.onServerStopped();
     }
 
+    @Test
+    void processSessionIdIsStableAndWorldSessionChangesPerSession() {
+        TestPlatform platform = new TestPlatform(LOG);
+        MapiRuntime runtime = new MapiRuntime(platform);
+        assertFalse(runtime.processSessionId().isBlank());
+        assertEquals(runtime.processSessionId(), runtime.processSessionId());
+        assertTrue(runtime.worldSessionId().isEmpty(), "no world session before server start");
+        assertEquals("http", runtime.readiness());
+        assertTrue(runtime.availableLogicalSides().isEmpty());
+
+        platform.listener.onServerStarting(TestServerHandle.inline());
+        String first = runtime.worldSessionId().orElseThrow();
+        assertEquals("worldReady", runtime.readiness());
+        assertEquals(List.of("server"), runtime.availableLogicalSides());
+
+        platform.listener.onServerStopping();
+        platform.listener.onServerStopped();
+        assertTrue(runtime.worldSessionId().isEmpty());
+
+        platform.listener.onServerStarting(TestServerHandle.inline());
+        String second = runtime.worldSessionId().orElseThrow();
+        assertNotEquals(first, second, "a replaced world session must get a fresh id");
+        platform.listener.onServerStopping();
+        platform.listener.onServerStopped();
+    }
+
     /**
      * Minimal Mapi implementation for negative binding tests.
      */
@@ -181,6 +209,11 @@ public class MapiRuntimeTest {
         @Override
         public Path configDir() {
             return Path.of(".");
+        }
+
+        @Override
+        public dev.example.mapi.internal.PhysicalSide physicalSide() {
+            return dev.example.mapi.internal.PhysicalSide.DEDICATED_SERVER;
         }
 
         @Override

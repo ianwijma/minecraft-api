@@ -72,6 +72,12 @@ never silently change the Minecraft target (26.2) — ask the owner first.
   `BlockableEventLoop#execute(Runnable)`.
 - 26.2 jars are unobfuscated (official names); `javap` works directly on the
   downloaded client jar.
+- Physical side detection (verified via `javap` against the cached jars):
+  Fabric — `FabricLoader#getEnvironmentType()` returning
+  `net.fabricmc.api.EnvType`; NeoForge —
+  `net.neoforged.fml.loading.FMLEnvironment#getDist()` (**method**, FML 11
+  removed the old public `dist` field) returning
+  `net.neoforged.api.distmarker.Dist` (`CLIENT`/`DEDICATED_SERVER`).
 
 Version bumps and target changes require explicit owner approval — see
 AGENTS.md §7.

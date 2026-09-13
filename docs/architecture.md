@@ -49,10 +49,10 @@ MapiRuntime ── owns ──► MapiServicesImpl (thread-safe registry)
         └─► HttpApiServer (only if config enables it)
                  │  workers (2 daemon threads, bounded queue)
                  ▼
-            runtime.trySnapshot()
+             runtime.trySnapshot()
                  │  FutureTask submitted via ServerHandle.executeOnServerThread
                  ▼
-            server thread reads RawServerInfo ──► ServerStatusSnapshot (immutable)
+             server thread reads RawServerInfo ──► ServerStatusSnapshot (immutable)
 ```
 
 Rules baked into this flow:
@@ -63,7 +63,27 @@ Rules baked into this flow:
   the snapshot task and waits with a bound.
 - HTTP starts on server start and stops on server stop (integrated servers
   included), so repeated sessions and port conflicts are handled without
-  crashing the game.
+  crashing the game. (The target architecture moves the listener to
+  process lifetime with readiness states — `docs/roadmap.md`, slice 0.2.)
+
+## Session model
+
+The runtime stamps every payload with identity so external tools can detect
+restarts and world changes:
+
+- `processSessionId` — random UUID per `MapiRuntime` (per launch).
+- `worldSessionId` — random UUID per server session (dedicated or
+  integrated); absent while no world session is active. Repeated integrated
+  sessions each get a fresh id.
+- `physicalSide` — `client` or `dedicatedServer`, detected via the loader
+  (`EnvType` on Fabric, `Dist` on NeoForge) through the `MapiPlatform` seam.
+- `availableLogicalSides` — logical sides currently serviceable
+  (`server` while a server session runs).
+- `readiness` — `http` or `worldReady` (`clientJoined` reserved).
+
+The optional discovery file (`<gameDir>/mcapi/discovery.json`, written by
+`internal.discovery.DiscoveryFile`) exposes this identity plus the endpoint
+to local tools; it never contains secrets.
 
 ## Client-only code
 

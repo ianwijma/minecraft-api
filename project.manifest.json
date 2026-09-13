@@ -44,6 +44,7 @@
       { "path": "docs/security.md", "topic": "HTTP security model" },
       { "path": "docs/llm-workflow.md", "topic": "coding-agent workflow" },
       { "path": "docs/troubleshooting.md", "topic": "known failure modes" },
+      { "path": "docs/roadmap.md", "topic": "target architecture review, reconciliation, and delivery plan" },
       { "path": "docs/openapi.yaml", "topic": "OpenAPI description of the HTTP API" },
       { "path": "README.md", "topic": "human-facing overview and quick start" },
       { "path": "CONTRIBUTING.md", "topic": "contribution rules" }

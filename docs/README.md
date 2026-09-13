@@ -15,6 +15,7 @@
 | [`security.md`](security.md) | HTTP security model and secrets handling |
 | [`llm-workflow.md`](llm-workflow.md) | Coding-agent workflow + context generation |
 | [`troubleshooting.md`](troubleshooting.md) | Failure modes and fixes |
+| [`roadmap.md`](roadmap.md) | Target architecture review, reconciliation, and delivery plan |
 | [`openapi.yaml`](openapi.yaml) | OpenAPI 3.1 description of the HTTP API |
 | [`../project.manifest.json`](../project.manifest.json) | Machine-readable module/command/doc map (validated by `./gradlew validateManifest`) |
 | [`examples/mapi.properties.example`](examples/mapi.properties.example) | Placeholder-only config example |

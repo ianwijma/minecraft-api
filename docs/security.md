@@ -24,6 +24,30 @@ repository.
   expose the port beyond loopback (no tunneling without understanding the
   consequences).
 
+## Token bootstrap
+
+When the API is enabled, the token is resolved from `MAPI_HTTP_TOKEN`, then
+`http.token`, then the token file (`http.tokenFile`, default
+`<gameDir>/mcapi/token`). A missing token file is **auto-generated**
+(256-bit random) and written atomically with owner-only permissions (POSIX
+`rw-------` on the file and `rwx------` on the containing directory; on
+filesystems without POSIX attributes, default platform protections apply).
+
+- The token value is **never logged** — neither in plain logs nor in the
+  discovery file, HTTP responses, or crash reports.
+- Newly generated tokens log a non-secret 12-hex-digit SHA-256 fingerprint
+  plus the file location for correlation.
+- The `mcapi/` directory is a runtime secret/data directory; commit patterns
+  (`.gitignore`: `*token*`) keep its contents out of version control.
+
+## Discovery file
+
+`<gameDir>/mcapi/discovery.json` advertises the running instance to local
+tools (schema version 1, atomic writes). It contains no secrets — instance
+id, process/session identifiers, PID, readiness, versions, and the loopback
+endpoint only. Consumers must treat it as untrusted data and validate the
+endpoint before sending credentials. It is removed when the API stops.
+
 ## Resource limits
 
 | Limit | Value | Behavior when hit |
@@ -55,9 +79,10 @@ thread is never blocked by network work.
 
 ## Secrets handling in this repository
 
-- Tokens come from `MAPI_HTTP_TOKEN` (preferred) or `http.token` in
-  `mapi.properties`; both are gitignored patterns. `docs/examples/` contains
-  placeholder-only examples.
+- Tokens come from `MAPI_HTTP_TOKEN` (preferred), `http.token` in
+  `mapi.properties`, or the token file `<gameDir>/mcapi/token` (auto-written
+  when enabled and absent); all are gitignored patterns. `docs/examples/`
+  contains placeholder-only examples.
 - Never log token values (the code logs lengths/enablement only); never
   commit `.env`, tokens, `eula.txt`, run directories, logs, or worlds.
 - `scripts/server-smoke.sh` requires `MAPI_ACCEPT_EULA=true` explicitly;

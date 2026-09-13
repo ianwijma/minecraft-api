@@ -2,12 +2,15 @@ package dev.example.mapi.neoforge;
 
 import dev.example.mapi.api.PlatformType;
 import dev.example.mapi.internal.MapiPlatform;
+import dev.example.mapi.internal.PhysicalSide;
 import dev.example.mapi.internal.RawServerInfo;
 import dev.example.mapi.internal.ServerHandle;
 import dev.example.mapi.internal.ServerLifecycleListener;
 import java.nio.file.Path;
 import net.minecraft.server.MinecraftServer;
+import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.ModList;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
@@ -50,6 +53,13 @@ final class NeoForgePlatform implements MapiPlatform {
     @Override
     public Path configDir() {
         return FMLPaths.CONFIGDIR.get();
+    }
+
+    @Override
+    public PhysicalSide physicalSide() {
+        return FMLEnvironment.getDist() == Dist.CLIENT
+                ? PhysicalSide.CLIENT
+                : PhysicalSide.DEDICATED_SERVER;
     }
 
     @Override
