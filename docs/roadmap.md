@@ -107,6 +107,20 @@ scenarios, and **parity across Fabric and NeoForge** enforced by tests.
   `Holder#getRegisteredName`, `IModInfo`, Fabric `ModMetadata`); recipes
   deferred (26.2 `RecipeManager` research pending).
 
+### Slice 2.2 — Structured diagnostics (DONE 2026-09-13)
+
+- `GET /api/v1/threads` (paginated thread dump with CPU time) and
+  `POST /api/v1/memory/gc` (heap before/after) under the `diagnostics`
+  scope, pure JDK; profiler start/stop documented as planned-not-built.
+
+### Slice 2.3 — Block-entity read with typed NBT JSON (DONE 2026-09-13)
+
+- `GET /api/v1/server/world/block-entity` with the §7 typed NBT JSON
+  convention (lossless: byte/short/long/float markers, arrays vs lists,
+  strings for longs), explicit `NO_BLOCK_ENTITY` vs `CHUNK_UNLOADED`
+  outcomes via a `RawBlockEntityRead` record, `saveWithFullMetadata`
+  verified via javap on 26.2.
+
 Each slice must keep `./gradlew verify` green (format, tests, jar
 validation, manifest) and update docs in the same change set.
 
