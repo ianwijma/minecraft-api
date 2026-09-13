@@ -36,6 +36,8 @@ public enum ProblemCode {
             "Request body exceeds the configured limit"),
     NOT_FOUND("NOT_FOUND", 404, false, Family.MIDDLEWARE,
             "Unknown endpoint"),
+    BAD_REQUEST("BAD_REQUEST", 400, false, Family.MIDDLEWARE,
+            "Malformed or invalid request parameters"),
     SERVER_BUSY("SERVER_BUSY", 503, true, Family.MIDDLEWARE,
             "Game thread busy; bounded wait elapsed"),
 

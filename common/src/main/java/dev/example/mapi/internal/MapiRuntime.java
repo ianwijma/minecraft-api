@@ -28,6 +28,8 @@ public final class MapiRuntime implements Mapi {
 
     private final MapiPlatform platform;
     private final MapiServicesImpl services = new MapiServicesImpl();
+    private final dev.example.mapi.internal.event.EventBus eventBus =
+            new dev.example.mapi.internal.event.EventBus();
 
     private volatile ServerHandle serverHandle;
     private volatile HttpApiServer httpServer;
@@ -113,6 +115,14 @@ public final class MapiRuntime implements Mapi {
      */
     public boolean httpRunning() {
         return httpServer != null;
+    }
+
+    /**
+     * @return the runtime-wide ordered event bus for lifecycle and operation
+     *     events (spec §6, §13); internal accessor (also used by tests)
+     */
+    public dev.example.mapi.internal.event.EventBus eventBus() {
+        return eventBus;
     }
 
     // ------------------------------------------------------------------

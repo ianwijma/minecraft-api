@@ -29,7 +29,7 @@ repository.
 | Limit | Value | Behavior when hit |
 | --- | --- | --- |
 | Request body | 8192 bytes | 413 (declared size checked before reading) |
-| Worker threads | 2 daemon | bounded queue (32); saturation drops connections |
+| Worker threads | 2 steady-state daemon (headroom to 10 only for event-stream connections, capped at 8 concurrent streams) | bounded queue (32); saturation drops connections; 429 beyond stream cap |
 | Rate limit | 60/min per client (configurable) | 429 + `Retry-After: 60` |
 | Snapshot wait | 500 ms | 503 `SERVER_BUSY` |
 | Bind conflict | n/a | error log, game unaffected |

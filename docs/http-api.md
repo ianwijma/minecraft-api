@@ -104,6 +104,30 @@ when an operation provides one.
 Response headers always include `Content-Type: application/json; charset=utf-8`,
 `Cache-Control: no-store`, and `X-MAPI-Protocol-Version: 1`.
 
+## Event stream (SSE)
+
+`GET /api/v1/events/stream` — long-lived `text/event-stream` of runtime
+events (spec §13.1). The normal bearer header is required; there are no
+query-string tokens or stream tickets, and CORS stays disabled.
+
+Query parameters:
+
+| Param | Default | Meaning |
+| --- | --- | --- |
+| `cursor` | latest | resume strictly after this sequence number (`0` replays retained history) |
+| `types` | all | comma-separated event-type filter |
+| `world` | all | restrict to a `worldSessionId` |
+| `keepaliveSeconds` | 15 | 1–120; comment-line keepalive interval |
+
+Frame format: `id:` (sequence number), `event:` (type), `data:` (JSON object
+with `seq`, `type`, `atEpochMs`, optional `worldSessionId`, `payload`).
+Comment lines (`:...`) carry `keepalive <ts>` and
+`event-gap droppedUpTo=<seq>` notices for explicit gap handling. A consumer
+should establish the cursor before triggering actions, then wait from that
+cursor. At most 8 concurrent streams per listener (429 `RATE_LIMITED`
+beyond the cap); each stream occupies a worker thread headroom slot while
+the steady-state request pool stays at 2.
+
 ## curl examples
 
 ```bash

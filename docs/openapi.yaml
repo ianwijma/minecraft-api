@@ -38,6 +38,40 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/events/stream:
+    get:
+      operationId: streamEvents
+      summary: Server-Sent Events stream of runtime events (spec §13)
+      description: >
+        Long-lived text/event-stream. Bearer header required (no query-string
+        tokens or stream tickets; no CORS headers). Query parameters: cursor
+        (resume from sequence number, default latest), types (comma-separated
+        event-type filter), world (worldSessionId filter), keepaliveSeconds
+        (1-120, default 15). Comment lines carry keepalives and event-gap
+        notices. Concurrency is capped (429 beyond the cap).
+      parameters:
+        - name: cursor
+          in: query
+          schema: { type: integer, minimum: 0 }
+        - name: types
+          in: query
+          schema: { type: string }
+        - name: world
+          in: query
+          schema: { type: string }
+        - name: keepaliveSeconds
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 120, default: 15 }
+      responses:
+        "200":
+          description: OK — infinite text/event-stream
+          content:
+            text/event-stream:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
   /api/v1/server/status:
     get:
       operationId: getServerStatus
@@ -79,6 +113,11 @@ components:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
     ServerBusy:
       description: Server thread busy; snapshot timed out
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    BadRequest:
+      description: Malformed or invalid request parameters
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResponse" }

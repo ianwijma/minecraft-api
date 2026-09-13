@@ -67,6 +67,8 @@ public final class HttpApiServer {
 
     private HttpServer httpServer;
     private ThreadPoolExecutor workers;
+    private java.util.concurrent.Semaphore streamPermits;
+    private EventStreamHandler streamHandler;
 
     /**
      * @param config  validated configuration (HTTP must be enabled)
@@ -104,7 +106,8 @@ public final class HttpApiServer {
                     logger.error("MAPI HTTP: uncaught exception in worker", e));
             return thread;
         };
-        workers = new ThreadPoolExecutor(2, 2, 30L, TimeUnit.SECONDS,
+        workers = new ThreadPoolExecutor(2, 2 + EventStreamHandler.MAX_CONCURRENT_STREAMS,
+                30L, TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(32), factory, new ThreadPoolExecutor.AbortPolicy());
         workers.allowCoreThreadTimeOut(true);
         try {
@@ -123,6 +126,8 @@ public final class HttpApiServer {
             return false;
         }
         httpServer.createContext("/", this::dispatch);
+        streamPermits = new java.util.concurrent.Semaphore(EventStreamHandler.MAX_CONCURRENT_STREAMS);
+        streamHandler = new EventStreamHandler(runtime.eventBus());
         httpServer.setExecutor(workers);
         httpServer.start();
         logger.info("MAPI HTTP API listening on http://127.0.0.1:{} (loopback only, bearer token required)",
@@ -165,6 +170,60 @@ public final class HttpApiServer {
     // ------------------------------------------------------------------
     // Routing and middleware
     // ------------------------------------------------------------------
+
+    private void streamMiddleware(HttpExchange exchange) throws IOException {
+        try {
+            if (!isAllowedHost(exchange.getRequestHeaders().getFirst("Host"))) {
+                error(exchange, ProblemCode.FORBIDDEN_HOST, "Host header not allowed");
+                return;
+            }
+            String origin = exchange.getRequestHeaders().getFirst("Origin");
+            if (origin != null && !isAllowedOrigin(origin)) {
+                error(exchange, ProblemCode.FORBIDDEN_ORIGIN, "Origin not allowed");
+                return;
+            }
+            String remote = String.valueOf(exchange.getRemoteAddress().getAddress());
+            if (!rateLimiter.tryAcquire(remote)) {
+                exchange.getResponseHeaders().set("Retry-After", "60");
+                error(exchange, ProblemCode.RATE_LIMITED, "Too many requests; slow down");
+                return;
+            }
+            if (!authorized(exchange.getRequestHeaders().getFirst("Authorization"))) {
+                exchange.getResponseHeaders().set("WWW-Authenticate", "Bearer realm=\"mapi\"");
+                error(exchange, ProblemCode.UNAUTHORIZED, "Missing or invalid bearer token");
+                return;
+            }
+            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.getResponseHeaders().set("Allow", "GET");
+                error(exchange, ProblemCode.METHOD_NOT_ALLOWED, "Only GET requests are supported");
+                return;
+            }
+            if (!streamPermits.tryAcquire()) {
+                error(exchange, ProblemCode.RATE_LIMITED, "Too many concurrent streams");
+                return;
+            }
+            try {
+                streamHandler.handle(exchange);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                streamPermits.release();
+            }
+        } catch (ProblemException e) {
+            try {
+                error(exchange, e.code(), e.getMessage(), e.details());
+            } catch (IOException ignored) {
+                // Response already committed or socket gone.
+            }
+        } catch (RuntimeException e) {
+            logger.error("MAPI HTTP: unexpected error in stream handler", e);
+            try {
+                error(exchange, ProblemCode.INTERNAL, "Internal server error");
+            } catch (IOException ignored) {
+                // Response already committed or socket gone.
+            }
+        }
+    }
 
     private void dispatch(HttpExchange exchange) throws IOException {
         try {
@@ -228,6 +287,7 @@ public final class HttpApiServer {
             case API_PREFIX + "health" -> respond(exchange, 200, JsonWriter.write(health()));
             case API_PREFIX + "info" -> respond(exchange, 200, JsonWriter.write(info()));
             case API_PREFIX + "server/status" -> sendServerStatus(exchange);
+            case API_PREFIX + "events/stream" -> streamMiddleware(exchange);
             default -> error(exchange, ProblemCode.NOT_FOUND, "Unknown endpoint: " + path);
         }
     }
