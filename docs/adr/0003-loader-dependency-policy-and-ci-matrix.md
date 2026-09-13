@@ -2,6 +2,8 @@
 
 Date: 2026-09-13
 Status: Accepted (2026-09-13)
+Amended: 2026-09-13 — the dedicated-server smoke job is the single
+EULA-gated CI exception (owner decision).
 
 ## Context
 
@@ -39,12 +41,20 @@ docs/toolchain.md, verified 2026-09-13). No CI workflows exist yet
      automatically.
    - Jobs: (a) `./gradlew verify` at root (format, tests, distribution and
      manifest validation); (b) loader build matrix `{fabric, neoforge}` for
-     distributable artifacts; (c) lint/verify on docs-affecting changes is
-     covered by (a).
-   - Game-launching checks (`runClient`, server smoke, E2E) are NOT CI jobs
-     initially: CI runners have no display or GPU and smoke tests require an
-     explicit EULA decision. They run locally / on release gates
-     (chunk 8.4) and are marked NOT RUN when absent.
+     distributable artifacts; (c) consumer example compiled against the
+     published artifact (`publishLocal` +
+     `-PmapiConsumerUseMavenLocal=true`); (d) `doctor` + `llmContext` with
+     the generated context uploaded; (e) dedicated-server smoke test (see
+     below). Triggers include `workflow_dispatch`.
+   - Game-launching checks: `runClient` and E2E suites are not CI jobs
+     initially (CI runners have no display or GPU); they run locally and on
+     release gates (chunk 8.4) and are marked NOT RUN when absent. The
+     dedicated-server smoke test is the **single exception**: it runs in CI
+     only when the owner explicitly sets the repository variable
+     `MAPI_ACCEPT_EULA=true`; otherwise the job is skipped. CI never
+     accepts the EULA silently — setting the variable is the explicit
+     operator decision. Release-gate smoke (chunk 8.4) is required
+     regardless.
    - PRs: at least job (a) required green before merge.
 
 ## Consequences
