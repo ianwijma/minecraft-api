@@ -48,6 +48,12 @@ public interface MapiPlatform {
     PhysicalSide physicalSide();
 
     /**
+     * @return metadata for every loaded mod (loader containers), sorted by
+     *         id, never {@code null}; process-wide and thread-safe
+     */
+    java.util.List<RawModInfo> mods();
+
+    /**
      * @return the platform-provided logger, never {@code null}
      */
     Logger logger();

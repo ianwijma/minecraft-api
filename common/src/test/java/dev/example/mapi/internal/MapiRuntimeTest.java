@@ -217,6 +217,11 @@ public class MapiRuntimeTest {
         }
 
         @Override
+        public java.util.List<dev.example.mapi.internal.RawModInfo> mods() {
+            return List.of(new dev.example.mapi.internal.RawModInfo("mapi", "Minecraft API", "0.1.0"));
+        }
+
+        @Override
         public Logger logger() {
             return logger;
         }
@@ -334,6 +339,36 @@ public class MapiRuntimeTest {
         public Supplier<dev.example.mapi.internal.RawCommandResult> commandSupplier(String command,
                 int permissionLevel) {
             return () -> commandExecutor.apply(command, permissionLevel);
+        }
+
+        @Override
+        public Supplier<dev.example.mapi.internal.ServerHandle.RegistryIdPage> registryIdsSupplier(
+                String type, int limit, int offset) {
+            if (!type.equals("block")) {
+                throw new dev.example.mapi.internal.UnknownRegistryTypeException("Unknown registry type: " + type);
+            }
+            java.util.List<String> ids = java.util.List.of("minecraft:air", "minecraft:dirt",
+                    "minecraft:stone");
+            return () -> new dev.example.mapi.internal.ServerHandle.RegistryIdPage(
+                    ids.subList(Math.min(offset, ids.size()), Math.min(offset + limit, ids.size())), ids.size());
+        }
+
+        @Override
+        public Supplier<java.util.List<String>> tagIdsSupplier(String type) {
+            if (!type.equals("block")) {
+                throw new dev.example.mapi.internal.UnknownRegistryTypeException("Unknown registry type: " + type);
+            }
+            return () -> java.util.List.of("minecraft:logs", "minecraft:planks");
+        }
+
+        @Override
+        public Supplier<java.util.List<String>> tagMembersSupplier(String type, String tagId) {
+            if (!type.equals("block")) {
+                throw new dev.example.mapi.internal.UnknownRegistryTypeException("Unknown registry type: " + type);
+            }
+            return () -> tagId.equals("minecraft:planks")
+                    ? java.util.List.of("minecraft:oak_planks", "minecraft:spruce_planks")
+                    : java.util.List.of();
         }
     }
 }

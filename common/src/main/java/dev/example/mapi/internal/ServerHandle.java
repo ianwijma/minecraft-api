@@ -88,4 +88,48 @@ public interface ServerHandle {
      * @return the captured outcome, never {@code null}
      */
     Supplier<RawCommandResult> commandSupplier(String command, int permissionLevel);
+
+    /**
+     * Lists registry entry ids (sorted) for one page (spec §6.1 registry
+     * inspection). Callers must only invoke this via
+     * {@link #executeOnServerThread(Runnable)}.
+     *
+     * @param type  registry type (block, item, entity_type, block_entity_type,
+     *              fluid, sound_event, mob_effect, attribute)
+     * @param limit page size (already clamped)
+     * @param offset page offset (already clamped)
+     * @return sorted id page plus total count, never {@code null}
+     * @throws UnknownRegistryTypeException when the type is not supported
+     */
+    Supplier<RegistryIdPage> registryIdsSupplier(String type, int limit, int offset);
+
+    /**
+     * Lists tag ids for a registry type (sorted). Callers must only invoke
+     * this via {@link #executeOnServerThread(Runnable)}.
+     *
+     * @param type registry type (block, item, entity_type, fluid)
+     * @return sorted tag id list, never {@code null}
+     * @throws UnknownRegistryTypeException when the type is not supported
+     */
+    Supplier<List<String>> tagIdsSupplier(String type);
+
+    /**
+     * Lists the member ids of one tag. Callers must only invoke this via
+     * {@link #executeOnServerThread(Runnable)}.
+     *
+     * @param type registry type
+     * @param tagId tag id ({@code namespace:path}, without the {@code #})
+     * @return sorted member id list (empty when the tag is unknown)
+     * @throws UnknownRegistryTypeException when the type is not supported
+     */
+    Supplier<List<String>> tagMembersSupplier(String type, String tagId);
+
+    /**
+     * Registry id page.
+     *
+     * @param ids   sorted page of ids
+     * @param total total entries in the registry
+     */
+    record RegistryIdPage(List<String> ids, int total) {
+    }
 }

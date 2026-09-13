@@ -4,12 +4,16 @@ import dev.example.mapi.api.PlatformType;
 import dev.example.mapi.internal.MapiPlatform;
 import dev.example.mapi.internal.PhysicalSide;
 import dev.example.mapi.internal.RawBlockRead;
+import dev.example.mapi.internal.RawCommandResult;
+import dev.example.mapi.internal.RawModInfo;
 import dev.example.mapi.internal.RawPlayerSnapshot;
 import dev.example.mapi.internal.RawServerInfo;
 import dev.example.mapi.internal.RawWorldTime;
 import dev.example.mapi.internal.ServerHandle;
+import dev.example.mapi.internal.ServerHandle.RegistryIdPage;
 import dev.example.mapi.internal.ServerLifecycleListener;
 import dev.example.mapi.internal.UnknownDimensionException;
+import dev.example.mapi.internal.UnknownRegistryTypeException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -20,12 +24,16 @@ import net.fabricmc.api.EnvType;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.Property;
@@ -70,6 +78,19 @@ final class FabricPlatform implements MapiPlatform {
         return FabricLoader.getInstance().getEnvironmentType() == EnvType.CLIENT
                 ? PhysicalSide.CLIENT
                 : PhysicalSide.DEDICATED_SERVER;
+    }
+
+    @Override
+    public List<RawModInfo> mods() {
+        List<RawModInfo> mods = new ArrayList<>();
+        for (var container : FabricLoader.getInstance().getAllMods()) {
+            mods.add(new RawModInfo(
+                    container.getMetadata().getId(),
+                    container.getMetadata().getName(),
+                    container.getMetadata().getVersion().getFriendlyString()));
+        }
+        mods.sort(java.util.Comparator.comparing(RawModInfo::id));
+        return List.copyOf(mods);
     }
 
     @Override
@@ -229,6 +250,56 @@ final class FabricPlatform implements MapiPlatform {
 
         private static <T extends Comparable<T>> String propertyName(BlockState state, Property<T> property) {
             return property.getName(state.getValue(property));
+        }
+
+        private static Registry<?> registryFor(String type) {
+            return switch (type) {
+                case "block" -> BuiltInRegistries.BLOCK;
+                case "item" -> BuiltInRegistries.ITEM;
+                case "entity_type" -> BuiltInRegistries.ENTITY_TYPE;
+                case "block_entity_type" -> BuiltInRegistries.BLOCK_ENTITY_TYPE;
+                case "fluid" -> BuiltInRegistries.FLUID;
+                case "sound_event" -> BuiltInRegistries.SOUND_EVENT;
+                case "mob_effect" -> BuiltInRegistries.MOB_EFFECT;
+                case "attribute" -> BuiltInRegistries.ATTRIBUTE;
+                default -> throw new UnknownRegistryTypeException(
+                        "Unknown registry type: " + type + " (supported: block, item, entity_type, "
+                                + "block_entity_type, fluid, sound_event, mob_effect, attribute)");
+            };
+        }
+
+        @Override
+        public java.util.function.Supplier<RegistryIdPage> registryIdsSupplier(String type, int limit,
+                int offset) {
+            return () -> {
+                List<String> ids = registryFor(type).keySet().stream().map(Identifier::toString)
+                        .sorted().toList();
+                int from = Math.min(offset, ids.size());
+                int to = Math.min(offset + limit, ids.size());
+                return new RegistryIdPage(ids.subList(from, to), ids.size());
+            };
+        }
+
+        @Override
+        public java.util.function.Supplier<List<String>> tagIdsSupplier(String type) {
+            return () -> registryFor(type).listTagIds()
+                    .map(tagKey -> tagKey.location().toString())
+                    .sorted()
+                    .toList();
+        }
+
+        @Override
+        public java.util.function.Supplier<List<String>> tagMembersSupplier(String type, String tagId) {
+            return () -> tagMembers(registryFor(type), tagId);
+        }
+
+        private static <T> List<String> tagMembers(Registry<T> registry, String tagId) {
+            TagKey<T> tagKey = TagKey.create(registry.key(), Identifier.parse(tagId));
+            List<String> members = new ArrayList<>();
+            for (Holder<T> holder : registry.getTagOrEmpty(tagKey)) {
+                members.add(holder.getRegisteredName());
+            }
+            return members.stream().sorted().toList();
         }
     }
 }

@@ -159,6 +159,21 @@ wait → **503**:
 {"error":{"code":"SERVER_BUSY","message":"Server thread busy; status snapshot timed out. Retry shortly."},"protocolVersion":1}
 ```
 
+### `GET /api/v1/registry/{type}`, `GET /api/v1/tags/{type}`, `GET /api/v1/mods` (slice 2.1)
+
+Registry and data inspection (spec §6.1, `observe` scope, owning-thread
+reads). Registry types supported: `block`, `item`, `entity_type`,
+`block_entity_type`, `fluid`, `sound_event`, `mob_effect`, `attribute`
+(unknown type → **404** `REGISTRY_TYPE_NOT_FOUND`).
+
+- `/registry/{type}?limit=&offset=` — sorted id page with `total`,
+  `truncated`, `dataVersion`; `?id=` checks one entry
+  (`{"present":true|false}`).
+- `/tags/{type}` — sorted tag ids; `?tag=<id>` returns the tag's member ids
+  (empty list for unknown tags).
+- `/mods` — loaded mod metadata (`id`, `name`, `version`) from the loader,
+  process-wide (no game-thread involvement).
+
 ### `GET /api/v1/server/players?fields=&limit=&offset=`
 
 Connected-player snapshots via a bounded owning-thread read (slice 0.5).

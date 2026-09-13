@@ -4,7 +4,10 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import dev.example.mapi.api.ServerStatusSnapshot;
 import dev.example.mapi.internal.MapiRuntime;
+import dev.example.mapi.internal.RawModInfo;
+import dev.example.mapi.internal.ServerHandle;
 import dev.example.mapi.internal.SnapshotResult;
+import dev.example.mapi.internal.UnknownRegistryTypeException;
 import dev.example.mapi.internal.client.ClientStatusSnapshot;
 import dev.example.mapi.internal.client.KeyActionResult;
 import dev.example.mapi.internal.client.MapiClientOps;
@@ -303,7 +306,18 @@ public final class HttpApiServer {
             case API_PREFIX + "server/world/time" -> sendWorldTime(exchange, requestId);
             case API_PREFIX + "client/status" -> sendClientStatus(exchange, requestId);
             case API_PREFIX + "client/screen/tree" -> sendScreenTree(exchange, requestId);
-            default -> error(exchange, requestId, 404, "NOT_FOUND", "Unknown endpoint: " + path);
+            case API_PREFIX + "mods" -> sendMods(exchange, requestId);
+            default -> {
+                if (path.startsWith(API_PREFIX + "registry/")) {
+                    sendRegistry(exchange, requestId, path.substring((API_PREFIX + "registry/").length()));
+                    return;
+                }
+                if (path.startsWith(API_PREFIX + "tags/")) {
+                    sendTags(exchange, requestId, path.substring((API_PREFIX + "tags/").length()));
+                    return;
+                }
+                error(exchange, requestId, 404, "NOT_FOUND", "Unknown endpoint: " + path);
+            }
         }
     }
 
@@ -731,6 +745,110 @@ public final class HttpApiServer {
             requested.add(name);
         }
         return requested;
+    }
+
+    // ------------------------------------------------------------------
+    // Registry / tags / mods inspection (spec §6.1, slice 2.1)
+    // ------------------------------------------------------------------
+
+    private void sendMods(HttpExchange exchange, String requestId) throws IOException {
+        List<RawModInfo> mods = runtime.mods();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("mods", mods.stream().map(mod -> Map.of(
+                "id", mod.id(), "name", mod.name(), "version", mod.version())).toList());
+        body.put("total", mods.size());
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private void sendRegistry(HttpExchange exchange, String requestId, String type) throws IOException {
+        if (type.isBlank() || type.contains("/")) {
+            error(exchange, requestId, 404, "NOT_FOUND", "Unknown endpoint: registry/" + type);
+            return;
+        }
+        Map<String, List<String>> query = splitQuery(exchange.getRequestURI().getRawQuery());
+        String id = single(query, "id");
+        if (id != null) {
+            var result = runtime.tryReadOnServerThread(() -> runtime.serverHandle()
+                    .registryIdsSupplier(type, Integer.MAX_VALUE, 0).get());
+            if (result.failure() instanceof UnknownRegistryTypeException) {
+                error(exchange, requestId, 404, "REGISTRY_TYPE_NOT_FOUND", result.failure().getMessage());
+                return;
+            }
+            if (!handleReadOutcome(exchange, requestId, result)) {
+                return;
+            }
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("protocolVersion", PROTOCOL_VERSION);
+            body.put("type", type);
+            body.put("id", id);
+            body.put("dataVersion", readDataVersion());
+            body.put("present", result.value().ids().contains(id));
+            respond(exchange, requestId, 200, JsonWriter.write(body));
+            return;
+        }
+        int limit = intParam(query, "limit", 100, exchange, requestId);
+        if (limit < 0) {
+            return;
+        }
+        int offset = intParam(query, "offset", 0, exchange, requestId);
+        if (offset < 0) {
+            return;
+        }
+        var result = runtime.tryReadOnServerThread(() -> runtime.serverHandle()
+                .registryIdsSupplier(type, limit, offset).get());
+        if (result.failure() instanceof UnknownRegistryTypeException) {
+            error(exchange, requestId, 404, "REGISTRY_TYPE_NOT_FOUND", result.failure().getMessage());
+            return;
+        }
+        if (!handleReadOutcome(exchange, requestId, result)) {
+            return;
+        }
+        ServerHandle.RegistryIdPage page = result.value();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("type", type);
+        body.put("dataVersion", readDataVersion());
+        body.put("ids", page.ids());
+        body.put("total", page.total());
+        body.put("limit", limit);
+        body.put("offset", offset);
+        body.put("truncated", offset + limit < page.total());
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private void sendTags(HttpExchange exchange, String requestId, String type) throws IOException {
+        if (type.isBlank() || type.contains("/")) {
+            error(exchange, requestId, 404, "NOT_FOUND", "Unknown endpoint: tags/" + type);
+            return;
+        }
+        Map<String, List<String>> query = splitQuery(exchange.getRequestURI().getRawQuery());
+        String tag = single(query, "tag");
+        var result = runtime.tryReadOnServerThread(() -> tag != null
+                ? runtime.serverHandle().tagMembersSupplier(type, tag).get()
+                : runtime.serverHandle().tagIdsSupplier(type).get());
+        if (result.failure() instanceof UnknownRegistryTypeException) {
+            error(exchange, requestId, 404, "REGISTRY_TYPE_NOT_FOUND", result.failure().getMessage());
+            return;
+        }
+        if (result.failure() instanceof IllegalArgumentException) {
+            error(exchange, requestId, 400, "INVALID_QUERY", result.failure().getMessage());
+            return;
+        }
+        if (!handleReadOutcome(exchange, requestId, result)) {
+            return;
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("type", type);
+        body.put("dataVersion", readDataVersion());
+        if (tag != null) {
+            body.put("tag", tag);
+            body.put("members", result.value());
+        } else {
+            body.put("tags", result.value());
+        }
+        respond(exchange, requestId, 200, JsonWriter.write(body));
     }
 
     // ------------------------------------------------------------------

@@ -295,6 +295,13 @@ public final class MapiRuntime implements Mapi {
     }
 
     /**
+     * @return metadata for every loaded mod (sorted by id)
+     */
+    public List<RawModInfo> mods() {
+        return platform.mods();
+    }
+
+    /**
      * @return the logical sides this process can currently serve; the client
      *         side appears once client operations are registered
      */

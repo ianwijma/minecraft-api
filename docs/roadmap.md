@@ -95,6 +95,18 @@ scenarios, and **parity across Fabric and NeoForge** enforced by tests.
 > open items listed below. These need an operator/CI environment and are
 > marked NOT RUN until executed there.
 
+## 5. Phase 2 — extended tier slices
+
+### Slice 2.1 — Registry / tags / mods inspection (DONE 2026-09-13)
+
+- `GET /api/v1/registry/{type}` (8 verified registry types, sorted id pages
+  with `dataVersion`, single-entry `?id=` check), `GET /api/v1/tags/{type}`
+  (tag ids + `?tag=` members), `GET /api/v1/mods` (loader containers via a
+  new `MapiPlatform#mods()` seam — Fabric Loader / NeoForge ModList).
+- All 26.2 APIs javap-verified (`Registry#keySet`, `RegistryLookup#listTagIds`,
+  `Holder#getRegisteredName`, `IModInfo`, Fabric `ModMetadata`); recipes
+  deferred (26.2 `RecipeManager` research pending).
+
 Each slice must keep `./gradlew verify` green (format, tests, jar
 validation, manifest) and update docs in the same change set.
 

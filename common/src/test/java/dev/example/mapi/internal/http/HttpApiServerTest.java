@@ -768,6 +768,52 @@ class HttpApiServerTest {
     }
 
     // ------------------------------------------------------------------
+    // Registry / tags / mods inspection (slice 2.1)
+    // ------------------------------------------------------------------
+
+    @Test
+    void registryTagsAndModsInspection() throws Exception {
+        startServer(enabledConfig());
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+
+        HttpResponse<String> registry = get("/api/v1/registry/block?limit=2&offset=1",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, registry.statusCode(), registry.body());
+        assertTrue(registry.body().contains("\"ids\":[\"minecraft:dirt\",\"minecraft:stone\"]"), registry.body());
+        assertTrue(registry.body().contains("\"total\":3"), registry.body());
+        assertTrue(registry.body().contains("\"truncated\":false"), registry.body());
+
+        HttpResponse<String> truncated = get("/api/v1/registry/block?limit=2&offset=0",
+                "Authorization", "Bearer " + TOKEN);
+        assertTrue(truncated.body().contains("\"truncated\":true"), truncated.body());
+
+        HttpResponse<String> single = get("/api/v1/registry/block?id=minecraft:stone",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, single.statusCode(), single.body());
+        assertTrue(single.body().contains("\"present\":true"), single.body());
+
+        HttpResponse<String> unknownType = get("/api/v1/registry/bogus",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(404, unknownType.statusCode(), unknownType.body());
+        assertTrue(unknownType.body().contains("REGISTRY_TYPE_NOT_FOUND"), unknownType.body());
+
+        HttpResponse<String> tags = get("/api/v1/tags/block", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, tags.statusCode(), tags.body());
+        assertTrue(tags.body().contains("\"tags\":[\"minecraft:logs\",\"minecraft:planks\"]"), tags.body());
+
+        HttpResponse<String> members = get("/api/v1/tags/block?tag=minecraft:planks",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, members.statusCode(), members.body());
+        assertTrue(members.body().contains("\"members\":[\"minecraft:oak_planks\",\"minecraft:spruce_planks\"]"),
+                members.body());
+
+        HttpResponse<String> mods = get("/api/v1/mods", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, mods.statusCode(), mods.body());
+        assertTrue(mods.body().contains("\"id\":\"mapi\""), mods.body());
+        assertTrue(mods.body().contains("\"total\":1"), mods.body());
+    }
+
+    // ------------------------------------------------------------------
     // Leases (spec §5.3)
     // ------------------------------------------------------------------
 
