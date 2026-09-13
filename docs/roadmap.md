@@ -86,6 +86,15 @@ scenarios, and **parity across Fabric and NeoForge** enforced by tests.
 
 ## 4. Delivery plan — Phase 0 in verifiable slices
 
+> **Phase 0 status (2026-09-13):** all slices implemented; every API
+> verified against the real 26.2 jars and covered by contract/negative
+> tests; `./gradlew verify` green. Remaining before Phase 0 is "complete"
+> per §13: the game-run checks — `server-smoke.sh`/`launchMatrix` with
+> `MAPI_ACCEPT_EULA`, display-capable client verification of the slice 0.6
+> endpoints, and the production-jar launch test — plus the slice 0.6/0.7
+> open items listed below. These need an operator/CI environment and are
+> marked NOT RUN until executed there.
+
 Each slice must keep `./gradlew verify` green (format, tests, jar
 validation, manifest) and update docs in the same change set.
 
