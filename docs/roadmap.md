@@ -152,20 +152,36 @@ validation, manifest) and update docs in the same change set.
 - Player identity exposure documented as the posture change (D7) in
   `docs/security.md`.
 
-### Slice 0.6 — game-client source set + first client evidence (PENDING)
+### Slice 0.6 — game-client source set + first client evidence (PARTIAL 2026-09-13)
 
-- Client-only source set per loader (`loom.splitEnvironmentSourceSets()`,
-  NeoForge dist guards); **all 26.2 client APIs verified against the real
-  jar first** (`docs/toolchain.md` method) — no invented APIs.
-- The classload tripwire must grow an explicit client-package allowance
-  (`dev/example/mapi/client/**` loaded only on clients) before client code
-  lands.
-- One `input`-mode interaction, screen tree (semantic, with revision),
-  screenshot capture with `frameId`, completion levels for client actions
-  (`observed: false` + reason when authority is missing).
-- Mode parameter from day one (G7): no silent fallback.
-- Status: NOT STARTED (requires game-run verification; the seam design is
-  agreed, implementation deliberately deferred until it can be tested).
+Done in this change set:
+
+- Client-only isolation on both loaders: Fabric `client` source set
+  (`loom.splitEnvironmentSourceSets()` + `client` entrypoint) and NeoForge
+  `@OnlyIn(Dist.CLIENT)` classes behind a dist guard — all under
+  `dev.example.mapi.client.*`, the documented exception the classload
+  tripwire now allows.
+- `MapiClientOps` seam + client-thread scheduler registration
+  (`MapiBootstrap.registerClientOps`); `availableLogicalSides` gains
+  `client` on physical clients.
+- First client evidence endpoints: `GET /api/v1/client/status` (window,
+  GUI scale, open screen class, player presence, dimension, game time) and
+  `GET /api/v1/client/screen/tree` (best-effort semantic widget tree with
+  labels and bounds). All client APIs javap-verified against 26.2
+  (`Gui#screen()` is the 26.2 screen accessor — `Minecraft` no longer has
+  one).
+
+Still open (each needs in-game verification before it can be trusted):
+
+- `input`-mode interaction (key/mouse injection through the client input
+  path), `mode` parameter across interaction endpoints (G7).
+- Screenshot capture with `frameId` + render-thread lifecycle scheduling.
+- Screen tree `revision` (change counter) and richer widget roles/accessible
+  names; `wait-for` on screen predicates.
+- Game-run verification of the two client endpoints on a display-capable
+  machine (compile-verified only here; NOT RUN).
+- `connectionSessionId` + `clientJoined` readiness once client connection
+  lifecycle events exist.
 
 ### Slice 0.7 — Harness + launch matrix + scenarios (PENDING)
 

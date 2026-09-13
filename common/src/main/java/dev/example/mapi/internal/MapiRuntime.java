@@ -49,6 +49,8 @@ public final class MapiRuntime implements Mapi {
     private final EventLog eventLog;
     private final TicketStore ticketStore = new TicketStore();
     private final WebSocketServer wsServer;
+    private volatile dev.example.mapi.internal.client.MapiClientOps clientOps;
+    private volatile java.util.function.Consumer<Runnable> clientScheduler;
 
     private final String processSessionId = UUID.randomUUID().toString();
     private final Instant processStartedAt = Instant.now();
@@ -264,9 +266,15 @@ public final class MapiRuntime implements Mapi {
 
     /**
      * @return the logical sides this process can currently serve; the client
-     *         side appears once client operations exist
+     *         side appears once client operations are registered
      */
     public List<String> availableLogicalSides() {
+        if (serverRunning() && clientOps != null) {
+            return List.of("client", "server");
+        }
+        if (clientOps != null) {
+            return List.of("client");
+        }
         return serverRunning() ? List.of("server") : List.of();
     }
 
@@ -473,6 +481,61 @@ public final class MapiRuntime implements Mapi {
      */
     public TicketStore ticketStore() {
         return ticketStore;
+    }
+
+    /**
+     * Registers client-only operations (physical clients only). Idempotent:
+     * later registrations replace earlier ones (dev loops).
+     *
+     * @param ops     client operations implementation, never {@code null}
+     * @param scheduler client-thread scheduler, never {@code null}
+     */
+    public void registerClientOps(dev.example.mapi.internal.client.MapiClientOps ops,
+            java.util.function.Consumer<Runnable> scheduler) {
+        this.clientOps = Objects.requireNonNull(ops, "ops");
+        this.clientScheduler = Objects.requireNonNull(scheduler, "scheduler");
+        platform.logger().info("MAPI: client operations registered");
+    }
+
+    /**
+     * @return client operations or {@code null} (dedicated servers; clients
+     *         before registration)
+     */
+    public dev.example.mapi.internal.client.MapiClientOps clientOps() {
+        return clientOps;
+    }
+
+    /**
+     * Executes a read on the owning (client) thread with the documented
+     * bounded wait.
+     *
+     * @param supplier read executed on the client thread
+     * @param <T>      result type
+     * @return the outcome; {@link ReadResult#failure()} carries supplier
+     *         exceptions for the caller to translate
+     */
+    public <T> ReadResult<T> tryReadOnClientThread(java.util.function.Supplier<T> supplier) {
+        java.util.function.Consumer<Runnable> scheduler = clientScheduler;
+        if (scheduler == null) {
+            return ReadResult.notRunning();
+        }
+        var task = new java.util.concurrent.FutureTask<>(() -> supplier.get());
+        scheduler.accept(task);
+        try {
+            return new ReadResult<>(task.get(SNAPSHOT_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS),
+                    true, false, null);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return ReadResult.busy();
+        } catch (java.util.concurrent.TimeoutException e) {
+            task.cancel(false);
+            return ReadResult.busy();
+        } catch (java.util.concurrent.ExecutionException e) {
+            RuntimeException cause = e.getCause() instanceof RuntimeException runtime
+                    ? runtime
+                    : new IllegalStateException(e.getCause());
+            return new ReadResult<>(null, true, false, cause);
+        }
     }
 
     /**

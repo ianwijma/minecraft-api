@@ -244,6 +244,30 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/EventTicketResponse" }
+  /api/v1/client/status:
+    get:
+      operationId: getClientStatus
+      summary: Local client snapshot (physical clients with registered ops only)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClientStatusResponse" }
+        "409": { $ref: "#/components/responses/WrongState" }
+        "503": { $ref: "#/components/responses/ServerBusy" }
+  /api/v1/client/screen/tree:
+    get:
+      operationId: getClientScreenTree
+      summary: Best-effort semantic widget tree of the open screen
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScreenTreeResponse" }
+        "409": { $ref: "#/components/responses/WrongState" }
+        "503": { $ref: "#/components/responses/ServerBusy" }
 components:
   securitySchemes:
     bearerAuth:
@@ -566,3 +590,42 @@ components:
                 scheme: { type: string, const: ws }
                 host: { type: string, const: "127.0.0.1" }
                 port: { type: integer }
+    ClientStatusResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [window, guiScale, playerPresent]
+          properties:
+            window:
+              type: object
+              required: [width, height]
+              properties:
+                width: { type: integer }
+                height: { type: integer }
+            guiScale: { type: integer }
+            currentScreenClass:
+              type: string
+              description: absent while the game HUD is showing
+            playerPresent: { type: boolean }
+            dimension: { type: string }
+            gameTime: { type: integer, format: int64 }
+    ScreenTreeResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [coverage, root]
+          properties:
+            coverage: { type: string, const: best-effort }
+            root: { $ref: "#/components/schemas/ScreenNode" }
+    ScreenNode:
+      type: object
+      properties:
+        widgetClass: { type: string }
+        label: { type: string }
+        x: { type: integer }
+        y: { type: integer }
+        width: { type: integer }
+        height: { type: integer }
+        children:
+          type: array
+          items: { $ref: "#/components/schemas/ScreenNode" }

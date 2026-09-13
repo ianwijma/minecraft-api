@@ -551,6 +551,47 @@ class HttpApiServerTest {
     }
 
     // ------------------------------------------------------------------
+    // Client reads (slice 0.6)
+    // ------------------------------------------------------------------
+
+    @Test
+    void clientEndpointsRequireRegisteredOpsAndReportSnapshots() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> unregistered = get("/api/v1/client/status", "Authorization", "Bearer " + TOKEN);
+        assertEquals(409, unregistered.statusCode(), unregistered.body());
+        assertTrue(unregistered.body().contains("WRONG_STATE"), unregistered.body());
+
+        runtime.registerClientOps(
+                new dev.example.mapi.internal.client.MapiClientOps() {
+                    @Override
+                    public dev.example.mapi.internal.client.ClientStatusSnapshot status() {
+                        return new dev.example.mapi.internal.client.ClientStatusSnapshot(1280, 720, 640, 360,
+                                2, "TitleScreen", false, null, null);
+                    }
+
+                    @Override
+                    public dev.example.mapi.internal.client.ScreenNode screenTree() {
+                        return new dev.example.mapi.internal.client.ScreenNode("TitleScreen", null, 0, 0, 640,
+                                360, java.util.List.of(new dev.example.mapi.internal.client.ScreenNode("Button",
+                                        "Singleplayer", 100, 60, 200, 20, java.util.List.of())));
+                    }
+                },
+                Runnable::run);
+
+        HttpResponse<String> status = get("/api/v1/client/status", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, status.statusCode(), status.body());
+        assertTrue(status.body().contains("\"window\":{\"width\":1280,\"height\":720}"), status.body());
+        assertTrue(status.body().contains("\"currentScreenClass\":\"TitleScreen\""), status.body());
+        assertTrue(status.body().contains("\"playerPresent\":false"), status.body());
+
+        HttpResponse<String> tree = get("/api/v1/client/screen/tree", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, tree.statusCode(), tree.body());
+        assertTrue(tree.body().contains("\"coverage\":\"best-effort\""), tree.body());
+        assertTrue(tree.body().contains("\"label\":\"Singleplayer\""), tree.body());
+        assertTrue(tree.body().contains("\"children\":[{"), tree.body());
+    }
+
+    // ------------------------------------------------------------------
     // Lifecycle
     // ------------------------------------------------------------------
 

@@ -264,6 +264,8 @@ public final class HttpApiServer {
             case API_PREFIX + "server/players" -> sendPlayers(exchange, requestId);
             case API_PREFIX + "server/world/block" -> sendBlock(exchange, requestId);
             case API_PREFIX + "server/world/time" -> sendWorldTime(exchange, requestId);
+            case API_PREFIX + "client/status" -> sendClientStatus(exchange, requestId);
+            case API_PREFIX + "client/screen/tree" -> sendScreenTree(exchange, requestId);
             default -> error(exchange, requestId, 404, "NOT_FOUND", "Unknown endpoint: " + path);
         }
     }
@@ -509,7 +511,7 @@ public final class HttpApiServer {
                 entry.put("dimension", player.dimension());
             }
             if (fields.contains("position")) {
-                entry.put("position", java.util.Map.of("x", player.x(), "y", player.y(), "z", player.z()));
+                entry.put("position", position(player.x(), player.y(), player.z()));
             }
             page.add(entry);
         }
@@ -555,7 +557,7 @@ public final class HttpApiServer {
         body.put("protocolVersion", PROTOCOL_VERSION);
         body.put("dataVersion", readDataVersion());
         body.put("dimension", block.dimension());
-        body.put("position", java.util.Map.of("x", block.x(), "y", block.y(), "z", block.z()));
+        body.put("position", position(block.x(), block.y(), block.z()));
         body.put("blockId", block.blockId());
         body.put("properties", block.properties());
         body.put("policy", "loadedOnly");
@@ -606,6 +608,14 @@ public final class HttpApiServer {
         return true;
     }
 
+    private Map<String, Object> position(double x, double y, double z) {
+        Map<String, Object> position = new LinkedHashMap<>();
+        position.put("x", x);
+        position.put("y", y);
+        position.put("z", z);
+        return position;
+    }
+
     private int readDataVersion() {
         var result = runtime.tryReadOnServerThread(() -> runtime.serverHandle().dataVersionSupplier().get());
         return result.ok() && result.value() != null ? result.value() : -1;
@@ -653,6 +663,85 @@ public final class HttpApiServer {
             requested.add(name);
         }
         return requested;
+    }
+
+    // ------------------------------------------------------------------
+    // Client read endpoints (owning-thread reads with bounded waits)
+    // ------------------------------------------------------------------
+
+    private void sendClientStatus(HttpExchange exchange, String requestId) throws IOException {
+        var ops = runtime.clientOps();
+        if (ops == null) {
+            error(exchange, requestId, 409, "WRONG_STATE",
+                    "No client operations on this process (dedicated server or client not initialized).");
+            return;
+        }
+        var result = runtime.<dev.example.mapi.internal.client.ClientStatusSnapshot>tryReadOnClientThread(
+                ops::status);
+        if (!handleReadOutcome(exchange, requestId, result)) {
+            return;
+        }
+        dev.example.mapi.internal.client.ClientStatusSnapshot status = result.value();
+        Map<String, Object> window = new LinkedHashMap<>();
+        window.put("width", status.windowWidth());
+        window.put("height", status.windowHeight());
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("window", window);
+        body.put("guiScale", status.guiScale());
+        if (status.currentScreenClass() != null) {
+            body.put("currentScreenClass", status.currentScreenClass());
+        }
+        body.put("playerPresent", status.playerPresent());
+        if (status.dimension() != null) {
+            body.put("dimension", status.dimension());
+        }
+        if (status.gameTime() != null) {
+            body.put("gameTime", status.gameTime());
+        }
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private void sendScreenTree(HttpExchange exchange, String requestId) throws IOException {
+        var ops = runtime.clientOps();
+        if (ops == null) {
+            error(exchange, requestId, 409, "WRONG_STATE",
+                    "No client operations on this process (dedicated server or client not initialized).");
+            return;
+        }
+        var result = runtime.<dev.example.mapi.internal.client.ScreenNode>tryReadOnClientThread(ops::screenTree);
+        if (!handleReadOutcome(exchange, requestId, result)) {
+            return;
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("coverage", "best-effort");
+        body.put("root", screenNodeJson(result.value()));
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private Map<String, Object> screenNodeJson(dev.example.mapi.internal.client.ScreenNode node) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (node.widgetClass() != null) {
+            body.put("widgetClass", node.widgetClass());
+        }
+        if (node.label() != null) {
+            body.put("label", node.label());
+        }
+        if (node.x() != null) {
+            body.put("x", node.x());
+        }
+        if (node.y() != null) {
+            body.put("y", node.y());
+        }
+        if (node.width() != null) {
+            body.put("width", node.width());
+        }
+        if (node.height() != null) {
+            body.put("height", node.height());
+        }
+        body.put("children", node.children().stream().map(this::screenNodeJson).toList());
+        return body;
     }
 
     // ------------------------------------------------------------------

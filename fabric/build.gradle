@@ -25,9 +25,11 @@ dependencies {
 def serverRunDir = providers.gradleProperty('mapiServerRunDir').getOrElse('run/server')
 
 loom {
+    splitEnvironmentSourceSets()
     mods {
         mapi {
             sourceSet sourceSets.main
+            sourceSet sourceSets.client
         }
     }
     runs {
@@ -86,8 +88,12 @@ java {
 
 // Bundle the shared common classes/resources into this distributable jar
 // (no remapping needed on Minecraft 26.x: the game ships unobfuscated).
+// The client source set (split environment) is included too: Fabric Loader
+// only loads client entrypoints on the physical client, and everything under
+// dev.example.mapi.client.* is referenced exclusively from client code.
 tasks.named('jar', Jar).configure {
     from(project(':common').sourceSets.main.output)
+    from(sourceSets.client.output)
 }
 
 tasks.withType(JavaCompile).configureEach {

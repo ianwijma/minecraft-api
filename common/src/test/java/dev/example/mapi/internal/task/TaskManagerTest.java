@@ -75,6 +75,7 @@ class TaskManagerTest {
     void cancellationIsCooperativeAndKeepsPartialEffects() throws Exception {
         MapiRuntime rt = runtime();
         CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch firstEffect = new CountDownLatch(1);
         rt.taskManager().registerKind(new TaskManager.TaskKind() {
             @Override
             public String kind() {
@@ -88,6 +89,7 @@ class TaskManagerTest {
                 while (System.currentTimeMillis() < deadline) {
                     context.checkCancelled();
                     context.recordPartialEffect(Map.of("effect", "tick-observed"));
+                    firstEffect.countDown();
                     Thread.sleep(20);
                 }
                 context.succeeded(Map.of());
@@ -95,6 +97,7 @@ class TaskManagerTest {
         });
         TaskManager.TaskSnapshot snapshot = rt.taskManager().submit("test.blocking", Map.of(), 30_000L);
         assertTrue(started.await(5, TimeUnit.SECONDS));
+        assertTrue(firstEffect.await(5, TimeUnit.SECONDS), "cancel only after a partial effect exists");
         rt.taskManager().cancel(snapshot.id());
         AtomicReference<String> seen = new AtomicReference<>();
         TaskManager.TaskSnapshot cancelled = pollUntil(snapshot.id(), seen, "cancelled");

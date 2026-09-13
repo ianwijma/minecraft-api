@@ -28,5 +28,11 @@ public final class MapiNeoForge {
      */
     public MapiNeoForge(IEventBus modBus, ModContainer modContainer) {
         MapiBootstrap.initialize(new NeoForgePlatform());
+        // Client-only code is isolated under dev.example.mapi.client.*; the
+        // branch plus lazy classloading keep the class from loading on
+        // dedicated servers, and @OnlyIn(Dist.CLIENT) documents the contract.
+        if (net.neoforged.fml.loading.FMLEnvironment.getDist().isClient()) {
+            dev.example.mapi.client.neoforge.NeoForgeClientOps.register();
+        }
     }
 }

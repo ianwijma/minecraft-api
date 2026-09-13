@@ -91,11 +91,22 @@ to local tools; it never contains secrets.
 
 ## Client-only code
 
-There is none. Both entrypoints are `environment: "*"`/`side=BOTH`. If
-client-only code is ever added, it must live in a separate source set or
-module that dedicated servers never load, per the loaders' documented
-mechanisms (`loom.splitEnvironmentSourceSets()` on Fabric,
-`net.neoforged.api.distmarker.Dist` guards on NeoForge).
+Client-only classes live **only** under `dev.example.mapi.client.*` and are
+referenced exclusively from client-side code:
+
+- **Fabric**: the `client` source set (`loom.splitEnvironmentSourceSets()`),
+  entered via the `client` entrypoint in `fabric.mod.json`
+  (`dev.example.mapi.client.fabric.MapiFabricClient`).
+- **NeoForge**: main-source-set classes annotated `@OnlyIn(Dist.CLIENT)`
+  behind a dist guard in the mod constructor
+  (`dev.example.mapi.client.neoforge.NeoForgeClientOps`).
+
+Both register a `MapiClientOps` implementation plus a client-thread
+scheduler via `MapiBootstrap.registerClientOps`; the HTTP server reaches
+client state only through that seam with bounded waits. The packaging
+tripwire (`verifyDistributions`) forbids `net/minecraft/client` references
+from every class *outside* `dev/example/mapi/client/`; the launch test on a
+dedicated server remains the authoritative check.
 
 ## Extension points for growth
 

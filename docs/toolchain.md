@@ -92,6 +92,18 @@ never silently change the Minecraft target (26.2) — ask the owner first.
   `LevelAccessor#getGameTime()`, `Level#getOverworldClockTime()`,
   `Level#getDefaultClockTime()`; `MinecraftServer#getWorldData()#getVersion()`
   (data version).
+- 26.2 client-read APIs (verified via `javap` against the merged jar,
+  2026-09-13; used by slice 0.6): `Minecraft#getInstance()`;
+  `Minecraft#getWindow()` → `com.mojang.blaze3d.platform.Window`
+  (`getWidth/getHeight/getGuiScaledWidth/getGuiScaledHeight/getGuiScale`);
+  current screen is **`Minecraft#gui#screen()`** (26.2 moved the screen off
+  `Minecraft` — there is no `screen` field/getter on `Minecraft` anymore);
+  `Screen#children()` → `List<? extends GuiEventListener>`;
+  `AbstractWidget#getX/getY/getWidth/getHeight/getMessage`;
+  `Component#getString()`; `Entity#level()`; `NeoForge`'s
+  `net.neoforged.api.distmarker.OnlyIn` still exists in 26.2
+  (`@OnlyIn(Dist.CLIENT)` + dist guard + lazy classloading is the client
+  isolation contract for `dev.example.mapi.client.*` classes).
 
 Version bumps and target changes require explicit owner approval — see
 AGENTS.md §7.

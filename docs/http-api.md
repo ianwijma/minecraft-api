@@ -236,6 +236,22 @@ auth: `{"ticket":"…","expiresAtEpochMs":…,"events":{"scheme":"ws","host":
 "127.0.0.1","port":…}}`. SDKs/tools use the Authorization header on the WS
 port instead.
 
+### `GET /api/v1/client/status` and `GET /api/v1/client/screen/tree` (slice 0.6)
+
+Client-side observations, served only on physical clients with registered
+client operations (Fabric client entrypoint / NeoForge `@OnlyIn` classes);
+otherwise **409** `WRONG_STATE`. Reads run on the client thread with the
+same bounded wait as server reads (busy → **503**).
+
+- `/client/status`: window and GUI-scale dimensions, the open screen's
+  simple class name (absent while the HUD shows), `playerPresent`,
+  `dimension`, and `gameTime` (absent when not in a world).
+- `/client/screen/tree`: best-effort semantic widget tree of the open screen
+  — `{"coverage":"best-effort","root":{widgetClass,label,x,y,width,height,
+  children:[…]}}`. The root has no `widgetClass` when the HUD is showing.
+  The `mode` parameter and input interaction land with the next slice 0.6
+  increments (no silent fallbacks — spec §5.2).
+
 ### WebSocket event stream
 
 The JDK HTTP stack cannot host protocol upgrades, so the event stream runs

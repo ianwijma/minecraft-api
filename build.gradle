@@ -297,17 +297,21 @@ tasks.register('verifyDistributions') {
 
         // Classload tripwire (spec §1.2): shared mod classes must never
         // reference client-only Minecraft classes, so a dedicated server
-        // cannot crash on classloading. Static constant-pool scan; the
-        // launch test on a dedicated server remains the authoritative check.
+        // cannot crash on classloading. Classes under dev/example/mapi/client/
+        // are the documented exception: they are only loaded on physical
+        // clients (Fabric client source set / NeoForge @OnlyIn + dist guard).
+        // Static constant-pool scan; the launch test on a dedicated server
+        // remains the authoritative check.
         def clientMarker = 'net/minecraft/client/'.bytes
         def checkNoClientReferences = { java.util.zip.ZipFile zf, String label ->
             zf.entries().toList()
                 .findAll { !it.directory && it.name.startsWith('dev/example/mapi/') && it.name.endsWith('.class') }
+                .findAll { !it.name.startsWith('dev/example/mapi/client/') }
                 .each { entry ->
                     def bytes = zf.getInputStream(entry).readAllBytes()
                     if (containsSequence(bytes, clientMarker)) {
                         problems << "${label}: class ${entry.name} references net/minecraft/client " +
-                                "(client-only classes must never load on dedicated servers)"
+                                "(client-only classes must live under dev/example/mapi/client/)"
                     }
                 }
         }
