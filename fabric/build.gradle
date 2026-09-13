@@ -42,6 +42,37 @@ loom {
     }
 }
 
+// ---------------------------------------------------------------------------
+// API-enabled dev runs (slice 0.7). Applied when `-PmapiApi` is present, so a
+// plain `runServer`/`runClient` stays untouched. The token auto-generates into
+// <runDir>/mcapi/token; discovery lands in <runDir>/mcapi/discovery.json.
+//
+//   ./gradlew :fabric:runServerApi -PmapiApi -PmapiApiPort=26001 \
+//       -PmapiInstanceId=mx-fabric-1 [-PmapiServerRunDir=...]
+// ---------------------------------------------------------------------------
+
+if (providers.gradleProperty('mapiApi').isPresent()) {
+    def apiPort = providers.gradleProperty('mapiApiPort').getOrElse('25586')
+    def instanceId = providers.gradleProperty('mapiInstanceId').getOrElse("mapi-${apiPort}")
+    tasks.withType(JavaExec).configureEach {
+        environment 'MAPI_HTTP_ENABLED', 'true'
+        environment 'MAPI_HTTP_PORT', apiPort
+        environment 'MAPI_INSTANCE_ID', instanceId
+    }
+}
+
+tasks.register('runServerApi') {
+    group = 'mapi'
+    description = "Runs the dev server with the local HTTP API enabled (set -PmapiApi; see build.gradle)."
+    dependsOn tasks.named('runServer')
+}
+
+tasks.register('runClientApi') {
+    group = 'mapi'
+    description = "Runs the dev client with the local HTTP API enabled (set -PmapiApi; see build.gradle)."
+    dependsOn tasks.named('runClient')
+}
+
 processResources {
     inputs.property 'version', project.version
     filesMatching('fabric.mod.json') {

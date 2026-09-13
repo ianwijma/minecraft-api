@@ -2,6 +2,7 @@ package dev.example.mapi.internal.http;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.example.mapi.internal.MapiRuntime;
@@ -284,13 +285,25 @@ class HttpApiServerTest {
     @Test
     void rejectsWrongMethodsAndUnknownPaths() throws Exception {
         startServer(enabledConfig());
+        HttpRequest put = HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/health"))
+                .header("Authorization", "Bearer " + TOKEN)
+                .PUT(HttpRequest.BodyPublishers.noBody()).build();
+        HttpResponse<String> putResponse = client.send(put, HttpResponse.BodyHandlers.ofString());
+        assertEquals(405, putResponse.statusCode());
+        assertEquals(Optional.of("GET, POST, DELETE"), putResponse.headers().firstValue("Allow"));
+
+        // POST is supported but only on /api/v1/tasks.
         HttpRequest post = HttpRequest.newBuilder()
                 .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/health"))
                 .header("Authorization", "Bearer " + TOKEN)
-                .POST(HttpRequest.BodyPublishers.noBody()).build();
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{}")).build();
         HttpResponse<String> postResponse = client.send(post, HttpResponse.BodyHandlers.ofString());
-        assertEquals(405, postResponse.statusCode());
-        assertEquals(Optional.of("GET"), postResponse.headers().firstValue("Allow"));
+        assertEquals(404, postResponse.statusCode());
+        assertTrue(postResponse.body().contains("NOT_FOUND"), postResponse.body());
+        assertFalse(postResponse.headers().firstValue("X-MAPI-Request-Id").isEmpty(),
+                "every response carries a request id");
 
         HttpResponse<String> unknown = get("/api/v1/nope", "Authorization", "Bearer " + TOKEN);
         assertEquals(404, unknown.statusCode());
@@ -335,11 +348,214 @@ class HttpApiServerTest {
     }
 
     // ------------------------------------------------------------------
+    // Task protocol
+    // ------------------------------------------------------------------
+
+    private HttpResponse<String> post(String path, String body, String... headers) throws Exception {
+        HttpRequest.Builder builder = HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + path))
+                .timeout(Duration.ofSeconds(5))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        for (int i = 0; i + 1 < headers.length; i += 2) {
+            builder.header(headers[i], headers[i + 1]);
+        }
+        return client.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private String waitForTerminalState(String taskId) throws Exception {
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline) {
+            HttpResponse<String> response = get("/api/v1/tasks/" + taskId, "Authorization", "Bearer " + TOKEN);
+            assertEquals(200, response.statusCode(), response.body());
+            String state = response.body().replaceAll(".*\"state\":\"([a-zA-Z]+)\".*", "$1");
+            if (!state.equals("queued") && !state.equals("running") && !state.equals("cancelRequested")) {
+                return state;
+            }
+            Thread.sleep(25);
+        }
+        throw new AssertionError("task " + taskId + " never reached a terminal state");
+    }
+
+    @Test
+    void taskLifecycleOverHttp() throws Exception {
+        startServer(enabledConfig());
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+        HttpResponse<String> created = post("/api/v1/tasks",
+                "{\"kind\":\"wait-for-tick\",\"payload\":{\"targetTick\":42}}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(202, created.statusCode(), created.body());
+        assertTrue(created.headers().firstValue("Location").isPresent());
+        assertTrue(created.body().contains("\"state\":\""), created.body());
+        assertFalse(created.body().contains("\"error\""), created.body());
+        String taskId = created.body().replaceAll(".*\"id\":\"([0-9a-f-]+)\".*", "$1");
+
+        HttpResponse<String> listed = get("/api/v1/tasks?limit=10", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, listed.statusCode(), listed.body());
+        assertTrue(listed.body().contains(taskId), listed.body());
+
+        assertEquals("succeeded", waitForTerminalState(taskId));
+
+        HttpResponse<String> cancelResponse = client.send(HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/tasks/" + taskId))
+                .header("Authorization", "Bearer " + TOKEN)
+                .DELETE().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(409, cancelResponse.statusCode(), cancelResponse.body());
+        assertTrue(cancelResponse.body().contains("WRONG_STATE"), cancelResponse.body());
+    }
+
+    @Test
+    void taskCancellationOverHttp() throws Exception {
+        startServer(enabledConfig());
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+        HttpResponse<String> created = post("/api/v1/tasks",
+                "{\"kind\":\"wait-for-tick\",\"payload\":{\"targetTick\":1000000000},\"deadlineMs\":10000}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(202, created.statusCode(), created.body());
+        String taskId = created.body().replaceAll(".*\"id\":\"([0-9a-f-]+)\".*", "$1");
+        Thread.sleep(150);
+        HttpResponse<String> cancelResponse = client.send(HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/tasks/" + taskId))
+                .header("Authorization", "Bearer " + TOKEN)
+                .DELETE().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, cancelResponse.statusCode(), cancelResponse.body());
+        String state = waitForTerminalState(taskId);
+        assertEquals("cancelled", state);
+    }
+
+    @Test
+    void idempotencyReplaysAndRejectsMismatchedBodies() throws Exception {
+        startServer(enabledConfig());
+        String body = "{\"kind\":\"wait-for-tick\",\"payload\":{\"targetTick\":42}}";
+        HttpResponse<String> first = post("/api/v1/tasks", body,
+                "Authorization", "Bearer " + TOKEN, "Idempotency-Key", "key-1");
+        assertEquals(202, first.statusCode(), first.body());
+        HttpResponse<String> replay = post("/api/v1/tasks", body,
+                "Authorization", "Bearer " + TOKEN, "Idempotency-Key", "key-1");
+        assertEquals(202, replay.statusCode(), replay.body());
+        assertEquals(Optional.of("true"), replay.headers().firstValue("Idempotent-Replay"));
+        assertEquals(first.body(), replay.body(), "identical key+body must replay the first response");
+
+        HttpResponse<String> mismatch = post("/api/v1/tasks",
+                "{\"kind\":\"wait-for-tick\",\"payload\":{\"targetTick\":43}}",
+                "Authorization", "Bearer " + TOKEN, "Idempotency-Key", "key-1");
+        assertEquals(422, mismatch.statusCode(), mismatch.body());
+        assertTrue(mismatch.body().contains("IDEMPOTENCY_MISMATCH"), mismatch.body());
+    }
+
+    @Test
+    void taskValidationErrorsOverHttp() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> unknownKind = post("/api/v1/tasks", "{\"kind\":\"nope\",\"payload\":{}}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(400, unknownKind.statusCode(), unknownKind.body());
+        assertTrue(unknownKind.body().contains("UNSUPPORTED"), unknownKind.body());
+
+        HttpResponse<String> invalidJson = post("/api/v1/tasks", "{not json",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(400, invalidJson.statusCode(), invalidJson.body());
+        assertTrue(invalidJson.body().contains("INVALID_JSON"), invalidJson.body());
+
+        HttpResponse<String> missingKind = post("/api/v1/tasks", "{\"payload\":{}}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(400, missingKind.statusCode(), missingKind.body());
+        assertTrue(missingKind.body().contains("INVALID_PAYLOAD"), missingKind.body());
+
+        HttpResponse<String> unknownTask = get("/api/v1/tasks/00000000-0000-0000-0000-000000000000",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(404, unknownTask.statusCode());
+        assertTrue(unknownTask.body().contains("NOT_FOUND"), unknownTask.body());
+        assertTrue(unknownTask.body().contains("requestId"), unknownTask.body());
+    }
+
+    @Test
+    void mutationRequiresAuthentication() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> response = post("/api/v1/tasks", "{\"kind\":\"wait-for-tick\"}");
+        assertEquals(401, response.statusCode());
+    }
+
+    // ------------------------------------------------------------------
+    // Server reads (players / block / time)
+    // ------------------------------------------------------------------
+
+    @Test
+    void playersEndpointSupportsPaginationAndFieldSelection() throws Exception {
+        startServer(enabledConfig());
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+
+        HttpResponse<String> all = get("/api/v1/server/players", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, all.statusCode(), all.body());
+        assertTrue(all.body().contains("\"name\":\"Asha\""), all.body());
+        assertTrue(all.body().contains("\"total\":2"), all.body());
+        assertTrue(all.body().contains("\"dataVersion\":4189"), all.body());
+
+        HttpResponse<String> paged = get("/api/v1/server/players?limit=1&offset=1&fields=name,id",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, paged.statusCode(), paged.body());
+        assertTrue(paged.body().contains("\"name\":\"Bram\""), paged.body());
+        assertFalse(paged.body().contains("dimension"), paged.body());
+        assertTrue(paged.body().contains("\"truncated\":false"), paged.body());
+
+        HttpResponse<String> badField = get("/api/v1/server/players?fields=secret",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(400, badField.statusCode(), badField.body());
+        assertTrue(badField.body().contains("INVALID_QUERY"), badField.body());
+    }
+
+    @Test
+    void blockEndpointReportsLoadedPolicyAndErrors() throws Exception {
+        startServer(enabledConfig());
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+
+        HttpResponse<String> ok = get("/api/v1/server/world/block?dimension=minecraft:overworld&x=0&y=-64&z=0",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, ok.statusCode(), ok.body());
+        assertTrue(ok.body().contains("\"blockId\":\"minecraft:stone\""), ok.body());
+        assertTrue(ok.body().contains("\"policy\":\"loadedOnly\""), ok.body());
+
+        HttpResponse<String> unknownDim = get(
+                "/api/v1/server/world/block?dimension=minecraft:nowhere&x=0&y=0&z=0",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(404, unknownDim.statusCode(), unknownDim.body());
+        assertTrue(unknownDim.body().contains("DIMENSION_NOT_FOUND"), unknownDim.body());
+
+        HttpResponse<String> missingParams = get("/api/v1/server/world/block?dimension=minecraft:overworld",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(400, missingParams.statusCode(), missingParams.body());
+        assertTrue(missingParams.body().contains("INVALID_QUERY"), missingParams.body());
+    }
+
+    @Test
+    void worldTimeEndpointReportsClocks() throws Exception {
+        startServer(enabledConfig());
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+        HttpResponse<String> ok = get("/api/v1/server/world/time?dimension=minecraft:overworld",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, ok.statusCode(), ok.body());
+        assertTrue(ok.body().contains("\"gameTime\":12345"), ok.body());
+        assertTrue(ok.body().contains("\"overworldClockTime\":6000"), ok.body());
+
+        HttpResponse<String> unknownDim = get("/api/v1/server/world/time?dimension=minecraft:nowhere",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(404, unknownDim.statusCode(), unknownDim.body());
+        assertTrue(unknownDim.body().contains("DIMENSION_NOT_FOUND"), unknownDim.body());
+    }
+
+    @Test
+    void serverReadsRequireActiveSessionAndReturn409WithoutOne() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> players = get("/api/v1/server/players", "Authorization", "Bearer " + TOKEN);
+        assertEquals(409, players.statusCode(), players.body());
+        assertTrue(players.body().contains("WRONG_STATE"), players.body());
+    }
+
+    // ------------------------------------------------------------------
     // Lifecycle
     // ------------------------------------------------------------------
 
     @Test
-    void lifecycleStartsAndStopsWithServerWhenEnabledByConfig(@TempDir Path instanceDir) throws Exception {
+    void httpRunsForTheWholeProcessOnceEnabled(@TempDir Path instanceDir) throws Exception {
         int port = freePort();
         Files.createDirectories(instanceDir.resolve("config"));
         Files.writeString(instanceDir.resolve("config").resolve(MapiConfig.CONFIG_FILE_NAME),
@@ -357,42 +573,103 @@ class HttpApiServerTest {
             }
         };
         MapiRuntime lifecycleRuntime = new MapiRuntime(platform);
-        assertFalse(lifecycleRuntime.httpRunning(), "HTTP must be off until a server starts");
-        assertFalse(Files.exists(instanceDir.resolve("mcapi").resolve("discovery.json")),
-                "no discovery file while the API is disabled");
-
-        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
-        assertTrue(lifecycleRuntime.httpRunning());
-
         Path discovery = instanceDir.resolve("mcapi").resolve("discovery.json");
-        assertTrue(Files.isRegularFile(discovery), "discovery file must exist while the API runs");
-        String discoveryJson = Files.readString(discovery);
-        assertTrue(discoveryJson.startsWith("{\"schemaVersion\":1,"), discoveryJson);
-        assertFalse(discoveryJson.contains("token-from-config-0123456789"),
-                "discovery must never contain the token");
-        assertFalse(discoveryJson.contains("token"), "discovery must never contain token fields");
+        try {
+            assertTrue(lifecycleRuntime.httpRunning(), "HTTP must start with the process when enabled");
+            assertTrue(Files.isRegularFile(discovery), "discovery file must exist while the API runs");
+            String discoveryJson = Files.readString(discovery);
+            assertTrue(discoveryJson.startsWith("{\"schemaVersion\":1,"), discoveryJson);
+            assertFalse(discoveryJson.contains("token"), "discovery must never contain token fields");
+            assertTrue(discoveryJson.contains("\"readiness\":\"http\""), "pre-world readiness");
 
-        HttpResponse<String> health = client.send(HttpRequest.newBuilder()
-                .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/health"))
-                .header("Authorization", "Bearer token-from-config-0123456789")
-                .GET().build(), HttpResponse.BodyHandlers.ofString());
-        assertEquals(200, health.statusCode());
+            platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+            assertTrue(Files.readString(discovery).contains("\"readiness\":\"worldReady\""),
+                    "readiness must follow the world session");
+            HttpResponse<String> health = client.send(HttpRequest.newBuilder()
+                    .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/ready"))
+                    .header("Authorization", "Bearer token-from-config-0123456789")
+                    .GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertTrue(health.body().contains("\"worldReady\":true"), health.body());
 
-        HttpResponse<String> info = client.send(HttpRequest.newBuilder()
-                .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/info"))
-                .header("Authorization", "Bearer token-from-config-0123456789")
-                .GET().build(), HttpResponse.BodyHandlers.ofString());
-        String infoJson = info.body();
-        String prefix = "\"processSessionId\":\"";
-        int start = infoJson.indexOf(prefix) + prefix.length();
-        String processSessionId = infoJson.substring(start, infoJson.indexOf('"', start));
-        assertTrue(discoveryJson.contains("\"processSessionId\":\"" + processSessionId + "\""),
-                "discovery must carry the same process session id as /info");
+            platform.lifecycleListener().onServerStopping();
+            platform.lifecycleListener().onServerStopped();
+            assertTrue(lifecycleRuntime.httpRunning(), "HTTP must survive the end of a world session");
+            assertTrue(Files.readString(discovery).contains("\"readiness\":\"http\""),
+                    "readiness must return to http after the world session");
+        } finally {
+            lifecycleRuntime.shutdown();
+        }
+        assertFalse(Files.exists(discovery), "discovery file must be removed on shutdown");
+        try (var probe = new java.net.ServerSocket(port)) {
+            // Re-binding must succeed: the listener released the port.
+        }
+    }
 
-        platform.lifecycleListener().onServerStopping();
-        platform.lifecycleListener().onServerStopped();
-        assertFalse(lifecycleRuntime.httpRunning(), "HTTP must stop with the server");
-        assertFalse(Files.exists(discovery), "discovery file must be removed when the API stops");
+    @Test
+    void portFallbackBindsNextPortWhenPrimaryIsBusy(@TempDir Path instanceDir) throws Exception {
+        try (var blocker = new java.net.ServerSocket(0)) {
+            int primary = blocker.getLocalPort();
+            Files.createDirectories(instanceDir.resolve("config"));
+            Files.writeString(instanceDir.resolve("config").resolve(MapiConfig.CONFIG_FILE_NAME),
+                    "http.enabled=true\nhttp.port=" + primary + "\nhttp.portFallback=2\n"
+                            + "http.token=token-from-config-0123456789\n");
+
+            TestPlatform platform = new TestPlatform(LOG) {
+                @Override
+                public Path configDir() {
+                    return instanceDir.resolve("config");
+                }
+
+                @Override
+                public Path gameDir() {
+                    return instanceDir;
+                }
+            };
+            MapiRuntime lifecycleRuntime = new MapiRuntime(platform);
+            try {
+                assertTrue(lifecycleRuntime.httpRunning(), "fallback port must be bound");
+                int boundPort = lifecycleRuntime.httpBoundPort();
+                assertTrue(boundPort > primary && boundPort <= primary + 2,
+                        "bound port must be a fallback: " + boundPort);
+                HttpResponse<String> health = client.send(HttpRequest.newBuilder()
+                        .uri(URI.create("http://127.0.0.1:" + boundPort + "/api/v1/health"))
+                        .header("Authorization", "Bearer token-from-config-0123456789")
+                        .GET().build(), HttpResponse.BodyHandlers.ofString());
+                assertEquals(200, health.statusCode());
+                String discovery = Files.readString(instanceDir.resolve("mcapi").resolve("discovery.json"));
+                assertTrue(discovery.contains("\"port\":" + boundPort), discovery);
+            } finally {
+                lifecycleRuntime.shutdown();
+            }
+        }
+    }
+
+    @Test
+    void failFastRefusesToStartWithoutABindablePort(@TempDir Path instanceDir) throws Exception {
+        int primary;
+        try (var blocker = new java.net.ServerSocket(0)) {
+            primary = blocker.getLocalPort();
+        }
+        try (var blocker = new java.net.ServerSocket(primary)) {
+            Files.createDirectories(instanceDir.resolve("config"));
+            Files.writeString(instanceDir.resolve("config").resolve(MapiConfig.CONFIG_FILE_NAME),
+                    "http.enabled=true\nhttp.port=" + primary + "\nhttp.failFast=true\n"
+                            + "http.token=token-from-config-0123456789\n");
+            TestPlatform platform = new TestPlatform(LOG) {
+                @Override
+                public Path configDir() {
+                    return instanceDir.resolve("config");
+                }
+
+                @Override
+                public Path gameDir() {
+                    return instanceDir;
+                }
+            };
+            IllegalStateException e = assertThrows(IllegalStateException.class,
+                    () -> new MapiRuntime(platform));
+            assertTrue(e.getMessage().contains("failFast"), e.getMessage());
+        }
     }
 
     @Test

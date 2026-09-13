@@ -89,7 +89,7 @@ scenarios, and **parity across Fabric and NeoForge** enforced by tests.
 Each slice must keep `./gradlew verify` green (format, tests, jar
 validation, manifest) and update docs in the same change set.
 
-### Slice 0.1 — Foundations (this change set)
+### Slice 0.1 — Foundations (DONE 2026-09-13)
 
 - Session identity: `processSessionId` (per launch), `worldSessionId` (per
   server/world session), `physicalSide` (platform seam:
@@ -106,58 +106,68 @@ validation, manifest) and update docs in the same change set.
 - Packaging: classload tripwire — distributable jars must not reference
   `net/minecraft/client` from `dev/example/mapi/**`.
 
-### Slice 0.2 — Process-lifetime service + discovery heartbeat
+### Slice 0.2 — Process-lifetime service + discovery heartbeat (DONE 2026-09-13)
 
-- HTTP listener starts at process init when enabled (D6): survives repeated
+- HTTP listener starts at process init when enabled: survives repeated
   integrated-server sessions; readiness states reflect world sessions.
-- Discovery `lastSeen` heartbeat (bounded interval), stale semantics
-  documented for the harness; readiness transitions emit events (once 0.4
-  exists, backfill notes).
-- Config: `http.portFallback` (bounded port fallback + fail-fast option).
+- Discovery `lastSeen` heartbeat (`http.discoveryHeartbeatSeconds`, rewritten
+  on readiness transitions too); clean shutdown removes the file.
+- Config: `http.portFallback` (bounded fallback) + `http.failFast`
+  (hard startup failure for harness/CI runs).
 
-### Slice 0.3 — Owning-thread scheduler, tasks, request bodies
+### Slice 0.3 — Scheduler, tasks, request bodies (DONE 2026-09-13)
 
-- Generalize the snapshot machinery into a scheduler: bounded queues per
-  owner thread (server thread, later client thread), deadline support.
-- POST/PUT/DELETE support with body limits, request IDs, common error model
-  (`requestId`, `fieldErrors`, `retryable`), G9 ordering.
+- POST/DELETE support with bounded bodies, `X-MAPI-Request-Id` on every
+  response, and `requestId` in error bodies; strict bounded JSON parser
+  (`internal.json.JsonParser`).
 - Task manager: `202` + `Location`, states
   `queued→running→succeeded|failed|cancelRequested→cancelled|expired`,
   progress, partial effects, cleanup reporting, wall-time deadlines,
-  `LIFECYCLE_CHANGED` on world unload/disable.
-- Idempotency-Key on the first mutating endpoints (start-task, batch),
-  per G2 semantics.
+  `LIFECYCLE_CHANGED` on world-session end; first real kind
+  `wait-for-tick` using bounded owning-thread polls.
+- `Idempotency-Key` on `POST /tasks`: replay per token + process session,
+  24h/1000-entry bound, `422 IDEMPOTENCY_MISMATCH` on body mismatch.
 
-### Slice 0.4 — Event core + WebSocket
+### Slice 0.4 — Event core + WebSocket (DONE 2026-09-13)
 
-- Event log: per-process-session monotonic `seq`, ring buffer with GAP
-  policy, subscribe/ack schema, resume `?after=`, per-event authorization,
-  slow-consumer policy (`drop-oldest`/`disconnect` at subscribe), source
-  tags (§3.3).
-- WS transport per D3 decision; browser auth via short-lived single-use
-  ticket (§4.5); SDK-style header auth for tools.
+- Event log: per-process-session monotonic `seq`, ring buffer (1024) with
+  explicit GAP signaling, resume `?after=` on the polling endpoint, source
+  tags, per-event authorization (same bearer), slow-consumer policy
+  (`drop-oldest` with GAP marker or `disconnect`) at subscribe time.
+- WS transport: **dedicated loopback port** (D3 resolved empirically — the
+  JDK HTTP stack force-closes 101 responses, so a minimal RFC 6455 server
+  lives in `internal.ws`, advertised via `/info` + discovery); browser auth
+  via single-use 30s tickets; SDKs use headers. Verified E2E with the JDK's
+  own WebSocket client.
 
-### Slice 0.5 — game-common source set + server reads
+### Slice 0.5 — Server reads via the owning thread (DONE 2026-09-13)
 
-- New source set/module for Minecraft-aware shared ops (server-safe only);
-  `ServerHandle` grows typed read operations (player list snapshot
-  (paginated, field-selected), block get with chunk policy `loadedOnly`
-  default, dimension/time state).
-- DTO + registry-context conventions (§7) land with the first reads;
-  `openapi.yaml` contract + negative tests per endpoint.
-- Restructure per D8 stage 1: `common` stays the published artifact.
+- `ServerHandle` grew typed read suppliers (players, block, world time, data
+  version); both loaders implement them with javap-verified 26.2 APIs
+  (`docs/toolchain.md`); `common` stays JDK-only.
+- Endpoints: `GET /api/v1/server/players` (paginated, field-selected,
+  `dataVersion`-stamped), `GET /api/v1/server/world/block` (loaded-only
+  policy; `CHUNK_UNLOADED` / `DIMENSION_NOT_FOUND` semantics),
+  `GET /api/v1/server/world/time` (26.2 clock model).
+- Player identity exposure documented as the posture change (D7) in
+  `docs/security.md`.
 
-### Slice 0.6 — game-client source set + first client evidence
+### Slice 0.6 — game-client source set + first client evidence (PENDING)
 
 - Client-only source set per loader (`loom.splitEnvironmentSourceSets()`,
   NeoForge dist guards); **all 26.2 client APIs verified against the real
   jar first** (`docs/toolchain.md` method) — no invented APIs.
+- The classload tripwire must grow an explicit client-package allowance
+  (`dev/example/mapi/client/**` loaded only on clients) before client code
+  lands.
 - One `input`-mode interaction, screen tree (semantic, with revision),
   screenshot capture with `frameId`, completion levels for client actions
   (`observed: false` + reason when authority is missing).
 - Mode parameter from day one (G7): no silent fallback.
+- Status: NOT STARTED (requires game-run verification; the seam design is
+  agreed, implementation deliberately deferred until it can be tested).
 
-### Slice 0.7 — Harness + launch matrix + scenarios
+### Slice 0.7 — Harness + launch matrix + scenarios (PENDING)
 
 - `runServerApi`/`runClientApi`/`launchMatrix` Gradle tasks (ID/port/
   token-file parameterized), isolated game dirs, process supervision,
@@ -167,13 +177,13 @@ validation, manifest) and update docs in the same change set.
 - One two-client scenario; failure scenarios from spec §10 (disconnect
   mid-task, frozen tick, world unload during read, disabled API idle).
 - EULA: harness never accepts it implicitly (`MAPI_ACCEPT_EULA` gate stays).
+- Status: NOT STARTED (needs game-run verification in CI).
 
-### Slice 0.8 — Support manifest
+### Slice 0.8 — Support manifest (DONE 2026-09-13)
 
-- `SUPPORT.md` + `/api/v1/info` `support` block: exact MC, Java, Gradle,
-  loader, Fabric API, NeoForge versions per branch (from
-  `libs.versions.toml` + `docs/toolchain.md` verification dates); branch
-  policy (D2).
+- `SUPPORT.md` with the exact per-branch versions and the version policy;
+  `GET /api/v1/info` now carries a `support` block (Minecraft, Java feature
+  version, platform, loader version) mirroring it.
 
 ### Phase 1 and beyond
 

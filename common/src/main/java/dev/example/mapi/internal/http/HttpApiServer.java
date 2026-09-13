@@ -6,7 +6,12 @@ import dev.example.mapi.api.ServerStatusSnapshot;
 import dev.example.mapi.internal.MapiRuntime;
 import dev.example.mapi.internal.SnapshotResult;
 import dev.example.mapi.internal.config.MapiConfig;
+import dev.example.mapi.internal.json.JsonParser;
+import dev.example.mapi.internal.json.JsonParser.ParseException;
 import dev.example.mapi.internal.json.JsonWriter;
+import dev.example.mapi.internal.task.TaskManager;
+import dev.example.mapi.internal.task.TaskManager.TaskSnapshot;
+import dev.example.mapi.internal.ws.WebSocketConnection;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.InetAddress;
@@ -15,8 +20,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -25,24 +32,24 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 
 /**
- * Minimal read-only local HTTP API, implemented on the JDK's built-in
+ * Local HTTP API, implemented on the JDK's built-in
  * {@code com.sun.net.httpserver.HttpServer} (zero external dependencies).
  *
  * <p>Security model (see docs/security.md):
  * <ul>
  *   <li>binds to the loopback interface only</li>
- *   <li>requires a bearer token on every endpoint</li>
+ *   <li>requires a bearer token on every endpoint; authorization happens
+ *       before request bodies are read or parsed</li>
  *   <li>rejects unexpected Host/Origin headers</li>
  *   <li>rate-limits per client; bounds request body size and worker
  *       concurrency</li>
- *   <li>never touches live game state off the server thread; snapshots use
+ *   <li>never touches live game state off the owning thread; game reads use
  *       server-thread scheduling with a bounded wait</li>
  * </ul>
  *
- * <p>The server starts with the Minecraft server lifecycle and is stopped
- * with it. Port conflicts are reported but never crash the game. If the
- * bounded worker queue saturates, new connections are dropped (clients
- * observe a connection failure) rather than queued without bound.
+ * <p>Methods: reads are {@code GET}; the small mutating surface uses
+ * {@code POST} and {@code DELETE} (spec §7). Every response carries an
+ * {@code X-MAPI-Request-Id}; errors include it as {@code requestId}.
  */
 public final class HttpApiServer {
 
@@ -54,12 +61,14 @@ public final class HttpApiServer {
 
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String API_PREFIX = "/api/v1/";
+    private static final String TASKS_PREFIX = API_PREFIX + "tasks";
     private static final int BACKLOG = 32;
 
     private final MapiConfig config;
     private final MapiRuntime runtime;
     private final Logger logger;
     private final RateLimiter rateLimiter;
+    private final IdempotencyStore idempotencyStore = new IdempotencyStore();
 
     private HttpServer httpServer;
     private ThreadPoolExecutor workers;
@@ -77,8 +86,11 @@ public final class HttpApiServer {
     }
 
     /**
-     * Starts the listener. On bind failure (for example a port conflict) the
-     * failure is logged and reported; the game keeps running.
+     * Starts the listener. Tries {@code http.port}, then (when
+     * {@code http.portFallback > 0}) the consecutive ports above it. On total
+     * bind failure the failure is logged and reported; the game keeps running
+     * unless {@code http.failFast} is set (the caller decides what failing
+     * fast means for the process).
      *
      * @return true if the listener is running
      */
@@ -94,18 +106,34 @@ public final class HttpApiServer {
         workers = new ThreadPoolExecutor(2, 2, 30L, TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(32), factory, new ThreadPoolExecutor.AbortPolicy());
         workers.allowCoreThreadTimeOut(true);
-        try {
-            // Bind explicitly to the IPv4 loopback. InetAddress.getLoopbackAddress()
-            // may return ::1 when the JVM runs with
-            // -Djava.net.preferIPv6Addresses=system (NeoForge dev runs do), which
-            // would make 127.0.0.1 clients unable to connect. 127.0.0.1 is
-            // deterministic on every platform and matches the documented
-            // endpoint URLs.
-            httpServer = HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"),
-                    config.httpPort()), BACKLOG);
-        } catch (IOException e) {
-            logger.error("MAPI HTTP API: failed to bind 127.0.0.1:{} ({}). Port conflict? Change http.port or "
-                    + "stop the other listener. The game will keep running.", config.httpPort(), e.toString());
+        IOException lastFailure = null;
+        int attempts = 1 + Math.max(0, config.portFallback());
+        for (int attempt = 0; attempt < attempts; attempt++) {
+            int port = config.httpPort() + attempt;
+            try {
+                // Bind explicitly to the IPv4 loopback. InetAddress.getLoopbackAddress()
+                // may return ::1 when the JVM runs with
+                // -Djava.net.preferIPv6Addresses=system (NeoForge dev runs do), which
+                // would make 127.0.0.1 clients unable to connect. 127.0.0.1 is
+                // deterministic on every platform and matches the documented
+                // endpoint URLs.
+                httpServer = HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), port),
+                        BACKLOG);
+                if (attempt > 0) {
+                    logger.info("MAPI HTTP API: primary port {} busy; bound fallback port {}", config.httpPort(),
+                            port);
+                }
+                break;
+            } catch (IOException e) {
+                lastFailure = e;
+                httpServer = null;
+                logger.warn("MAPI HTTP API: failed to bind 127.0.0.1:{} ({})", port, e.toString());
+            }
+        }
+        if (httpServer == null) {
+            logger.error("MAPI HTTP API: failed to bind 127.0.0.1:{} ({}). Port conflict? Change http.port, "
+                    + "set http.portFallback, or stop the other listener. The game will keep running.",
+                    config.httpPort(), lastFailure == null ? "unknown" : lastFailure.toString());
             shutdownWorkers();
             return false;
         }
@@ -113,7 +141,7 @@ public final class HttpApiServer {
         httpServer.setExecutor(workers);
         httpServer.start();
         logger.info("MAPI HTTP API listening on http://127.0.0.1:{} (loopback only, bearer token required)",
-                config.httpPort());
+                httpServer.getAddress().getPort());
         return true;
     }
 
@@ -163,7 +191,7 @@ public final class HttpApiServer {
         } catch (RuntimeException e) {
             logger.error("MAPI HTTP: unexpected error handling request", e);
             try {
-                error(exchange, 500, "INTERNAL", "Internal server error");
+                error(exchange, "unknown", 500, "INTERNAL", "Internal server error");
             } catch (IOException ignored) {
                 // Response already committed or socket gone.
             }
@@ -173,47 +201,101 @@ public final class HttpApiServer {
     }
 
     private void route(HttpExchange exchange) throws IOException {
+        String requestId = resolveRequestId(exchange);
+        exchange.getResponseHeaders().set("X-MAPI-Request-Id", requestId);
         if (!isAllowedHost(exchange.getRequestHeaders().getFirst("Host"))) {
-            error(exchange, 403, "FORBIDDEN_HOST", "Host header not allowed");
+            error(exchange, requestId, 403, "FORBIDDEN_HOST", "Host header not allowed");
             return;
         }
         String origin = exchange.getRequestHeaders().getFirst("Origin");
         if (origin != null && !isAllowedOrigin(origin)) {
-            error(exchange, 403, "FORBIDDEN_ORIGIN", "Origin not allowed");
+            error(exchange, requestId, 403, "FORBIDDEN_ORIGIN", "Origin not allowed");
             return;
         }
         String remote = String.valueOf(exchange.getRemoteAddress().getAddress());
         if (!rateLimiter.tryAcquire(remote)) {
             exchange.getResponseHeaders().set("Retry-After", "60");
-            error(exchange, 429, "RATE_LIMITED", "Too many requests; slow down");
+            error(exchange, requestId, 429, "RATE_LIMITED", "Too many requests; slow down");
             return;
         }
         if (!authorized(exchange.getRequestHeaders().getFirst("Authorization"))) {
             exchange.getResponseHeaders().set("WWW-Authenticate", "Bearer realm=\"mapi\"");
-            error(exchange, 401, "UNAUTHORIZED", "Missing or invalid bearer token");
+            error(exchange, requestId, 401, "UNAUTHORIZED", "Missing or invalid bearer token");
             return;
         }
-        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
-            exchange.getResponseHeaders().set("Allow", "GET");
-            error(exchange, 405, "METHOD_NOT_ALLOWED", "Only GET requests are supported");
+        String method = exchange.getRequestMethod().toUpperCase(Locale.ROOT);
+        if (!method.equals("GET") && !method.equals("POST") && !method.equals("DELETE")) {
+            exchange.getResponseHeaders().set("Allow", "GET, POST, DELETE");
+            error(exchange, requestId, 405, "METHOD_NOT_ALLOWED", "Only GET, POST, and DELETE are supported");
             return;
         }
-        if (bodyTooLarge(exchange)) {
-            error(exchange, 413, "PAYLOAD_TOO_LARGE",
+        byte[] body = readBody(exchange);
+        if (body == null) {
+            error(exchange, requestId, 413, "PAYLOAD_TOO_LARGE",
                     "Request body exceeds " + MAX_BODY_BYTES + " bytes");
             return;
         }
         String path = exchange.getRequestURI().getPath();
-        switch (path) {
-            case API_PREFIX + "health" -> respond(exchange, 200, JsonWriter.write(health()));
-            case API_PREFIX + "live" -> respond(exchange, 200, JsonWriter.write(live()));
-            case API_PREFIX + "ready" -> respond(exchange, 200, JsonWriter.write(ready()));
-            case API_PREFIX + "time" -> sendTime(exchange);
-            case API_PREFIX + "info" -> respond(exchange, 200, JsonWriter.write(info()));
-            case API_PREFIX + "server/status" -> sendServerStatus(exchange);
-            default -> error(exchange, 404, "NOT_FOUND", "Unknown endpoint: " + path);
+        switch (method) {
+            case "GET" -> routeGet(exchange, requestId, path);
+            case "POST" -> routePost(exchange, requestId, path, body);
+            case "DELETE" -> routeDelete(exchange, requestId, path);
+            default -> throw new IllegalStateException("unreachable method " + method);
         }
     }
+
+    private void routeGet(HttpExchange exchange, String requestId, String path) throws IOException {
+        if (path.equals(TASKS_PREFIX)) {
+            listTasks(exchange, requestId);
+            return;
+        }
+        if (path.startsWith(TASKS_PREFIX + "/") && path.length() > TASKS_PREFIX.length() + 1) {
+            getTask(exchange, requestId, path.substring(TASKS_PREFIX.length() + 1));
+            return;
+        }
+        switch (path) {
+            case API_PREFIX + "health" -> respond(exchange, requestId, 200, JsonWriter.write(health()));
+            case API_PREFIX + "live" -> respond(exchange, requestId, 200, JsonWriter.write(live()));
+            case API_PREFIX + "ready" -> respond(exchange, requestId, 200, JsonWriter.write(ready()));
+            case API_PREFIX + "time" -> sendTime(exchange, requestId);
+            case API_PREFIX + "info" -> respond(exchange, requestId, 200, JsonWriter.write(info()));
+            case API_PREFIX + "events" -> listEvents(exchange, requestId);
+            case API_PREFIX + "server/status" -> sendServerStatus(exchange, requestId);
+            case API_PREFIX + "server/players" -> sendPlayers(exchange, requestId);
+            case API_PREFIX + "server/world/block" -> sendBlock(exchange, requestId);
+            case API_PREFIX + "server/world/time" -> sendWorldTime(exchange, requestId);
+            default -> error(exchange, requestId, 404, "NOT_FOUND", "Unknown endpoint: " + path);
+        }
+    }
+
+    private void routePost(HttpExchange exchange, String requestId, String path, byte[] body) throws IOException {
+        if (path.equals(TASKS_PREFIX)) {
+            postTask(exchange, requestId, body);
+            return;
+        }
+        if (path.equals(API_PREFIX + "events/ticket")) {
+            mintTicket(exchange, requestId);
+            return;
+        }
+        error(exchange, requestId, 404, "NOT_FOUND", "Unknown endpoint: " + path);
+    }
+
+    private void routeDelete(HttpExchange exchange, String requestId, String path) throws IOException {
+        if (path.startsWith(TASKS_PREFIX + "/") && path.length() > TASKS_PREFIX.length() + 1) {
+            String id = path.substring(TASKS_PREFIX.length() + 1);
+            if (!id.matches("[0-9a-fA-F-]{8,64}")) {
+                error(exchange, requestId, 404, "NOT_FOUND", "Unknown task: " + id);
+                return;
+            }
+            cancelTask(exchange, requestId, id);
+            return;
+        }
+        error(exchange, requestId, 404, "NOT_FOUND", "Unknown endpoint: " + path);
+    }
+
+    // ------------------------------------------------------------------
+    // Read endpoints
+    // ------------------------------------------------------------------
 
     private Map<String, Object> health() {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -241,10 +323,10 @@ public final class HttpApiServer {
         return body;
     }
 
-    private void sendTime(HttpExchange exchange) throws IOException {
+    private void sendTime(HttpExchange exchange, String requestId) throws IOException {
         SnapshotResult result = runtime.trySnapshot();
         if (result.timedOut()) {
-            error(exchange, 503, "SERVER_BUSY",
+            error(exchange, requestId, 503, "SERVER_BUSY",
                     "Server thread busy; time snapshot timed out. Retry shortly.");
             return;
         }
@@ -261,7 +343,7 @@ public final class HttpApiServer {
         body.put("wallClock", System.currentTimeMillis());
         body.put("monotonicNanos", System.nanoTime());
         body.put("serverTick", serverTick);
-        respond(exchange, 200, JsonWriter.write(body));
+        respond(exchange, requestId, 200, JsonWriter.write(body));
     }
 
     private Map<String, Object> info() {
@@ -278,13 +360,90 @@ public final class HttpApiServer {
         runtime.worldSessionId().ifPresent(id -> body.put("worldSessionId", id));
         body.put("physicalSide", runtime.physicalSide().id());
         body.put("availableLogicalSides", runtime.availableLogicalSides());
+        Map<String, Object> support = new LinkedHashMap<>();
+        support.put("minecraftVersion", runtime.minecraftVersion());
+        support.put("javaVersion", Runtime.version().feature());
+        support.put("platform", runtime.platform().id());
+        support.put("platformVersion", runtime.platformVersion());
+        body.put("support", support);
+        int wsPort = runtime.wsBoundPort();
+        if (wsPort >= 0) {
+            Map<String, Object> events = new LinkedHashMap<>();
+            events.put("scheme", "ws");
+            events.put("host", "127.0.0.1");
+            events.put("port", wsPort);
+            body.put("events", events);
+        }
         return body;
     }
 
-    private void sendServerStatus(HttpExchange exchange) throws IOException {
+    private void listEvents(HttpExchange exchange, String requestId) throws IOException {
+        Map<String, List<String>> query = splitQuery(exchange.getRequestURI().getRawQuery());
+        long after = 0;
+        String afterRaw = single(query, "after");
+        if (afterRaw != null) {
+            try {
+                after = Long.parseLong(afterRaw);
+            } catch (NumberFormatException e) {
+                error(exchange, requestId, 400, "INVALID_QUERY", "after must be an integer sequence number");
+                return;
+            }
+        }
+        if (after < 0) {
+            error(exchange, requestId, 400, "INVALID_QUERY", "after must be >= 0");
+            return;
+        }
+        int limit = 100;
+        String limitRaw = single(query, "limit");
+        if (limitRaw != null) {
+            try {
+                limit = Integer.parseInt(limitRaw);
+            } catch (NumberFormatException e) {
+                error(exchange, requestId, 400, "INVALID_QUERY", "limit must be an integer");
+                return;
+            }
+        }
+        limit = Math.clamp(limit, 1, 200);
+        var eventLog = runtime.eventLog();
+        List<dev.example.mapi.internal.events.EventLog.EventRecord> records = eventLog.eventsAfter(after);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        long oldest = eventLog.oldestSeq();
+        if (after >= 0 && (after + 1) < oldest && !records.isEmpty()) {
+            Map<String, Object> gap = new LinkedHashMap<>();
+            gap.put("from", after + 1);
+            gap.put("to", records.getFirst().seq() - 1);
+            body.put("gap", gap);
+        }
+        boolean truncated = records.size() > limit;
+        List<Map<String, Object>> page = records.subList(0, Math.min(limit, records.size())).stream()
+                .map(WebSocketConnection::eventObject)
+                .toList();
+        body.put("events", page);
+        body.put("truncated", truncated);
+        body.put("headSeq", eventLog.headSeq());
+        body.put("oldestSeq", oldest);
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private void mintTicket(HttpExchange exchange, String requestId) throws IOException {
+        String ticket = runtime.ticketStore().mint();
+        Map<String, Object> ws = new LinkedHashMap<>();
+        ws.put("scheme", "ws");
+        ws.put("host", "127.0.0.1");
+        ws.put("port", runtime.wsBoundPort());
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("ticket", ticket);
+        body.put("expiresAtEpochMs", System.currentTimeMillis() + TicketStore.TTL_MS);
+        body.put("events", ws);
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private void sendServerStatus(HttpExchange exchange, String requestId) throws IOException {
         SnapshotResult result = runtime.trySnapshot();
         if (result.timedOut()) {
-            error(exchange, 503, "SERVER_BUSY",
+            error(exchange, requestId, 503, "SERVER_BUSY",
                     "Server thread busy; status snapshot timed out. Retry shortly.");
             return;
         }
@@ -292,7 +451,7 @@ public final class HttpApiServer {
         body.put("protocolVersion", PROTOCOL_VERSION);
         if (!result.serverRunning() || result.snapshot() == null) {
             body.put("running", false);
-            respond(exchange, 200, JsonWriter.write(body));
+            respond(exchange, requestId, 200, JsonWriter.write(body));
             return;
         }
         ServerStatusSnapshot snapshot = result.snapshot();
@@ -305,7 +464,369 @@ public final class HttpApiServer {
         body.put("tickCount", snapshot.tickCount());
         body.put("averageTickTimeMs", snapshot.averageTickTimeMs());
         body.put("motd", snapshot.motd());
-        respond(exchange, 200, JsonWriter.write(body));
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    // ------------------------------------------------------------------
+    // Server read endpoints (owning-thread reads with bounded waits)
+    // ------------------------------------------------------------------
+
+    private void sendPlayers(HttpExchange exchange, String requestId) throws IOException {
+        Map<String, List<String>> query = splitQuery(exchange.getRequestURI().getRawQuery());
+        int limit = intParam(query, "limit", 50, exchange, requestId);
+        if (limit < 0) {
+            return;
+        }
+        int offset = intParam(query, "offset", 0, exchange, requestId);
+        if (offset < 0) {
+            return;
+        }
+        java.util.Set<String> fields = fieldSet(single(query, "fields"),
+                java.util.Set.of("name", "id", "dimension", "position"), exchange, requestId);
+        if (fields == null) {
+            return;
+        }
+        var result = runtime.tryReadOnServerThread(() -> runtime.serverHandle().playersSupplier().get());
+        if (!handleReadOutcome(exchange, requestId, result)) {
+            return;
+        }
+        List<dev.example.mapi.internal.RawPlayerSnapshot> players = result.value();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("dataVersion", readDataVersion());
+        List<Map<String, Object>> page = new java.util.ArrayList<>();
+        int from = Math.min(offset, players.size());
+        int to = Math.min(offset + limit, players.size());
+        for (dev.example.mapi.internal.RawPlayerSnapshot player : players.subList(from, to)) {
+            Map<String, Object> entry = new LinkedHashMap<>();
+            if (fields.contains("name")) {
+                entry.put("name", player.name());
+            }
+            if (fields.contains("id")) {
+                entry.put("id", player.id().toString());
+            }
+            if (fields.contains("dimension")) {
+                entry.put("dimension", player.dimension());
+            }
+            if (fields.contains("position")) {
+                entry.put("position", java.util.Map.of("x", player.x(), "y", player.y(), "z", player.z()));
+            }
+            page.add(entry);
+        }
+        body.put("players", page);
+        body.put("total", players.size());
+        body.put("limit", limit);
+        body.put("offset", offset);
+        body.put("truncated", to < players.size());
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private void sendBlock(HttpExchange exchange, String requestId) throws IOException {
+        Map<String, List<String>> query = splitQuery(exchange.getRequestURI().getRawQuery());
+        String dimension = single(query, "dimension");
+        if (dimension == null || dimension.isBlank()) {
+            error(exchange, requestId, 400, "INVALID_QUERY", "dimension is required");
+            return;
+        }
+        Integer x = coord(query, "x");
+        Integer y = coord(query, "y");
+        Integer z = coord(query, "z");
+        if (x == null || y == null || z == null) {
+            error(exchange, requestId, 400, "INVALID_QUERY", "integer x, y, and z are required");
+            return;
+        }
+        var result = runtime.tryReadOnServerThread(() -> runtime.serverHandle().blockSupplier(dimension, x, y, z)
+                .get());
+        if (result.failure() instanceof dev.example.mapi.internal.UnknownDimensionException) {
+            error(exchange, requestId, 404, "DIMENSION_NOT_FOUND", result.failure().getMessage());
+            return;
+        }
+        if (!handleReadOutcome(exchange, requestId, result)) {
+            return;
+        }
+        dev.example.mapi.internal.RawBlockRead block = result.value();
+        if (block == null) {
+            error(exchange, requestId, 409, "CHUNK_UNLOADED",
+                    "The containing chunk is not loaded (loaded-only policy). Load it or use a different "
+                            + "chunk policy once available.");
+            return;
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("dataVersion", readDataVersion());
+        body.put("dimension", block.dimension());
+        body.put("position", java.util.Map.of("x", block.x(), "y", block.y(), "z", block.z()));
+        body.put("blockId", block.blockId());
+        body.put("properties", block.properties());
+        body.put("policy", "loadedOnly");
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private void sendWorldTime(HttpExchange exchange, String requestId) throws IOException {
+        Map<String, List<String>> query = splitQuery(exchange.getRequestURI().getRawQuery());
+        String dimension = single(query, "dimension");
+        if (dimension == null || dimension.isBlank()) {
+            error(exchange, requestId, 400, "INVALID_QUERY", "dimension is required");
+            return;
+        }
+        var result = runtime.tryReadOnServerThread(() -> runtime.serverHandle().timeSupplier(dimension).get());
+        if (result.failure() instanceof dev.example.mapi.internal.UnknownDimensionException) {
+            error(exchange, requestId, 404, "DIMENSION_NOT_FOUND", result.failure().getMessage());
+            return;
+        }
+        if (!handleReadOutcome(exchange, requestId, result)) {
+            return;
+        }
+        dev.example.mapi.internal.RawWorldTime time = result.value();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("dimension", dimension.trim());
+        body.put("gameTime", time.gameTime());
+        body.put("overworldClockTime", time.overworldClockTime());
+        body.put("defaultClockTime", time.defaultClockTime());
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private <T> boolean handleReadOutcome(HttpExchange exchange, String requestId,
+            MapiRuntime.ReadResult<T> result) throws IOException {
+        if (result.failure() != null) {
+            logger.warn("MAPI: server read failed", result.failure());
+            error(exchange, requestId, 500, "INTERNAL", "Server read failed");
+            return false;
+        }
+        if (result.timedOut()) {
+            error(exchange, requestId, 503, "SERVER_BUSY",
+                    "Server thread busy; read timed out. Retry shortly.");
+            return false;
+        }
+        if (!result.serverRunning()) {
+            error(exchange, requestId, 409, "WRONG_STATE", "No active server session.");
+            return false;
+        }
+        return true;
+    }
+
+    private int readDataVersion() {
+        var result = runtime.tryReadOnServerThread(() -> runtime.serverHandle().dataVersionSupplier().get());
+        return result.ok() && result.value() != null ? result.value() : -1;
+    }
+
+    private Integer coord(Map<String, List<String>> query, String name) {
+        String raw = single(query, name);
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private int intParam(Map<String, List<String>> query, String name, int fallback, HttpExchange exchange,
+            String requestId) throws IOException {
+        String raw = single(query, name);
+        if (raw == null) {
+            return fallback;
+        }
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException e) {
+            error(exchange, requestId, 400, "INVALID_QUERY", name + " must be an integer");
+            return -1;
+        }
+    }
+
+    private java.util.Set<String> fieldSet(String raw, java.util.Set<String> allowed, HttpExchange exchange,
+            String requestId) throws IOException {
+        if (raw == null || raw.isBlank()) {
+            return allowed;
+        }
+        java.util.Set<String> requested = new java.util.LinkedHashSet<>();
+        for (String field : raw.split(",")) {
+            String name = field.trim();
+            if (!allowed.contains(name)) {
+                error(exchange, requestId, 400, "INVALID_QUERY",
+                        "Unknown field '" + name + "'; allowed: " + allowed);
+                return null;
+            }
+            requested.add(name);
+        }
+        return requested;
+    }
+
+    // ------------------------------------------------------------------
+    // Task endpoints
+    // ------------------------------------------------------------------
+
+    private void listTasks(HttpExchange exchange, String requestId) throws IOException {
+        Map<String, List<String>> query = splitQuery(exchange.getRequestURI().getRawQuery());
+        String state = single(query, "state");
+        if (state != null && TaskManager.State.fromWireName(state) == null) {
+            error(exchange, requestId, 400, "INVALID_QUERY", "Unknown state filter: " + state);
+            return;
+        }
+        int limit = 50;
+        String limitRaw = single(query, "limit");
+        if (limitRaw != null) {
+            try {
+                limit = Integer.parseInt(limitRaw);
+            } catch (NumberFormatException e) {
+                error(exchange, requestId, 400, "INVALID_QUERY", "limit must be an integer");
+                return;
+            }
+        }
+        TaskManager.Listing listing = runtime.taskManager().list(state, limit);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("tasks", listing.tasks().stream().map(this::taskJson).toList());
+        body.put("truncated", listing.truncated());
+        body.put("total", listing.total());
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private void getTask(HttpExchange exchange, String requestId, String id) throws IOException {
+        TaskSnapshot snapshot = runtime.taskManager().get(id);
+        if (snapshot == null) {
+            error(exchange, requestId, 404, "NOT_FOUND", "Unknown task: " + id);
+            return;
+        }
+        respond(exchange, requestId, 200, JsonWriter.write(taskJson(snapshot)));
+    }
+
+    private void cancelTask(HttpExchange exchange, String requestId, String id) throws IOException {
+        TaskSnapshot existing = runtime.taskManager().get(id);
+        if (existing == null) {
+            error(exchange, requestId, 404, "NOT_FOUND", "Unknown task: " + id);
+            return;
+        }
+        if (TaskManager.State.fromWireName(existing.state()).isTerminalState()) {
+            error(exchange, requestId, 409, "WRONG_STATE",
+                    "Task already finished with state " + existing.state() + "; cancellation has no effect.");
+            return;
+        }
+        TaskSnapshot snapshot = runtime.taskManager().cancel(id);
+        respond(exchange, requestId, 200, JsonWriter.write(taskJson(snapshot)));
+    }
+
+    private void postTask(HttpExchange exchange, String requestId, byte[] body) throws IOException {
+        String idempotencyKey = exchange.getRequestHeaders().getFirst("Idempotency-Key");
+        String bodyHash = sha256Hex(body);
+        String scopeKey = tokenScope();
+        if (idempotencyKey != null) {
+            String key = idempotencyKey.trim();
+            if (key.isEmpty() || key.length() > 128) {
+                error(exchange, requestId, 400, "INVALID_HEADER",
+                        "Idempotency-Key must be 1..128 characters");
+                return;
+            }
+            IdempotencyStore.Outcome prior = idempotencyStore.find(scopeKey, key, bodyHash);
+            if (prior == IdempotencyStore.Outcome.MISMATCH) {
+                error(exchange, requestId, 422, "IDEMPOTENCY_MISMATCH",
+                        "This Idempotency-Key was already used with a different request body.");
+                return;
+            }
+            if (prior != null) {
+                exchange.getResponseHeaders().set("Idempotent-Replay", "true");
+                if (prior.locationHeader() != null) {
+                    exchange.getResponseHeaders().set("Location", prior.locationHeader());
+                }
+                respond(exchange, requestId, prior.status(), prior.responseBody());
+                return;
+            }
+        }
+        Object parsed;
+        try {
+            parsed = JsonParser.parse(new String(body, StandardCharsets.UTF_8));
+        } catch (ParseException e) {
+            error(exchange, requestId, 400, "INVALID_JSON", e.getMessage());
+            return;
+        }
+        if (!(parsed instanceof Map<?, ?> request)) {
+            error(exchange, requestId, 400, "INVALID_JSON", "Request body must be a JSON object");
+            return;
+        }
+        Object kindObj = request.get("kind");
+        if (!(kindObj instanceof String kind) || kind.isBlank()) {
+            error(exchange, requestId, 400, "INVALID_PAYLOAD", "Field 'kind' (string) is required");
+            return;
+        }
+        Object payloadObj = request.get("payload");
+        if (payloadObj != null && !(payloadObj instanceof Map)) {
+            error(exchange, requestId, 400, "INVALID_PAYLOAD", "Field 'payload' must be an object");
+            return;
+        }
+        Long deadlineMs = null;
+        if (request.get("deadlineMs") instanceof Number number) {
+            deadlineMs = number.longValue();
+        } else if (request.get("deadlineMs") != null) {
+            error(exchange, requestId, 400, "INVALID_PAYLOAD", "Field 'deadlineMs' must be a number");
+            return;
+        }
+        TaskSnapshot snapshot;
+        try {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> payload = (Map<String, Object>) payloadObj;
+            snapshot = runtime.taskManager().submit(kind, payload, deadlineMs);
+        } catch (IllegalArgumentException e) {
+            error(exchange, requestId, 400, "UNSUPPORTED", e.getMessage());
+            return;
+        }
+        String json = JsonWriter.write(taskJson(snapshot));
+        String location = TASKS_PREFIX + "/" + snapshot.id();
+        if (idempotencyKey != null) {
+            idempotencyStore.store(scopeKey, idempotencyKey.trim(), bodyHash,
+                    IdempotencyStore.fingerprint(scopeKey, idempotencyKey.trim()), 202, json, location);
+        }
+        exchange.getResponseHeaders().set("Location", location);
+        respond(exchange, requestId, 202, json);
+    }
+
+    private Map<String, Object> taskJson(TaskSnapshot snapshot) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("id", snapshot.id());
+        body.put("kind", snapshot.kind());
+        body.put("state", snapshot.state());
+        body.put("createdAtEpochMs", snapshot.createdAtEpochMs());
+        body.put("deadlineEpochMs", snapshot.deadlineEpochMs());
+        if (snapshot.finishedAtEpochMs() != null) {
+            body.put("finishedAtEpochMs", snapshot.finishedAtEpochMs());
+        }
+        if (snapshot.progress() != null) {
+            body.put("progress", snapshot.progress());
+        }
+        if (snapshot.result() != null) {
+            body.put("result", snapshot.result());
+        }
+        body.put("partialEffects", snapshot.partialEffects());
+        body.put("cleanup", snapshot.cleanup());
+        if (snapshot.error() != null) {
+            body.put("error", snapshot.error());
+        }
+        return body;
+    }
+
+    private Map<String, List<String>> splitQuery(String rawQuery) {
+        Map<String, List<String>> query = new LinkedHashMap<>();
+        if (rawQuery == null || rawQuery.isBlank()) {
+            return query;
+        }
+        for (String pair : rawQuery.split("&")) {
+            int eq = pair.indexOf('=');
+            String key = eq < 0 ? pair : pair.substring(0, eq);
+            String value = eq < 0 ? "" : pair.substring(eq + 1);
+            query.computeIfAbsent(urlDecode(key), k -> new java.util.ArrayList<>()).add(urlDecode(value));
+        }
+        return query;
+    }
+
+    private static String urlDecode(String value) {
+        return java.net.URLDecoder.decode(value, StandardCharsets.UTF_8);
+    }
+
+    private static String single(Map<String, List<String>> query, String name) {
+        List<String> values = query.get(name);
+        return values == null || values.isEmpty() ? null : values.getFirst();
     }
 
     // ------------------------------------------------------------------
@@ -324,6 +845,35 @@ public final class HttpApiServer {
         return MessageDigest.isEqual(expected, provided);
     }
 
+    private String tokenScope() {
+        return sha256Hex(config.httpToken().getBytes(StandardCharsets.UTF_8)).substring(0, 16)
+                + '|' + runtime.processSessionId();
+    }
+
+    private static String resolveRequestId(HttpExchange exchange) {
+        String incoming = exchange.getRequestHeaders().getFirst("X-Request-Id");
+        if (incoming != null) {
+            String trimmed = incoming.trim();
+            if (!trimmed.isEmpty() && trimmed.length() <= 64 && trimmed.matches("[\\x21-\\x7E]+")) {
+                return trimmed;
+            }
+        }
+        return UUID.randomUUID().toString();
+    }
+
+    private static String sha256Hex(byte[] data) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            StringBuilder sb = new StringBuilder(64);
+            for (byte b : digest.digest(data)) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is required by the JDK", e);
+        }
+    }
+
     private static boolean isAllowedHost(String hostHeader) {
         if (hostHeader == null || hostHeader.isBlank()) {
             return false;
@@ -340,46 +890,52 @@ public final class HttpApiServer {
     private boolean isAllowedOrigin(String origin) {
         // CORS stays disabled: any Origin must match the loopback listener
         // exactly, and no CORS response headers are ever emitted.
-        String expected = "http://localhost:" + config.httpPort();
-        String alt = "http://127.0.0.1:" + config.httpPort();
+        String expected = "http://localhost:" + boundPort();
+        String alt = "http://127.0.0.1:" + boundPort();
         return origin.equals(expected) || origin.equals(alt);
     }
 
-    private static boolean bodyTooLarge(HttpExchange exchange) throws IOException {
+    private int boundPort() {
+        return httpServer != null ? httpServer.getAddress().getPort() : config.httpPort();
+    }
+
+    /**
+     * Reads the request body with the documented size bound. Declared
+     * Content-Length is validated before any byte is read.
+     *
+     * @return the body bytes, or {@code null} when the body exceeds the limit
+     */
+    private static byte[] readBody(HttpExchange exchange) throws IOException {
         String contentLength = exchange.getRequestHeaders().getFirst("Content-Length");
         if (contentLength != null) {
             long value;
             try {
                 value = Long.parseLong(contentLength.trim());
             } catch (NumberFormatException e) {
-                return true;
+                return null;
             }
             if (value > MAX_BODY_BYTES) {
-                return true;
+                return null;
             }
         }
         try (InputStream in = exchange.getRequestBody()) {
-            byte[] buffer = new byte[8192];
-            long total = 0L;
-            int read;
-            while ((read = in.read(buffer)) != -1) {
-                total += read;
-                if (total > MAX_BODY_BYTES) {
-                    return true;
-                }
+            byte[] buffer = in.readNBytes(MAX_BODY_BYTES + 1);
+            if (buffer.length > MAX_BODY_BYTES) {
+                return null;
             }
+            return buffer;
         }
-        return false;
     }
 
     // ------------------------------------------------------------------
     // Response helpers
     // ------------------------------------------------------------------
 
-    private static void respond(HttpExchange exchange, int status, String json) throws IOException {
+    private static void respond(HttpExchange exchange, String requestId, int status, String json) throws IOException {
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.getResponseHeaders().set("Cache-Control", "no-store");
         exchange.getResponseHeaders().set("X-MAPI-Protocol-Version", String.valueOf(PROTOCOL_VERSION));
+        exchange.getResponseHeaders().set("X-MAPI-Request-Id", requestId);
         byte[] bytes = json.getBytes(StandardCharsets.UTF_8);
         exchange.sendResponseHeaders(status, bytes.length);
         try (var out = exchange.getResponseBody()) {
@@ -387,13 +943,15 @@ public final class HttpApiServer {
         }
     }
 
-    private static void error(HttpExchange exchange, int status, String code, String message) throws IOException {
+    private static void error(HttpExchange exchange, String requestId, int status, String code, String message)
+            throws IOException {
         Map<String, Object> error = new LinkedHashMap<>();
         error.put("code", code);
         error.put("message", message);
+        error.put("requestId", requestId);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("error", error);
         body.put("protocolVersion", PROTOCOL_VERSION);
-        respond(exchange, status, JsonWriter.write(body));
+        respond(exchange, requestId, status, JsonWriter.write(body));
     }
 }

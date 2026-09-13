@@ -9,7 +9,14 @@ import dev.example.mapi.internal.config.MapiConfig;
 import dev.example.mapi.internal.config.MapiConfigException;
 import dev.example.mapi.internal.discovery.DiscoveryFile;
 import dev.example.mapi.internal.discovery.DiscoveryFile.DiscoverySnapshot;
+import dev.example.mapi.internal.events.EventLog;
 import dev.example.mapi.internal.http.HttpApiServer;
+import dev.example.mapi.internal.http.TicketStore;
+import dev.example.mapi.internal.task.TaskManager;
+import dev.example.mapi.internal.task.WaitForTickTask;
+import dev.example.mapi.internal.ws.WebSocketConnection;
+import dev.example.mapi.internal.ws.WebSocketFrames;
+import dev.example.mapi.internal.ws.WebSocketServer;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,6 +26,9 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 
 /**
@@ -35,6 +45,10 @@ public final class MapiRuntime implements Mapi {
 
     private final MapiPlatform platform;
     private final MapiServicesImpl services = new MapiServicesImpl();
+    private final TaskManager taskManager;
+    private final EventLog eventLog;
+    private final TicketStore ticketStore = new TicketStore();
+    private final WebSocketServer wsServer;
 
     private final String processSessionId = UUID.randomUUID().toString();
     private final Instant processStartedAt = Instant.now();
@@ -42,27 +56,37 @@ public final class MapiRuntime implements Mapi {
     private volatile ServerHandle serverHandle;
     private volatile HttpApiServer httpServer;
     private volatile MapiConfig activeConfig;
+    private volatile ScheduledExecutorService heartbeatExecutor;
 
     /**
-     * Creates the runtime. Public because loader modules and tests live in
+     * Creates the runtime and starts the optional HTTP service for the
+     * process lifetime when enabled: the listener is up before any world
+     * session and survives repeated integrated-server sessions (readiness
+     * reflects world state). Public because loader modules and tests live in
      * sibling packages; still internal API.
      *
      * @param platform the loader platform adapter, never {@code null}
      */
     public MapiRuntime(MapiPlatform platform) {
         this.platform = Objects.requireNonNull(platform, "platform");
+        this.eventLog = new EventLog(processSessionId, () -> worldSessionId);
+        this.taskManager = new TaskManager(platform.logger(),
+                (type, data) -> eventLog.publish(type, "api-originated", data));
+        this.taskManager.registerKind(new WaitForTickTask(this));
+        this.wsServer = new WebSocketServer(ticketStore, this::authorizeToken, new WsEventListener(),
+                platform.logger());
         platform.registerServerLifecycle(new ServerLifecycleListener() {
             @Override
             public void onServerStarting(ServerHandle handle) {
                 serverHandle = handle;
                 worldSessionId = UUID.randomUUID().toString();
                 services.fireServerStart(handle, platform.logger());
-                startHttp();
+                publishLifecycle("server.starting", "http", "worldReady");
+                refreshDiscovery();
             }
 
             @Override
             public void onServerStopping() {
-                stopHttp();
                 ServerHandle handle = serverHandle;
                 if (handle != null) {
                     services.fireServerStop(handle, platform.logger());
@@ -73,8 +97,104 @@ public final class MapiRuntime implements Mapi {
             public void onServerStopped() {
                 serverHandle = null;
                 worldSessionId = null;
+                taskManager.failAllForLifecycleChange(
+                        "World session ended; tasks did not run to completion.");
+                publishLifecycle("server.stopped", "worldReady", "http");
+                refreshDiscovery();
             }
         });
+        startHttp();
+        Runtime.getRuntime().addShutdownHook(new Thread(this::shutdown, "mapi-shutdown"));
+    }
+
+    private void publishLifecycle(String type, String fromReadiness, String toReadiness) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("readiness", toReadiness);
+        data.put("previousReadiness", fromReadiness);
+        eventLog.publish(type, "instrumented", data);
+        eventLog.publish("readiness.changed", "instrumented", data);
+    }
+
+    private boolean authorizeToken(String candidate) {
+        String token = activeConfig != null ? activeConfig.httpToken() : null;
+        return token != null && candidate != null
+                && java.security.MessageDigest.isEqual(token.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        candidate.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /**
+     * WebSocket application behavior: hello on open, subscribe handling with
+     * resume + GAP semantics, event delivery.
+     */
+    private final class WsEventListener implements WebSocketConnection.Listener {
+
+        @Override
+        public void onOpen(WebSocketConnection connection) {
+            Map<String, Object> hello = new LinkedHashMap<>();
+            hello.put("type", "hello");
+            hello.put("protocolVersion", 1);
+            hello.put("processSessionId", processSessionId);
+            synchronized (eventLog) {
+                hello.put("headSeq", eventLog.headSeq());
+                hello.put("oldestSeq", eventLog.oldestSeq());
+            }
+            connection.sendText(dev.example.mapi.internal.json.JsonWriter.write(hello));
+        }
+
+        @Override
+        public void onMessage(WebSocketConnection connection, String text) {
+            Map<String, Object> message;
+            try {
+                message = WebSocketConnection.parseMessage(text);
+            } catch (RuntimeException e) {
+                connection.close(WebSocketFrames.CLOSE_INVALID_PAYLOAD, "messages must be JSON objects");
+                return;
+            }
+            if (!"subscribe".equals(message.get("type"))) {
+                connection.close(WebSocketFrames.CLOSE_INVALID_PAYLOAD,
+                        "unknown message type; expected 'subscribe'");
+                return;
+            }
+            if (message.get("policy") instanceof String policyName) {
+                WebSocketConnection.Policy policy = WebSocketConnection.Policy.fromWire(policyName);
+                if (policy == null) {
+                    connection.close(WebSocketFrames.CLOSE_INVALID_PAYLOAD,
+                            "policy must be 'drop-oldest' or 'disconnect'");
+                    return;
+                }
+                connection.setPolicy(policy);
+            }
+            long after = -1;
+            if (message.get("after") instanceof Number number) {
+                after = number.longValue();
+            }
+            long afterFinal = after;
+            synchronized (eventLog) {
+                long oldest = eventLog.oldestSeq();
+                boolean gap = afterFinal >= 0 && (afterFinal + 1) < oldest;
+                connection.setSubscription(eventLog.subscribeAfter(afterFinal, event ->
+                        connection.sendText(WebSocketConnection.eventJson(event))));
+                if (gap) {
+                    Map<String, Object> gapMessage = new LinkedHashMap<>();
+                    gapMessage.put("type", "gap");
+                    gapMessage.put("from", afterFinal + 1);
+                    gapMessage.put("to", oldest - 1);
+                    connection.sendText(dev.example.mapi.internal.json.JsonWriter.write(gapMessage));
+                }
+            }
+            Map<String, Object> ack = new LinkedHashMap<>();
+            ack.put("type", "subscribed");
+            if (afterFinal >= 0) {
+                ack.put("after", afterFinal);
+            }
+            ack.put("policy", connection.policyWireName());
+            connection.sendText(dev.example.mapi.internal.json.JsonWriter.write(ack));
+        }
+
+        @Override
+        public void onClose(WebSocketConnection connection) {
+            // Nothing to clean up: the subscription unsubscribes itself.
+        }
     }
 
     // ------------------------------------------------------------------
@@ -183,6 +303,15 @@ public final class MapiRuntime implements Mapi {
         return httpServer != null;
     }
 
+    /**
+     * @return the actual bound loopback port when running (may differ from
+     *         {@code http.port} when a fallback port was used), else -1
+     */
+    public int httpBoundPort() {
+        HttpApiServer server = httpServer;
+        return server != null && server.boundAddress() != null ? server.boundAddress().getPort() : -1;
+    }
+
     // ------------------------------------------------------------------
     // Snapshot machinery (shared by the Java API and the HTTP endpoint)
     // ------------------------------------------------------------------
@@ -220,6 +349,69 @@ public final class MapiRuntime implements Mapi {
         }
     }
 
+    /**
+     * Outcome of a bounded owning-thread read.
+     *
+     * @param value         the read value ({@code null} when not running/busy
+     *                      or when the supplier legitimately returned null)
+     * @param serverRunning true while a world session is active
+     * @param timedOut      true when the bounded wait expired
+     * @param failure       supplier failure (rethrown on the caller's thread)
+     * @param <T>           value type
+     */
+    public record ReadResult<T>(T value, boolean serverRunning, boolean timedOut, RuntimeException failure) {
+
+        static <T> ReadResult<T> notRunning() {
+            return new ReadResult<>(null, false, false, null);
+        }
+
+        static <T> ReadResult<T> busy() {
+            return new ReadResult<>(null, true, true, null);
+        }
+
+        /**
+         * @return true when the value should be used
+         */
+        public boolean ok() {
+            return serverRunning && !timedOut && failure == null;
+        }
+    }
+
+    /**
+     * Executes a read on the owning (server) thread with the documented
+     * bounded wait. Never blocks the server tick thread beyond the supplier
+     * itself; live objects never escape the supplier.
+     *
+     * @param supplier read executed on the server thread
+     * @param <T>      result type
+     * @return the outcome; {@link ReadResult#failure()} carries supplier
+     *         exceptions (e.g. {@link UnknownDimensionException}) for the
+     *         caller to translate
+     */
+    public <T> ReadResult<T> tryReadOnServerThread(java.util.function.Supplier<T> supplier) {
+        ServerHandle handle = serverHandle;
+        if (handle == null) {
+            return ReadResult.notRunning();
+        }
+        var task = new java.util.concurrent.FutureTask<>(() -> supplier.get());
+        handle.executeOnServerThread(task);
+        try {
+            return new ReadResult<>(task.get(SNAPSHOT_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS),
+                    true, false, null);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return ReadResult.busy();
+        } catch (java.util.concurrent.TimeoutException e) {
+            task.cancel(false);
+            return ReadResult.busy();
+        } catch (java.util.concurrent.ExecutionException e) {
+            RuntimeException cause = e.getCause() instanceof RuntimeException runtime
+                    ? runtime
+                    : new IllegalStateException(e.getCause());
+            return new ReadResult<>(null, true, false, cause);
+        }
+    }
+
     // ------------------------------------------------------------------
     // HTTP lifecycle
     // ------------------------------------------------------------------
@@ -239,9 +431,99 @@ public final class MapiRuntime implements Mapi {
             return;
         }
         HttpApiServer httpServer = new HttpApiServer(config, this, platform.logger());
-        if (httpServer.start()) {
-            this.httpServer = httpServer;
-            this.activeConfig = config;
+        if (!httpServer.start()) {
+            if (config.failFast()) {
+                throw new IllegalStateException("MAPI: http.failFast is set and no HTTP port could be bound "
+                        + "(tried " + config.httpPort() + " with " + config.portFallback() + " fallbacks)");
+            }
+            return;
+        }
+        this.httpServer = httpServer;
+        this.activeConfig = config;
+        startEvents();
+        writeDiscoveryFile(config);
+        startHeartbeat(config);
+        eventLog.publish("api.started", "api-originated", Map.of(
+                "port", httpBoundPort(),
+                "eventsPort", wsBoundPort()));
+    }
+
+    private void startEvents() {
+        if (!wsServer.start(0)) {
+            platform.logger().warn("MAPI: WebSocket event stream unavailable; HTTP polling still works");
+        }
+    }
+
+    /**
+     * @return the bound WebSocket event port, or -1 when not running
+     */
+    public int wsBoundPort() {
+        return wsServer.boundPort();
+    }
+
+    /**
+     * @return the event log (always present)
+     */
+    public EventLog eventLog() {
+        return eventLog;
+    }
+
+    /**
+     * @return the single-use WebSocket ticket store
+     */
+    public TicketStore ticketStore() {
+        return ticketStore;
+    }
+
+    /**
+     * Stops the process-scoped services (tasks, discovery heartbeat, HTTP
+     * listener) and removes the discovery file. Idempotent; also registered
+     * as a JVM shutdown hook so a clean exit never leaves a stale discovery
+     * file.
+     */
+    public synchronized void shutdown() {
+        taskManager.shutdown();
+        stopHeartbeat();
+        stopHttp();
+    }
+
+    /**
+     * @return the task registry/executor (always present; kinds are
+     *         registered even when the HTTP API is disabled)
+     */
+    public TaskManager taskManager() {
+        return taskManager;
+    }
+
+    /**
+     * @return the active server handle, or {@code null} between world
+     *         sessions; only for owner-thread suppliers
+     */
+    public ServerHandle serverHandle() {
+        return serverHandle;
+    }
+
+    private void startHeartbeat(MapiConfig config) {
+        heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "mapi-discovery-heartbeat");
+            thread.setDaemon(true);
+            return thread;
+        });
+        heartbeatExecutor.scheduleWithFixedDelay(this::refreshDiscovery, config.discoveryHeartbeatSeconds(),
+                config.discoveryHeartbeatSeconds(), TimeUnit.SECONDS);
+    }
+
+    private void stopHeartbeat() {
+        ScheduledExecutorService executor = heartbeatExecutor;
+        heartbeatExecutor = null;
+        if (executor != null) {
+            executor.shutdownNow();
+        }
+    }
+
+    private void refreshDiscovery() {
+        MapiConfig config = activeConfig;
+        if (config != null) {
             writeDiscoveryFile(config);
         }
     }
@@ -250,6 +532,10 @@ public final class MapiRuntime implements Mapi {
         HttpApiServer httpServer = this.httpServer;
         this.httpServer = null;
         this.activeConfig = null;
+        if (httpServer != null) {
+            eventLog.publish("api.stopped", "api-originated", Map.of());
+        }
+        wsServer.stop();
         deleteDiscoveryFile();
         if (httpServer != null) {
             httpServer.stop();
@@ -257,6 +543,10 @@ public final class MapiRuntime implements Mapi {
     }
 
     private void writeDiscoveryFile(MapiConfig config) {
+        HttpApiServer server = httpServer;
+        int boundPort = server != null && server.boundAddress() != null
+                ? server.boundAddress().getPort()
+                : config.httpPort();
         DiscoverySnapshot snapshot = new DiscoverySnapshot(
                 config.instanceId(),
                 processSessionId,
@@ -267,7 +557,8 @@ public final class MapiRuntime implements Mapi {
                 platform.physicalSide().id(),
                 platform.type().id(),
                 platform.minecraftVersion(),
-                config.httpPort(),
+                boundPort,
+                wsBoundPort() >= 0 ? wsBoundPort() : null,
                 Map.of());
         DiscoveryFile.write(dataDir(), snapshot, platform.logger());
     }

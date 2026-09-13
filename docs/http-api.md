@@ -8,12 +8,18 @@ Machine-readable description: [`openapi.yaml`](openapi.yaml).
 
 ## Lifecycle
 
-- Starts when a Minecraft server (dedicated **or** integrated) starts, only
-  if enabled; stops with the server. Repeated integrated-server sessions
-  start/stop it cleanly.
+- **Process lifetime (slice 0.2).** When enabled, the listener starts at mod
+  initialization and stays up for the whole process: before any world
+  session, across repeated integrated-server sessions, and until shutdown.
+  World state is reported via `readiness`, not via the listener's life.
+- Discovery heartbeat: the discovery file is rewritten on every readiness
+  change and on a fixed interval (`http.discoveryHeartbeatSeconds`), so
+  consumers can detect dead instances (heartbeat age + PID, never PID alone).
 - Port conflict → error log (`MAPI HTTP API: failed to bind ...`), the game
-  keeps running; no listener that session.
-- If enabled without a usable token, the API refuses to start (explicit
+  keeps running; no listener that session. `http.portFallback` tries the
+  consecutive ports above `http.port`; `http.failFast` turns bind failure
+  into a hard startup failure (for harness/CI runs).
+- If enabled without a resolvable token, the API refuses to start (explicit
   error log); the game is unaffected.
 
 ## Configuration
@@ -30,6 +36,9 @@ See `docs/examples/mapi.properties.example`.
 | `http.tokenFile` | `MAPI_HTTP_TOKEN_FILE` | `<gameDir>/mcapi/token` | token file; auto-generated when enabled and absent |
 | `http.rateLimitPerMinute` | `MAPI_HTTP_RATE_LIMIT_PER_MINUTE` | `60` | per-client request budget |
 | `http.instanceId` | `MAPI_INSTANCE_ID` | `mapi-<port>` | instance identifier (sanitized to `[a-z0-9-]`, ≤32 chars) |
+| `http.portFallback` | `MAPI_HTTP_PORT_FALLBACK` | `0` | try up to N consecutive ports above `http.port` |
+| `http.failFast` | `MAPI_HTTP_FAIL_FAST` | `false` | hard-fail startup when no port can be bound |
+| `http.discoveryHeartbeatSeconds` | `MAPI_DISCOVERY_HEARTBEAT_SECONDS` | `30` | discovery file refresh interval (5–3600) |
 
 ### Token resolution
 
@@ -50,7 +59,11 @@ The bind address is fixed to loopback and is not configurable.
 
 ## Endpoints (protocol version 1)
 
-All require `Authorization: Bearer <token>`. GET only.
+All require `Authorization: Bearer <token>`. Reads are `GET`; the mutating
+surface (`POST /api/v1/tasks`, `DELETE /api/v1/tasks/{id}`,
+`POST /api/v1/events/ticket`) uses `POST`/`DELETE`. Every response carries an
+`X-MAPI-Request-Id` header (echoing a client `X-Request-Id` ≤64 printable
+chars when supplied); every error body includes it as `requestId`.
 
 ### `GET /api/v1/health`
 
@@ -145,6 +158,100 @@ wait → **503**:
 {"error":{"code":"SERVER_BUSY","message":"Server thread busy; status snapshot timed out. Retry shortly."},"protocolVersion":1}
 ```
 
+### `GET /api/v1/server/players?fields=&limit=&offset=`
+
+Connected-player snapshots via a bounded owning-thread read (slice 0.5).
+Each entry carries `name`, `id` (profile UUID), `dimension`, and
+`position` — `fields` selects the projection (default all), `limit`
+(1–200, default 50) + `offset` paginate, `truncated`/`total` report paging
+state, and `dataVersion` stamps the world serialization context. Player
+identity exposure is a documented posture change (see `docs/security.md`).
+No active server session → **409** `WRONG_STATE`; busy → **503**.
+
+### `GET /api/v1/server/world/block?dimension=&x=&y=&z=`
+
+Block read under the **loaded-only** chunk policy: `{"blockId":
+"minecraft:stone","properties":{…},"dimension":…,"position":{…},
+"policy":"loadedOnly","dataVersion":…}`. Unknown dimension → **404**
+`DIMENSION_NOT_FOUND`; unloaded chunk → **409** `CHUNK_UNLOADED` (explicit
+failure, never an empty guess).
+
+### `GET /api/v1/server/world/time?dimension=`
+
+World clocks (26.2 time model): `gameTime`, `overworldClockTime`,
+`defaultClockTime` for the requested dimension.
+
+### `GET /api/v1/tasks?state=&limit=` and `GET /api/v1/tasks/{id}`
+
+Task protocol (spec §3.1). States: `queued → running → succeeded | failed`,
+`cancelRequested → cancelled` (cooperative), and `expired` on wall-time
+deadline. Tasks record progress (`units`, `total`, `estimated`), a JSON
+`result` on success, `partialEffects` that already happened, `cleanup`
+steps, and an `error {code,message}` on failure. Listing supports
+`state` (wire name) and `limit` (1–200, default 50) with `truncated`/`total`
+metadata.
+
+### `POST /api/v1/tasks`
+
+Body: `{"kind":"wait-for-tick","payload":{"targetTick":1234},"deadlineMs":30000}`.
+Returns **202** with the task snapshot and `Location: /api/v1/tasks/{id}` —
+never shape-switches on speed. Unknown `kind` → **400** `UNSUPPORTED`;
+malformed body → **400** `INVALID_JSON` / `INVALID_PAYLOAD`.
+
+Built-in kinds (Phase 0): `wait-for-tick` — succeeds when the server tick
+counter reaches `payload.targetTick`; fails `WRONG_STATE` when no server
+session is active, `DEADLINE_EXCEEDED` on expiry, or is cancelled
+cooperatively between polls.
+
+### `DELETE /api/v1/tasks/{id}`
+
+Requests cancellation: running/queued tasks move to `cancelRequested` then
+`cancelled` (or `failed` with `LIFECYCLE_CHANGED` if a world session ends
+first). Cancelling an already-finished task → **409** `WRONG_STATE`.
+
+### `Idempotency-Key` (POST /api/v1/tasks)
+
+Header-scoped per token + process session; the first 202 response is
+replayed for identical bodies (`Idempotent-Replay: true`) and reuse with a
+different body → **422** `IDEMPOTENCY_MISMATCH`. Keys are in-memory, kept
+for up to 24h (bounded by process session and a 1000-entry cap).
+
+### `GET /api/v1/events?after=&limit=`
+
+Event cursor poll (spec §3.3). Events carry a per-process-session monotonic
+`seq`, `eventType`, `source`, clocks, session ids, and `data`. `after` is an
+exclusive cursor (default 0 = retained history); the response includes
+`headSeq`, `oldestSeq`, `truncated`, and an explicit `gap: {from, to}`
+object when the requested history was evicted from the ring buffer
+(capacity 1024).
+
+Event types published in Phase 0: `api.started`, `api.stopped`,
+`server.starting`, `server.stopped`, `readiness.changed`, and
+`task.state_changed` — sources `api-originated` / `instrumented`.
+
+### `POST /api/v1/events/ticket`
+
+Mints a short-lived single-use ticket (30s TTL) for browser-style WebSocket
+auth: `{"ticket":"…","expiresAtEpochMs":…,"events":{"scheme":"ws","host":
+"127.0.0.1","port":…}}`. SDKs/tools use the Authorization header on the WS
+port instead.
+
+### WebSocket event stream
+
+The JDK HTTP stack cannot host protocol upgrades, so the event stream runs
+on a **dedicated loopback port** (OS-assigned; advertised in `/api/v1/info`
+as `events` and in the discovery file). Auth: `Authorization: Bearer …`
+header, or `?ticket=` from the endpoint above. Flow:
+
+1. Server sends `{"type":"hello","protocolVersion":1,"processSessionId":…,
+   "headSeq":…,"oldestSeq":…}`.
+2. Client sends `{"type":"subscribe","after":<seq>,"policy":"drop-oldest"|`
+   `"disconnect"}`; server answers `{"type":"subscribed",…}`.
+3. Server pushes `{"type":"event","event":{seq,…}}` messages; history is
+   replayed from `after`, with an explicit `{"type":"gap",…}` when the
+   cursor precedes retained history or when a slow consumer forces drops
+   (queue capacity 256 per connection).
+
 ## Discovery file
 
 While the API is running, MAPI writes
@@ -169,15 +276,25 @@ local tools can find the instance without guessing ports:
 
 | Status | Code | Cause |
 | --- | --- | --- |
+| 400 | `INVALID_JSON` / `INVALID_PAYLOAD` / `INVALID_QUERY` / `INVALID_HEADER` | malformed body, payload fields, query params, or headers |
+| 400 | `UNSUPPORTED` | unknown task kind or unsupported operation |
 | 401 | `UNAUTHORIZED` | missing/invalid bearer token (response includes `WWW-Authenticate: Bearer`) |
 | 403 | `FORBIDDEN_HOST` | Host header not loopback (`localhost`, `127.0.0.1`, `[::1]`) |
 | 403 | `FORBIDDEN_ORIGIN` | Origin header present but not the local listener origin; CORS stays disabled |
-| 404 | `NOT_FOUND` | unknown path |
-| 405 | `METHOD_NOT_ALLOWED` | non-GET (`Allow: GET`) |
+| 404 | `NOT_FOUND` | unknown path or task id |
+| 404 | `DIMENSION_NOT_FOUND` | dimension id unknown to this server |
+| 405 | `METHOD_NOT_ALLOWED` | method outside GET/POST/DELETE (`Allow: GET, POST, DELETE`) |
+| 409 | `WRONG_STATE` | operation requires an active server session / task already finished |
+| 409 | `CHUNK_UNLOADED` | block read hit an unloaded chunk under the loaded-only policy |
 | 413 | `PAYLOAD_TOO_LARGE` | body above 8192 bytes |
+| 422 | `IDEMPOTENCY_MISMATCH` | Idempotency-Key reused with a different body |
 | 429 | `RATE_LIMITED` | over the per-client rate limit (`Retry-After`) |
-| 503 | `SERVER_BUSY` | snapshot timeout; also observed when workers saturate (connection may be dropped) |
 | 500 | `INTERNAL` | unexpected server-side failure |
+| 503 | `SERVER_BUSY` | snapshot timeout; also observed when workers saturate (connection may be dropped) |
+
+Task-level error codes (`error.code` inside task snapshots):
+`INVALID_PAYLOAD`, `WRONG_STATE`, `DEADLINE_EXCEEDED`, `CANCELLED`,
+`LIFECYCLE_CHANGED`, `INTERNAL`.
 
 Response headers always include `Content-Type: application/json; charset=utf-8`,
 `Cache-Control: no-store`, and `X-MAPI-Protocol-Version: 1`.
@@ -221,9 +338,12 @@ python3 scripts/mapi-client.py health --base http://127.0.0.1:25586
   fields. The target-architecture endpoint catalog (`/v1/…` prefix) is
   planned as **protocol version 2** — see `docs/roadmap.md`.
 
-## What this API will never do
+## What this API will not do (current phase)
 
-No endpoints for command execution, file access, world mutation, player
-identities, chat, or source-code editing. Coding-agent interaction uses the
-developer's own authorized tools, never the mod's HTTP surface
-(`docs/llm-workflow.md`).
+The Phase 0 surface is read-only for game state plus a small, safe mutation
+surface: task orchestration (`/tasks`) and event streaming (`/events`).
+There are no endpoints for command execution, file access, world mutation,
+chat, or source-code editing. Connected-player identity is now exposed by
+`/api/v1/server/players` under the documented posture change
+(`docs/security.md`, `docs/roadmap.md` §2.1 D7). Wider mutation scopes
+(commands, world writes, files) land only with the Phase 1 scope model.

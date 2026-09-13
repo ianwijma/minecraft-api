@@ -15,16 +15,21 @@
       "description": "Loader-neutral public API (dev.example.mapi.api), internal runtime, local HTTP server, unit and HTTP contract tests."
     },
     {
+      "path": "harness",
+      "kind": "shared-library",
+      "description": "JDK-only tooling for external harnesses: discovery file scanning/validation, readiness waiting, staleness rules. No Minecraft code."
+    },
+    {
       "path": "fabric",
       "kind": "loader-adapter",
       "description": "Fabric entrypoint, platform adapter, fabric.mod.json, dev runs.",
-      "runTasks": [":fabric:runClient", ":fabric:runServer"]
+      "runTasks": [":fabric:runClient", ":fabric:runServer", ":fabric:runClientApi", ":fabric:runServerApi"]
     },
     {
       "path": "neoforge",
       "kind": "loader-adapter",
       "description": "NeoForge entrypoint, platform adapter, mods.toml template, dev runs.",
-      "runTasks": [":neoforge:runClient", ":neoforge:runServer"]
+      "runTasks": [":neoforge:runClient", ":neoforge:runServer", ":neoforge:runClientApi", ":neoforge:runServerApi"]
     },
     {
       "path": "example-consumer",
@@ -36,6 +41,7 @@
     "entrypoint": "AGENTS.md",
     "index": "docs/README.md",
     "files": [
+      { "path": "SUPPORT.md", "topic": "supported versions and version policy" },
       { "path": "docs/toolchain.md", "topic": "verified versions and sources" },
       { "path": "docs/architecture.md", "topic": "modules and boundaries" },
       { "path": "docs/development.md", "topic": "build, run, test commands" },
@@ -61,11 +67,13 @@
       "apiDocs": "apiDocs",
       "publishLocal": "publishLocal",
       "llmContext": "llmContext",
-      "validateManifest": "validateManifest"
+      "validateManifest": "validateManifest",
+      "launchMatrix": "launchMatrix"
     },
     "scripts": {
       "doctor": "scripts/doctor.sh",
       "serverSmoke": "scripts/server-smoke.sh",
+      "launchMatrix": "scripts/launch-matrix.sh",
       "verifyPublishedApi": "scripts/verify-published-api.sh",
       "httpClientExample": "scripts/mapi-client.py"
     }

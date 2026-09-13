@@ -78,6 +78,20 @@ never silently change the Minecraft target (26.2) — ask the owner first.
   `net.neoforged.fml.loading.FMLEnvironment#getDist()` (**method**, FML 11
   removed the old public `dist` field) returning
   `net.neoforged.api.distmarker.Dist` (`CLIENT`/`DEDICATED_SERVER`).
+- 26.2 server-read APIs (verified via `javap` against
+  `fabric-loom/26.2/minecraft-merged.jar`, 2026-09-13; used by slice 0.5):
+  `PlayerList#getPlayers()`; `ServerPlayer#getGameProfile()` → authlib 9
+  **record** (`name()`/`id()`); `Entity#position()` → `Vec3` (`x()/y()/z()`);
+  `Entity#level()`; `Level#dimension()` → `ResourceKey` with
+  **`identifier()`** (26.2 renamed `ResourceLocation` → `Identifier`,
+  `location()` → `identifier()`); `Identifier#parse(String)`;
+  `MinecraftServer#getLevel(ResourceKey)`; `Level#hasChunkAt(BlockPos)`;
+  `Level#getBlockState(BlockPos)`; `BlockState#getBlock()` +
+  `BuiltInRegistries.BLOCK#getKey(Block)`; `BlockState#getProperties()` +
+  `Property#getName()` / `Property#getName(T)`; time (26.2 clock model):
+  `LevelAccessor#getGameTime()`, `Level#getOverworldClockTime()`,
+  `Level#getDefaultClockTime()`; `MinecraftServer#getWorldData()#getVersion()`
+  (data version).
 
 Version bumps and target changes require explicit owner approval — see
 AGENTS.md §7.

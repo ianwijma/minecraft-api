@@ -34,6 +34,12 @@ import org.slf4j.Logger;
  *   <tr><td>http.rateLimitPerMinute</td><td>MAPI_HTTP_RATE_LIMIT_PER_MINUTE</td><td>60</td><td>Requests per client per minute</td></tr>
  *   <tr><td>http.instanceId</td><td>MAPI_INSTANCE_ID</td><td>{@code mapi-<port>}</td>
  *       <td>Instance identifier (sanitized); used by the discovery file</td></tr>
+ *   <tr><td>http.portFallback</td><td>MAPI_HTTP_PORT_FALLBACK</td><td>0</td>
+ *       <td>Try up to N consecutive ports above http.port when binding</td></tr>
+ *   <tr><td>http.failFast</td><td>MAPI_HTTP_FAIL_FAST</td><td>false</td>
+ *       <td>Fail startup when no port can be bound (harness/CI runs)</td></tr>
+ *   <tr><td>http.discoveryHeartbeatSeconds</td><td>MAPI_DISCOVERY_HEARTBEAT_SECONDS</td><td>30</td>
+ *       <td>Discovery file refresh interval (staleness signal)</td></tr>
  * </table>
  *
  * <p>Token resolution order when HTTP is enabled: {@code MAPI_HTTP_TOKEN},
@@ -48,13 +54,19 @@ public record MapiConfig(
         String httpToken,
         int rateLimitPerMinute,
         String instanceId,
-        Path tokenFile) {
+        Path tokenFile,
+        int portFallback,
+        boolean failFast,
+        int discoveryHeartbeatSeconds) {
 
     /** Default HTTP port. */
     public static final int DEFAULT_PORT = 25586;
 
     /** Default rate limit (requests per client per minute). */
     public static final int DEFAULT_RATE_LIMIT = 60;
+
+    /** Default discovery file heartbeat interval in seconds. */
+    public static final int DEFAULT_DISCOVERY_HEARTBEAT_SECONDS = 30;
 
     /** Minimum accepted bearer token length when HTTP is enabled. */
     public static final int MIN_TOKEN_LENGTH = 16;
@@ -80,7 +92,8 @@ public record MapiConfig(
      * @param rateLimitPerMinute requests per client per minute
      */
     public MapiConfig(boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute) {
-        this(httpEnabled, httpPort, httpToken, rateLimitPerMinute, "mapi-" + httpPort, null);
+        this(httpEnabled, httpPort, httpToken, rateLimitPerMinute, "mapi-" + httpPort, null, 0, false,
+                DEFAULT_DISCOVERY_HEARTBEAT_SECONDS);
     }
 
     /**
@@ -105,12 +118,23 @@ public record MapiConfig(
         String token = readString(file, env, "http.token", "MAPI_HTTP_TOKEN", null);
         String tokenFileRaw = readString(file, env, "http.tokenFile", "MAPI_HTTP_TOKEN_FILE", null);
         String instanceIdRaw = readString(file, env, "http.instanceId", "MAPI_INSTANCE_ID", null);
+        int portFallback = readInt(file, env, "http.portFallback", "MAPI_HTTP_PORT_FALLBACK", 0);
+        boolean failFast = readBool(file, env, "http.failFast", "MAPI_HTTP_FAIL_FAST", false, logger);
+        int heartbeat = readInt(file, env, "http.discoveryHeartbeatSeconds",
+                "MAPI_DISCOVERY_HEARTBEAT_SECONDS", DEFAULT_DISCOVERY_HEARTBEAT_SECONDS);
 
         if (port < 1 || port > 65535) {
             throw new MapiConfigException("http.port must be between 1 and 65535 (got " + port + ")");
         }
         if (rateLimit < 1 || rateLimit > 100_000) {
             throw new MapiConfigException("http.rateLimitPerMinute must be between 1 and 100000 (got " + rateLimit + ")");
+        }
+        if (portFallback < 0 || portFallback > 64) {
+            throw new MapiConfigException("http.portFallback must be between 0 and 64 (got " + portFallback + ")");
+        }
+        if (heartbeat < 5 || heartbeat > 3600) {
+            throw new MapiConfigException("http.discoveryHeartbeatSeconds must be between 5 and 3600 (got "
+                    + heartbeat + ")");
         }
 
         Path tokenFilePath = resolveTokenFile(tokenFileRaw, gameDir);
@@ -124,7 +148,7 @@ public record MapiConfig(
         }
 
         return new MapiConfig(enabled, port, token == null ? null : token.trim(), rateLimit, instanceId,
-                tokenFilePath);
+                tokenFilePath, portFallback, failFast, heartbeat);
     }
 
     private static void requireUsableToken(String token, Path configDir) {
@@ -280,7 +304,7 @@ public record MapiConfig(
 
     private static final java.util.Set<String> KNOWN_KEYS = java.util.Set.of(
             "http.enabled", "http.port", "http.token", "http.tokenFile", "http.rateLimitPerMinute",
-            "http.instanceId");
+            "http.instanceId", "http.portFallback", "http.failFast", "http.discoveryHeartbeatSeconds");
 
     private static String effective(Properties file, Map<String, String> env, String fileKey, String envKey) {
         String fromEnv = env.get(envKey);

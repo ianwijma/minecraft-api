@@ -230,27 +230,50 @@ public class MapiRuntimeTest {
     /**
      * Server handle whose {@link #executeOnServerThread(Runnable)} either runs
      * tasks inline or never runs them (simulating a busy server thread).
+     * Read suppliers return fixed fakes.
      */
     public static final class TestServerHandle implements ServerHandle {
         private final long startedAtEpochMs;
         private final Supplier<RawServerInfo> info;
         private final boolean runTasks;
+        private final Supplier<java.util.List<dev.example.mapi.internal.RawPlayerSnapshot>> players;
+        private final dev.example.mapi.internal.RawBlockRead block;
+        private final dev.example.mapi.internal.RawWorldTime time;
+        private final int dataVersion;
 
         public static TestServerHandle inline() {
             return new TestServerHandle(1_000L, () -> new RawServerInfo(1_000L, 3, 20, 42, 1.0d, "A Test World"),
-                    true);
+                    true,
+                    java.util.List.of(
+                            new dev.example.mapi.internal.RawPlayerSnapshot("Asha",
+                                    java.util.UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                                    "minecraft:overworld", 1.5, -64.0, 2.5),
+                            new dev.example.mapi.internal.RawPlayerSnapshot("Bram",
+                                    java.util.UUID.fromString("00000000-0000-0000-0000-000000000002"),
+                                    "minecraft:the_nether", 10.0, 32.0, -3.0)),
+                    new dev.example.mapi.internal.RawBlockRead("minecraft:stone", java.util.Map.of(),
+                            "minecraft:overworld", 0, -64, 0),
+                    new dev.example.mapi.internal.RawWorldTime(12345L, 6000L, 6000L), 4189);
         }
 
         public static TestServerHandle blocked() {
             return new TestServerHandle(1_000L, () -> {
                 throw new AssertionError("must not be invoked when blocked");
-            }, false);
+            }, false, java.util.List.of(), null,
+                    new dev.example.mapi.internal.RawWorldTime(0, 0, 0), 0);
         }
 
-        private TestServerHandle(long startedAtEpochMs, Supplier<RawServerInfo> info, boolean runTasks) {
+        private TestServerHandle(long startedAtEpochMs, Supplier<RawServerInfo> info, boolean runTasks,
+                java.util.List<dev.example.mapi.internal.RawPlayerSnapshot> players,
+                dev.example.mapi.internal.RawBlockRead block,
+                dev.example.mapi.internal.RawWorldTime time, int dataVersion) {
             this.startedAtEpochMs = startedAtEpochMs;
             this.info = info;
             this.runTasks = runTasks;
+            this.players = () -> players;
+            this.block = block;
+            this.time = time;
+            this.dataVersion = dataVersion;
         }
 
         @Override
@@ -268,6 +291,33 @@ public class MapiRuntimeTest {
         @Override
         public Supplier<RawServerInfo> infoSupplier() {
             return info;
+        }
+
+        @Override
+        public Supplier<java.util.List<dev.example.mapi.internal.RawPlayerSnapshot>> playersSupplier() {
+            return players;
+        }
+
+        @Override
+        public Supplier<dev.example.mapi.internal.RawBlockRead> blockSupplier(String dimension, int x, int y,
+                int z) {
+            if (dimension != null && dimension.equals("minecraft:nowhere")) {
+                throw new dev.example.mapi.internal.UnknownDimensionException("Unknown dimension: " + dimension);
+            }
+            return () -> block;
+        }
+
+        @Override
+        public Supplier<dev.example.mapi.internal.RawWorldTime> timeSupplier(String dimension) {
+            if (dimension != null && dimension.equals("minecraft:nowhere")) {
+                throw new dev.example.mapi.internal.UnknownDimensionException("Unknown dimension: " + dimension);
+            }
+            return () -> time;
+        }
+
+        @Override
+        public Supplier<Integer> dataVersionSupplier() {
+            return () -> dataVersion;
         }
     }
 }

@@ -27,7 +27,7 @@ class DiscoveryFileTest {
     private static DiscoverySnapshot snapshot(String instanceId) {
         return new DiscoverySnapshot(instanceId, "proc-session-1", 4242L,
                 Instant.parse("2026-09-13T12:00:00Z"), Instant.parse("2026-09-13T12:01:00Z"),
-                "worldReady", "client", "fabric", "26.2", 25586, Map.of());
+                "worldReady", "client", "fabric", "26.2", 25586, 25587, Map.of());
     }
 
     private Path file() {

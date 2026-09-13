@@ -25,6 +25,7 @@ plugins {
 rootProject.name = 'minecraft-api'
 
 include 'common'
+include 'harness'
 include 'fabric'
 include 'neoforge'
 include 'example-consumer'

@@ -45,8 +45,17 @@ filesystems without POSIX attributes, default platform protections apply).
 `<gameDir>/mcapi/discovery.json` advertises the running instance to local
 tools (schema version 1, atomic writes). It contains no secrets — instance
 id, process/session identifiers, PID, readiness, versions, and the loopback
-endpoint only. Consumers must treat it as untrusted data and validate the
-endpoint before sending credentials. It is removed when the API stops.
+endpoints (HTTP + WebSocket events) only. Consumers must treat it as
+untrusted data and validate the endpoint before sending credentials. It is
+removed when the API stops.
+
+## WebSocket event transport
+
+The WebSocket listener runs on a second loopback-only port with the same
+Host/Origin posture. Browser-style clients authenticate with a **single-use
+30s ticket** minted over authenticated HTTP (`POST /api/v1/events/ticket`);
+tools/SDKs send the bearer header directly. Tickets are consumed on first
+use and never logged.
 
 ## Resource limits
 
@@ -66,9 +75,22 @@ endpoint before sending credentials. It is removed when the API stops.
 - **Out of scope:** remote attackers (cannot reach a loopback socket),
   malicious mods on the same server (they can call the Java API directly —
   the Java API exposes no secrets), and physical access.
-- The API is read-only by construction: no POST/PUT/DELETE handlers exist,
-  and no endpoint touches the filesystem, runs commands, mutates the world,
-  or exposes player identities, chat, paths, or environment variables.
+- **Mutation surface (Phase 0):** task orchestration and event streaming
+  only — no world mutation, no command execution, no file access. Game
+  state reads run on the owning thread with bounded waits; responses are
+  immutable snapshots.
+
+## Data exposure posture (changed with the target architecture)
+
+The 0.1.0-era rule "player identities are never exposed" was relaxed in the
+target-architecture spec (roadmap §2.1 D7, owner-approved when the spec was
+adopted): `GET /api/v1/server/players` exposes profile **name, UUID,
+dimension, and position** of connected players. Rationale: these are
+required for safe agent tooling (distinguishing instances/players before
+acting). Chat, signs, books, logs, and mod-provided text remain untrusted
+observed data; per-player constraints and scopes arrive with the Phase 1
+scope model. The read-only `/api/v1/server/status` still exposes counts
+only.
 
 ## Thread-safety of game state
 

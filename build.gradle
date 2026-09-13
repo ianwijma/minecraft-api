@@ -90,8 +90,8 @@ tasks.register('buildAll', Task) {
 
 tasks.register('testAll', Task) {
     group = 'verification'
-    description = 'Runs all unit and HTTP contract tests (common module) plus the consumer example tests.'
-    dependsOn ':common:test', ':example-consumer:test'
+    description = 'Runs all unit and HTTP contract tests (common module) plus the harness and consumer example tests.'
+    dependsOn ':common:test', ':harness:test', ':example-consumer:test'
 }
 
 tasks.register('formatCheck', Task) {
@@ -128,6 +128,12 @@ tasks.register('doctor', Exec) {
     group = 'help'
     description = 'Diagnoses the local development environment (JDK, wrapper, network).'
     commandLine 'bash', 'scripts/doctor.sh'
+}
+
+tasks.register('launchMatrix', Exec) {
+    group = 'verification'
+    description = 'Launches one API-enabled dev server per loader and verifies discovery + HTTP contracts (requires MAPI_ACCEPT_EULA=true; see scripts/launch-matrix.sh).'
+    commandLine 'bash', 'scripts/launch-matrix.sh'
 }
 
 // ---------------------------------------------------------------------------

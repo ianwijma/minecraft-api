@@ -49,6 +49,7 @@ public final class DiscoveryFile {
      * @param loader           loader identifier
      * @param mcVersion        Minecraft version
      * @param apiPort          loopback HTTP port
+     * @param eventsPort       loopback WebSocket event port or {@code null}
      * @param labels           free-form labels (harness-supplied; may be empty)
      */
     public record DiscoverySnapshot(
@@ -62,6 +63,7 @@ public final class DiscoveryFile {
             String loader,
             String mcVersion,
             int apiPort,
+            Integer eventsPort,
             Map<String, String> labels) {
     }
 
@@ -91,6 +93,13 @@ public final class DiscoveryFile {
         api.put("host", "127.0.0.1");
         api.put("port", snapshot.apiPort());
         body.put("api", api);
+        if (snapshot.eventsPort() != null) {
+            Map<String, Object> events = new LinkedHashMap<>();
+            events.put("scheme", "ws");
+            events.put("host", "127.0.0.1");
+            events.put("port", snapshot.eventsPort());
+            body.put("events", events);
+        }
         body.put("labels", snapshot.labels());
 
         Path target = dataDir.resolve(FILE_NAME);

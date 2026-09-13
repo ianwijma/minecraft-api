@@ -95,6 +95,155 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "429": { $ref: "#/components/responses/RateLimited" }
         "503": { $ref: "#/components/responses/ServerBusy" }
+  /api/v1/server/players:
+    get:
+      operationId: getServerPlayers
+      summary: Connected-player snapshots (paginated, field-selected)
+      parameters:
+        - { name: fields, in: query, schema: { type: string }, description: "comma-separated projection: name,id,dimension,position" }
+        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0, minimum: 0 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlayersResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/WrongState" }
+        "503": { $ref: "#/components/responses/ServerBusy" }
+  /api/v1/server/world/block:
+    get:
+      operationId: getServerBlock
+      summary: Block read (loaded-only chunk policy)
+      parameters:
+        - { name: dimension, in: query, required: true, schema: { type: string } }
+        - { name: x, in: query, required: true, schema: { type: integer } }
+        - { name: y, in: query, required: true, schema: { type: integer } }
+        - { name: z, in: query, required: true, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BlockResponse" }
+        "404":
+          description: Unknown dimension
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "409":
+          description: Chunk not loaded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /api/v1/server/world/time:
+    get:
+      operationId: getServerWorldTime
+      summary: World clocks for a dimension (26.2 time model)
+      parameters:
+        - { name: dimension, in: query, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorldTimeResponse" }
+        "404":
+          description: Unknown dimension
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /api/v1/tasks:
+    get:
+      operationId: listTasks
+      summary: List tasks newest-first
+      parameters:
+        - { name: state, in: query, schema: { type: string, enum: [queued, running, succeeded, failed, cancelRequested, cancelled, expired] } }
+        - { name: limit, in: query, schema: { type: integer, default: 50, minimum: 1, maximum: 200 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskListResponse" }
+    post:
+      operationId: createTask
+      summary: Submit a task (202 + Location; never shape-switches on speed)
+      parameters:
+        - { name: Idempotency-Key, in: header, required: false, schema: { type: string, minLength: 1, maxLength: 128 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TaskCreateRequest" }
+      responses:
+        "202":
+          description: Task accepted
+          headers:
+            Location: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskSnapshot" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422":
+          description: Idempotency-Key reused with a different body
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /api/v1/tasks/{id}:
+    get:
+      operationId: getTask
+      summary: Read one task snapshot
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskSnapshot" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: cancelTask
+      summary: Request cooperative cancellation
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Cancellation requested
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskSnapshot" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Task already finished
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /api/v1/events:
+    get:
+      operationId: listEvents
+      summary: Event cursor poll (per-process-session monotonic seq; explicit gap)
+      parameters:
+        - { name: after, in: query, schema: { type: integer, format: int64, default: 0 }, description: exclusive cursor }
+        - { name: limit, in: query, schema: { type: integer, default: 100, minimum: 1, maximum: 200 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventsResponse" }
+  /api/v1/events/ticket:
+    post:
+      operationId: createEventTicket
+      summary: Mint a single-use WebSocket ticket (30s TTL)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventTicketResponse" }
 components:
   securitySchemes:
     bearerAuth:
@@ -119,6 +268,21 @@ components:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
     ServerBusy:
       description: Server thread busy; snapshot timed out
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    BadRequest:
+      description: Invalid query, payload, or headers
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NotFound:
+      description: Unknown path or id
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    WrongState:
+      description: Operation requires an active server session
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -250,11 +414,155 @@ components:
           properties:
             error:
               type: object
-              required: [code, message]
+              required: [code, message, requestId]
               properties:
                 code:
                   type: string
-                  enum: [UNAUTHORIZED, FORBIDDEN_HOST, FORBIDDEN_ORIGIN, NOT_FOUND,
-                         METHOD_NOT_ALLOWED, PAYLOAD_TOO_LARGE, RATE_LIMITED,
-                         SERVER_BUSY, INTERNAL]
+                  enum: [UNSUPPORTED, INVALID_JSON, INVALID_PAYLOAD, INVALID_QUERY, INVALID_HEADER,
+                         UNAUTHORIZED, FORBIDDEN_HOST, FORBIDDEN_ORIGIN, NOT_FOUND, DIMENSION_NOT_FOUND,
+                         METHOD_NOT_ALLOWED, WRONG_STATE, CHUNK_UNLOADED, PAYLOAD_TOO_LARGE,
+                         IDEMPOTENCY_MISMATCH, RATE_LIMITED, SERVER_BUSY, INTERNAL]
                 message: { type: string }
+                requestId: { type: string }
+    PlayersResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [dataVersion, players, total, limit, offset, truncated]
+          properties:
+            dataVersion: { type: integer, description: -1 when unavailable }
+            players:
+              type: array
+              items:
+                type: object
+                properties:
+                  name: { type: string }
+                  id: { type: string, format: uuid }
+                  dimension: { type: string }
+                  position:
+                    type: object
+                    properties:
+                      x: { type: number }
+                      y: { type: number }
+                      z: { type: number }
+            total: { type: integer }
+            limit: { type: integer }
+            offset: { type: integer }
+            truncated: { type: boolean }
+    BlockResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [dataVersion, dimension, position, blockId, properties, policy]
+          properties:
+            dataVersion: { type: integer }
+            dimension: { type: string }
+            position:
+              type: object
+              properties:
+                x: { type: integer }
+                y: { type: integer }
+                z: { type: integer }
+            blockId: { type: string, example: "minecraft:stone" }
+            properties: { type: object, additionalProperties: { type: string } }
+            policy: { type: string, const: loadedOnly }
+    WorldTimeResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [dimension, gameTime, overworldClockTime, defaultClockTime]
+          properties:
+            dimension: { type: string }
+            gameTime: { type: integer, format: int64 }
+            overworldClockTime: { type: integer, format: int64 }
+            defaultClockTime: { type: integer, format: int64 }
+    TaskCreateRequest:
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string, example: wait-for-tick }
+        payload: { type: object, additionalProperties: true }
+        deadlineMs: { type: integer, format: int64 }
+    TaskSnapshot:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [id, kind, state, createdAtEpochMs, deadlineEpochMs, partialEffects, cleanup]
+          properties:
+            id: { type: string, format: uuid }
+            kind: { type: string }
+            state:
+              type: string
+              enum: [queued, running, succeeded, failed, cancelRequested, cancelled, expired]
+            createdAtEpochMs: { type: integer, format: int64 }
+            deadlineEpochMs: { type: integer, format: int64 }
+            finishedAtEpochMs: { type: integer, format: int64 }
+            progress:
+              type: object
+              properties:
+                units: { type: integer, format: int64 }
+                total: { type: integer, format: int64 }
+                estimated: { type: boolean }
+            result: { type: object, additionalProperties: true }
+            partialEffects:
+              type: array
+              items: { type: object, additionalProperties: true }
+            cleanup: { type: array, items: { type: string } }
+            error:
+              type: object
+              properties:
+                code: { type: string, enum: [INVALID_PAYLOAD, WRONG_STATE, DEADLINE_EXCEEDED, CANCELLED, LIFECYCLE_CHANGED, INTERNAL] }
+                message: { type: string }
+    TaskListResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [tasks, truncated, total]
+          properties:
+            tasks: { type: array, items: { $ref: "#/components/schemas/TaskSnapshot" } }
+            truncated: { type: boolean }
+            total: { type: integer }
+    EventsResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [events, truncated, headSeq, oldestSeq]
+          properties:
+            events:
+              type: array
+              items: { $ref: "#/components/schemas/EventObject" }
+            truncated: { type: boolean }
+            headSeq: { type: integer, format: int64 }
+            oldestSeq: { type: integer, format: int64 }
+            gap:
+              type: object
+              description: present when the requested cursor precedes retained history
+              properties:
+                from: { type: integer, format: int64 }
+                to: { type: integer, format: int64 }
+    EventObject:
+      type: object
+      required: [seq, eventType, source, wallClock, monotonicNanos, processSessionId, data]
+      properties:
+        seq: { type: integer, format: int64, minimum: 1 }
+        eventType: { type: string }
+        source: { type: string, enum: [server-authoritative, client-observed, instrumented, mod-provided, api-originated] }
+        wallClock: { type: integer, format: int64 }
+        monotonicNanos: { type: integer, format: int64 }
+        processSessionId: { type: string }
+        worldSessionId: { type: string }
+        data: { type: object, additionalProperties: true }
+    EventTicketResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [ticket, expiresAtEpochMs, events]
+          properties:
+            ticket: { type: string }
+            expiresAtEpochMs: { type: integer, format: int64 }
+            events:
+              type: object
+              properties:
+                scheme: { type: string, const: ws }
+                host: { type: string, const: "127.0.0.1" }
+                port: { type: integer }

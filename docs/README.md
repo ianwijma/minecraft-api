@@ -3,6 +3,7 @@
 | File | Purpose |
 | --- | --- |
 | [`AGENTS.md`](../AGENTS.md) | Authoritative coding-agent guide: rules, commands, recipes |
+| [`SUPPORT.md`](../SUPPORT.md) | Supported Minecraft/Java/toolchain versions and version policy |
 | [`README.md`](../README.md) | Human overview: prerequisites, quick start, artifacts |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Contribution rules and required checks |
 | [`LICENSE.pending.md`](../LICENSE.pending.md) | License decision required before publishing |
