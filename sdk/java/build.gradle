@@ -1,0 +1,24 @@
+plugins {
+    id 'java'
+}
+
+// Test fixtures come from :common's test sources.
+evaluationDependsOn(':common')
+
+def commonTestOutput = project(':common').sourceSets.test.output
+
+dependencies {
+    implementation project(':common')
+    implementation project(':harness')
+    implementation libs.slf4j.api
+
+    testImplementation files(commonTestOutput)
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+}

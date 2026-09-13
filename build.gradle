@@ -90,8 +90,8 @@ tasks.register('buildAll', Task) {
 
 tasks.register('testAll', Task) {
     group = 'verification'
-    description = 'Runs all unit and HTTP contract tests (common module) plus the harness, MCP adapter, and consumer example tests.'
-    dependsOn ':common:test', ':harness:test', ':mcp-adapter:test', ':example-consumer:test'
+    description = 'Runs all unit and HTTP contract tests (common module) plus the harness, MCP adapter, JVM SDK, and consumer example tests.'
+    dependsOn ':common:test', ':harness:test', ':mcp-adapter:test', ':sdk:java:test', ':example-consumer:test'
 }
 
 tasks.register('formatCheck', Task) {

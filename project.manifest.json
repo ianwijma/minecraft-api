@@ -30,6 +30,11 @@
       "description": "Stdlib-only Python client: token-file auth, discovery parsing, task polling with idempotency, event cursors with gap detection. Tests via ./gradlew sdkPythonTest."
     },
     {
+      "path": "sdk/java",
+      "kind": "sdk",
+      "description": "JVM SDK (JDK HTTP client): discovery/token resolution, reads, task flow with idempotency and stale-session preconditions, event cursors."
+    },
+    {
       "path": "fabric",
       "kind": "loader-adapter",
       "description": "Fabric entrypoint, platform adapter, fabric.mod.json, dev runs.",
