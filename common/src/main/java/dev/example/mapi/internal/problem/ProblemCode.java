@@ -61,7 +61,11 @@ public enum ProblemCode {
     DESTRUCTIVE_INTENT_REQUIRED("DESTRUCTIVE_INTENT_REQUIRED", 428, false, Family.OPERATION,
             "A destructive request needs explicit caller intent, not just the grant (spec §14)"),
     DEADLINE_EXCEEDED("DEADLINE_EXCEEDED", 504, true, Family.OPERATION,
-            "Wall-clock deadline elapsed before completion (spec §4.3)");
+            "Wall-clock deadline elapsed before completion (spec §4.3)"),
+    LEASE_HELD("LEASE_HELD", 409, true, Family.OPERATION,
+            "The control topic is exclusively held by another owner (spec §5)"),
+    LEASE_REQUIRED("LEASE_REQUIRED", 409, false, Family.OPERATION,
+            "The operation requires control-lease ownership the caller does not hold (spec §14)");
 
     /** Error-code family, used for tooling and documentation. */
     public enum Family {

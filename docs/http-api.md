@@ -90,14 +90,16 @@ wait → **503**:
 | 428 | `DESTRUCTIVE_INTENT_REQUIRED` | destructive request without explicit intent (spec §14) |
 
 Error codes are centrally registered in
-`internal/problem/ProblemCode` (wire name, HTTP status, retryability).
-Operation-level codes named by the product specification
-(`EXECUTION_MODE_UNSUPPORTED`, `WORLD_NOT_LOADED`, `STALE_WORLD`,
-`WORLD_UNLOADED`, `SERVER_PAUSED`, `CLOCK_NOT_ADVANCING`,
-`SNAPSHOT_EXPIRED`, `TOOLTIP_SEMANTICS_UNAVAILABLE`) are registered but not
-yet emitted — they appear as the corresponding endpoints land
-(`docs/execution-plan.md`). Error bodies may include a structured
-`details` object alongside `code`/`message` when an operation provides one.
+`internal/problem/ProblemCode` (wire name, HTTP status, retryability);
+that enum is the authoritative registry. Operation-level codes named by the
+product specification (`EXECUTION_MODE_UNSUPPORTED`, `WORLD_NOT_LOADED`,
+`STALE_WORLD`, `WORLD_UNLOADED`, `SERVER_PAUSED`, `CLOCK_NOT_ADVANCING`,
+`SNAPSHOT_EXPIRED`, `TOOLTIP_SEMANTICS_UNAVAILABLE`) plus the substrate
+codes (`INSUFFICIENT_SCOPE`, `DESTRUCTIVE_INTENT_REQUIRED`,
+`DEADLINE_EXCEEDED`, `LEASE_HELD`, `LEASE_REQUIRED`) are registered; each is
+emitted as its capability's endpoints land (`docs/execution-plan.md`). Error
+bodies may include a structured `details` object alongside `code`/`message`
+when an operation provides one.
 
 Response headers always include `Content-Type: application/json; charset=utf-8`,
 `Cache-Control: no-store`, and `X-MAPI-Protocol-Version: 1`.
