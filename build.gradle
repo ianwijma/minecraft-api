@@ -131,6 +131,13 @@ tasks.register('sdkPythonTest', Exec) {
     commandLine 'python3', '-m', 'unittest', 'discover', '-s', 'tests'
 }
 
+tasks.register('sdkTypeScriptTest', Exec) {
+    group = 'verification'
+    description = 'Runs the TypeScript SDK tests via node type stripping (requires node >= 22.6; not part of verify).'
+    workingDir 'sdk/typescript'
+    commandLine 'node', '--experimental-strip-types', '--test', 'test/client.test.ts'
+}
+
 tasks.register('doctor', Exec) {
     group = 'help'
     description = 'Diagnoses the local development environment (JDK, wrapper, network).'

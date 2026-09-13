@@ -290,13 +290,23 @@ Still open (each needs in-game verification before it can be trusted):
 - Every execution emits a `server.command` event; session preconditions
   supported; contract + negative tests.
 
+### Slice 1.9 — TypeScript SDK (DONE 2026-09-13)
+
+- `sdk/typescript`: zero-dependency client (Node 22+ fetch) mirroring the
+  helper layer — discovery/token resolution, reads, task flow with
+  idempotency + `expectedWorldSessionId`, `followEvents` async generator
+  with gap markers; runs without a build step via node type stripping.
+- Tests against a local stub server; `./gradlew sdkTypeScriptTest`.
+
 Phase 1 status (2026-09-13): scopes (1.1), leases (1.2), session
 preconditions (1.3), failure-scenario suite (1.4), MCP adapter (1.5),
-Python SDK (1.6), command execution (1.7) — done. Still open for Phase 1
-"complete" per spec §12/§13: TypeScript + one JVM SDK, the fixture-mod
-(deferred to Phase 2 — it exists to exercise extended-tier storage/UI
-features that do not exist yet), and the game-run/CI checks marked NOT RUN
-in Phase 0.
+Python SDK (1.6), command execution (1.7), JVM SDK (1.8), TypeScript SDK
+(1.9) — done. Still open for Phase 1 "complete" per spec §12/§13: the
+fixture-mod (deferred to Phase 2 — it exists to exercise extended-tier
+storage/UI features that do not exist yet) and the game-run/CI checks
+marked NOT RUN in Phase 0. SDK generation remains hand-written-first by
+design; the OpenAPI generator pipeline (§10 pinned subset check) is a
+Phase 2 item.
 
 Phase 2 (extended tier: storage adapters, GameTest, region fixtures, ext
 SPI), Phase 3 (experimental tier) follow spec §12 with the slice discipline

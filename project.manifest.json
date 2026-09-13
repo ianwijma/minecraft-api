@@ -35,6 +35,11 @@
       "description": "JVM SDK (JDK HTTP client): discovery/token resolution, reads, task flow with idempotency and stale-session preconditions, event cursors."
     },
     {
+      "path": "sdk/typescript",
+      "kind": "sdk",
+      "description": "Zero-dependency TypeScript client (Node 22+ fetch): discovery/token resolution, reads, task flow with idempotency, event async generator with gap reporting. Tests via ./gradlew sdkTypeScriptTest."
+    },
+    {
       "path": "fabric",
       "kind": "loader-adapter",
       "description": "Fabric entrypoint, platform adapter, fabric.mod.json, dev runs.",
