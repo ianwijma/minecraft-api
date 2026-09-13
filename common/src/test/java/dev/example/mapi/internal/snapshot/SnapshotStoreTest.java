@@ -85,8 +85,14 @@ class SnapshotStoreTest {
         SnapshotStore store = new SnapshotStore(10_000, 8, EncodingLimits.DEFAULT);
         store.retain(new Snapshot("before", Optional.of("w1"), NOW, Optional.of(10L),
                 world("zoe", 20, 5)));
-        store.retain(new Snapshot("after", Optional.of("w1"), NOW + 10, Optional.of(11L),
-                world("zoe", 15, 6)));
+        Tag afterTree = new Tag.CompoundTag(Map.of(
+                "entity", new Tag.CompoundTag(Map.of(
+                        "name", new Tag.StringTag("zoe"),
+                        "health", new Tag.IntTag(TagType.INT, 15))),
+                "stats", new Tag.CompoundTag(Map.of(
+                        "xp", new Tag.LongTag(5),
+                        "level", new Tag.IntTag(TagType.INT, 3)))));
+        store.retain(new Snapshot("after", Optional.of("w1"), NOW + 10, Optional.of(11L), afterTree));
 
         SnapshotStore.DiffResult result = store.diff("before", "after", DiffOptions.DEFAULT, NOW + 20);
         assertEquals(2, result.records().size());
@@ -98,8 +104,8 @@ class SnapshotStoreTest {
 
         var added = result.records().stream()
                 .filter(r -> r.kind() == SnapshotStore.DiffRecord.Kind.ADDED).findFirst().orElseThrow();
-        assertEquals("stats.xp", added.path());
-        assertEquals("6", ((Map<?, ?>) added.after().orElseThrow()).get("value"));
+        assertEquals("stats.level", added.path());
+        assertEquals(3L, ((Map<?, ?>) added.after().orElseThrow()).get("value"));
 
         assertEquals(Optional.of(10L), result.firstBoundary());
         assertEquals(Optional.of(11L), result.secondBoundary());
