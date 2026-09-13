@@ -40,6 +40,8 @@ public enum ProblemCode {
             "Malformed or invalid request parameters"),
     SERVER_BUSY("SERVER_BUSY", 503, true, Family.MIDDLEWARE,
             "Game thread busy; bounded wait elapsed"),
+    CAPABILITY_UNAVAILABLE("CAPABILITY_UNAVAILABLE", 503, false, Family.OPERATION,
+            "The loader bridge does not provide this capability (spec §15.3)"),
 
     EXECUTION_MODE_UNSUPPORTED("EXECUTION_MODE_UNSUPPORTED", 422, false, Family.OPERATION,
             "The requested executionMode is not supported by this operation (spec §3.3)"),

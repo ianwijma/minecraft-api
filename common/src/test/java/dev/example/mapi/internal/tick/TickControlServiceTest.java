@@ -44,13 +44,12 @@ class TickControlServiceTest {
         var state = service.state();
         assertTrue(!state.frozen());
 
-        assertThrows(ProblemException.class, () -> service.freeze(null, () -> { }));
-        ProblemException e = assertThrows(ProblemException.class,
-                () -> service.freeze(ControlLease.class.cast(null), () -> { }));
-        assertEquals(ProblemCode.LEASE_REQUIRED, e.code());
+        assertThrows(ProblemException.class, () -> service.freeze(null));
+        assertEquals(ProblemCode.LEASE_REQUIRED,
+                assertThrows(ProblemException.class, () -> service.freeze(null)).code());
 
         ControlLease lease = service.acquireLease("runner", 10_000);
-        var after = service.freeze(lease, () -> backend.frozen = true);
+        var after = service.freeze(lease);
         assertTrue(after.frozen());
 
         // A different owner cannot take the topic.
@@ -60,18 +59,13 @@ class TickControlServiceTest {
     @Test
     void freezeAndUnfreezeReportStateAndProgress() {
         ControlLease lease = service.acquireLease("runner", 10_000);
-        var frozen = service.freeze(lease, () -> {
-            backend.frozen = true;
-            backend.tickCount += 0;
-        });
+        var frozen = service.freeze(lease);
         assertTrue(frozen.frozen());
         assertEquals("tick-freeze", clocks.state(ClockId.SERVER_TICK).reason().orElseThrow());
         assertThrows(ProblemException.class, progress::requireTickAdvancing);
 
-        var unfrozen = service.unfreeze(lease, () -> {
-            backend.frozen = false;
-            backend.tickCount += 5;
-        });
+        backend.tickCount += 5;
+        var unfrozen = service.unfreeze(lease);
         assertTrue(!unfrozen.frozen());
         assertTrue(clocks.state(ClockId.SERVER_TICK).advancing());
     }

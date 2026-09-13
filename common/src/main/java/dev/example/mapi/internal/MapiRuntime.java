@@ -39,6 +39,7 @@ public final class MapiRuntime implements Mapi {
     private volatile dev.example.mapi.internal.tick.TickControlService tickControl;
     private volatile dev.example.mapi.internal.query.WorldQueryService worldQueries;
     private volatile dev.example.mapi.internal.command.CommandDispatchService commands;
+    private volatile dev.example.mapi.internal.snapshot.SnapshotCaptureService snapshotCapture;
 
     private final MapiPlatform platform;
     private final MapiServicesImpl services = new MapiServicesImpl();
@@ -85,6 +86,10 @@ public final class MapiRuntime implements Mapi {
                 worldQueries = queryBackend
                         .map(b -> new dev.example.mapi.internal.query.WorldQueryService(
                                 b, worldLifecycle, MapiRuntime.this::callOnServerThread))
+                        .orElse(null);
+                snapshotCapture = queryBackend
+                        .map(b -> new dev.example.mapi.internal.snapshot.SnapshotCaptureService(
+                                snapshots, b, worldLifecycle, MapiRuntime.this::callOnServerThread))
                         .orElse(null);
                 var commandBackend = platform.serverBridge().commands();
                 commands = commandBackend
@@ -230,6 +235,11 @@ public final class MapiRuntime implements Mapi {
         return java.util.Optional.ofNullable(commands);
     }
 
+    /** @return the snapshot capture service while the bridge supports queries, empty otherwise */
+    public java.util.Optional<dev.example.mapi.internal.snapshot.SnapshotCaptureService> snapshotCapture() {
+        return java.util.Optional.ofNullable(snapshotCapture);
+    }
+
     /**
      * Runs a supplier on the server thread with the bounded snapshot wait,
      * translating failures into problem exceptions.
@@ -238,7 +248,20 @@ public final class MapiRuntime implements Mapi {
      * @param <T>  result type
      * @return the result
      */
-    <T> T callOnServerThread(java.util.function.Supplier<T> task) {
+    public <T> T callOnServerThread(java.util.function.Supplier<T> task) {
+        return callOnServerThread(task, SNAPSHOT_WAIT_MS);
+    }
+
+    /**
+     * Runs a supplier on the server thread with an explicit bounded wait,
+     * translating failures into problem exceptions.
+     *
+     * @param task      supplier to run
+     * @param timeoutMs wall-clock bound in milliseconds
+     * @param <T>       result type
+     * @return the result
+     */
+    public <T> T callOnServerThread(java.util.function.Supplier<T> task, long timeoutMs) {
         ServerHandle handle = serverHandle;
         if (handle == null) {
             throw new dev.example.mapi.internal.problem.ProblemException(
@@ -248,12 +271,12 @@ public final class MapiRuntime implements Mapi {
         var future = new java.util.concurrent.FutureTask<>(task::get);
         handle.executeOnServerThread(future);
         try {
-            return future.get(SNAPSHOT_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+            return future.get(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
         } catch (java.util.concurrent.TimeoutException e) {
             future.cancel(false);
             throw new dev.example.mapi.internal.problem.ProblemException(
                     dev.example.mapi.internal.problem.ProblemCode.SERVER_BUSY,
-                    "server thread busy; query timed out");
+                    "server thread busy; work did not complete within " + timeoutMs + " ms");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new dev.example.mapi.internal.problem.ProblemException(
@@ -269,7 +292,7 @@ public final class MapiRuntime implements Mapi {
             }
             throw new dev.example.mapi.internal.problem.ProblemException(
                     dev.example.mapi.internal.problem.ProblemCode.INTERNAL,
-                    "world query failed: " + cause);
+                    "server-thread work failed: " + cause);
         }
     }
 

@@ -89,11 +89,36 @@ public final class TickControlService {
                     "tick control requires owning the " + LEASE_TOPIC + " lease");
         }
         var holder = leases.holderOf(LEASE_TOPIC);
-        if (holder.isEmpty() || holder.get() != lease) {
+        if (holder.isEmpty() || !holder.get().id().equals(lease.id())) {
             throw new ProblemException(ProblemCode.LEASE_REQUIRED,
                     "tick-control lease is not held by this caller",
                     Map.of("topic", LEASE_TOPIC));
         }
+    }
+
+    /**
+     * Resolves the current tick-control holder by lease id (HTTP callers only
+     * have the id).
+     *
+     * @param leaseId the lease id presented by the caller
+     * @return the held lease
+     * @throws ProblemException with {@code LEASE_REQUIRED} when no lease with
+     *     this id currently owns tick control
+     */
+    public ControlLease holderFor(String leaseId) {
+        var holder = leases.holderOf(LEASE_TOPIC);
+        if (holder.isEmpty() || leaseId == null || !holder.get().id().equals(leaseId)) {
+            throw new ProblemException(ProblemCode.LEASE_REQUIRED,
+                    "tick-control lease is not held by this caller",
+                    Map.of("topic", LEASE_TOPIC,
+                            "holderId", holder.map(ControlLease::id).orElse("none")));
+        }
+        return holder.get();
+    }
+
+    /** @return the id of the current tick-control holder, if any */
+    public Optional<String> holderId() {
+        return leases.holderOf(LEASE_TOPIC).map(ControlLease::id);
     }
 
     /** @return the current tick-control state, never {@code null} */
@@ -102,30 +127,29 @@ public final class TickControlService {
     }
 
     /**
-     * Freezes the tick loop.
+     * Freezes the tick loop. Must run on the server thread; callers arrange
+     * threading (HTTP layer uses its bounded server-thread runner).
      *
      * @param lease caller's tick-control lease
-     * @param onServerThread executes the operation on the server thread
      * @return the state after the operation
      */
-    public TickControlBackend.State freeze(ControlLease lease, Runnable onServerThread) {
+    public TickControlBackend.State freeze(ControlLease lease) {
         requireOwnership(lease);
-        onServerThread.run();
+        backend.freeze();
         var after = backend.state();
         progress.observe(observation(after));
         return after;
     }
 
     /**
-     * Unfreezes the tick loop.
+     * Unfreezes the tick loop. Must run on the server thread.
      *
      * @param lease caller's tick-control lease
-     * @param onServerThread executes the operation on the server thread
      * @return the state after the operation
      */
-    public TickControlBackend.State unfreeze(ControlLease lease, Runnable onServerThread) {
+    public TickControlBackend.State unfreeze(ControlLease lease) {
         requireOwnership(lease);
-        onServerThread.run();
+        backend.unfreeze();
         var after = backend.state();
         progress.observe(observation(after));
         return after;
