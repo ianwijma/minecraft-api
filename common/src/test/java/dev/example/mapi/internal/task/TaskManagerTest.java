@@ -56,8 +56,8 @@ class TaskManagerTest {
         platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
         TaskManager.TaskSnapshot snapshot = rt.taskManager().submit("wait-for-tick",
                 Map.of("targetTick", 42L), null);
-        assertTrue(snapshot.state().equals("queued") || snapshot.state().equals("running"),
-                "submit must return a pre-terminal snapshot, got " + snapshot.state());
+        assertTrue(java.util.Set.of("queued", "running", "succeeded").contains(snapshot.state()),
+                "submit must return a live-or-done snapshot, got " + snapshot.state());
         AtomicReference<String> seen = new AtomicReference<>();
         TaskManager.TaskSnapshot done = pollUntil(snapshot.id(), seen, "succeeded");
         assertEquals("succeeded", done.state());

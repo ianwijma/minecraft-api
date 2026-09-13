@@ -288,6 +288,26 @@ Both actions emit `client.input.key` / `client.screenshot` events
 render-lifecycle `frameId`, and macro record/replay are future slice 0.6
 work (documented, not yet implemented).
 
+### `POST /api/v1/leases`, `POST /api/v1/leases/{id}/renew`, `DELETE /api/v1/leases/{id}`, `GET /api/v1/leases`
+
+Control leases (spec §5.3): expiring, renewable grants for
+`client.input`, `client.ui`, `client.camera`, `server.tick`,
+`world.bulkEdit`. Acquire body: `{"lease":"client.input","ttlMs":60000,
+"conflict":"reject|queue|preempt"}` (defaults: ttl 60s clamped to
+[1s, 1h], conflict `reject`). Conflict handling: `reject` → **409**
+`LEASE_HELD` with the held lease under `held`; `queue` → FIFO activation on
+release/expiry; `preempt` → the current holder is marked `preempted` and
+its cleanup hook runs. Renewal: `{"ttlMs":…}` from now. States:
+`held`, `queued`, `released`, `expired`, `preempted`.
+
+On expiry, release, preemption, disconnect, or world-session end every
+lease of that type runs its cleanup hook — for `client.input` that releases
+every key the API is currently holding (physical user input is untouched).
+Lease changes emit `lease.changed` events. Scopes: acquiring
+`client.*`/`world.bulkEdit`/`server.tick` leases requires
+`client.control`/`world.write`/`lifecycle.manage` respectively; listing
+requires `observe`.
+
 ### WebSocket event stream
 
 The JDK HTTP stack cannot host protocol upgrades, so the event stream runs

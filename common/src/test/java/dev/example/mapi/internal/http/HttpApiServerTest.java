@@ -641,9 +641,18 @@ class HttpApiServerTest {
                         return new dev.example.mapi.internal.client.ScreenshotResult(frameId,
                                 "mcapi/screenshots/frame-" + frameId + ".png", 1280, 720, 4242);
                     }
+
+                    @Override
+                    public void releaseAllKeys() {
+                        // tracked in tests via releasedKeys counter
+                        releasedKeys.incrementAndGet();
+                    }
                 },
                 Runnable::run);
     }
+
+    private final java.util.concurrent.atomic.AtomicInteger releasedKeys =
+            new java.util.concurrent.atomic.AtomicInteger();
 
     @Test
     void clientEndpointsRequireRegisteredOpsAndReportSnapshots() throws Exception {
@@ -716,6 +725,77 @@ class HttpApiServerTest {
         HttpResponse<String> second = post("/api/v1/client/screenshot", "{}",
                 "Authorization", "Bearer " + TOKEN);
         assertTrue(second.body().contains("\"frameId\":2"), second.body());
+    }
+
+    // ------------------------------------------------------------------
+    // Leases (spec §5.3)
+    // ------------------------------------------------------------------
+
+    @Test
+    void leaseLifecycleOverHttp() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> first = post("/api/v1/leases", "{\"lease\":\"client.input\",\"ttlMs\":60000}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, first.statusCode(), first.body());
+        assertTrue(first.body().contains("\"state\":\"held\""), first.body());
+        String firstId = first.body().replaceAll(".*\"id\":\"([0-9a-f-]+)\".*", "$1");
+
+        HttpResponse<String> rejected = post("/api/v1/leases", "{\"lease\":\"client.input\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(409, rejected.statusCode(), rejected.body());
+        assertTrue(rejected.body().contains("LEASE_HELD"), rejected.body());
+        assertTrue(rejected.body().contains("\"held\":"), rejected.body());
+
+        HttpResponse<String> preempt = post("/api/v1/leases",
+                "{\"lease\":\"client.input\",\"conflict\":\"preempt\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, preempt.statusCode(), preempt.body());
+        assertTrue(preempt.body().contains("\"state\":\"held\""), preempt.body());
+        String secondId = preempt.body().replaceAll(".*\"id\":\"([0-9a-f-]+)\".*", "$1");
+        HttpResponse<String> firstAfter = get("/api/v1/leases", "Authorization", "Bearer " + TOKEN);
+        assertTrue(firstAfter.body().contains("\"state\":\"preempted\""), firstAfter.body());
+
+        HttpResponse<String> renew = post("/api/v1/leases/" + secondId + "/renew", "{\"ttlMs\":120000}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, renew.statusCode(), renew.body());
+
+        HttpResponse<String> release = client.send(HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/leases/" + secondId))
+                .header("Authorization", "Bearer " + TOKEN)
+                .DELETE().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(200, release.statusCode(), release.body());
+        assertTrue(release.body().contains("\"state\":\"released\""), release.body());
+        assertTrue(firstId != null && !firstId.isEmpty());
+    }
+
+    @Test
+    void leaseValidationAndScopeErrors() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> unknownType = post("/api/v1/leases", "{\"lease\":\"bogus.lease\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(400, unknownType.statusCode(), unknownType.body());
+        assertTrue(unknownType.body().contains("INVALID_PAYLOAD"), unknownType.body());
+    }
+
+    @Test
+    void clientInputLeaseExpiryReleasesHeldKeys() throws Exception {
+        startServer(enabledConfig());
+        registerFakeClientOps();
+        HttpResponse<String> pressed = post("/api/v1/client/input/key",
+                "{\"mapping\":\"key.forward\",\"action\":\"press\"}", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, pressed.statusCode(), pressed.body());
+        int before = releasedKeys.get();
+
+        HttpResponse<String> lease = post("/api/v1/leases", "{\"lease\":\"client.input\",\"ttlMs\":1000}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, lease.statusCode(), lease.body());
+
+        long deadline = System.currentTimeMillis() + 8000;
+        while (System.currentTimeMillis() < deadline && releasedKeys.get() == before) {
+            Thread.sleep(100);
+        }
+        assertTrue(releasedKeys.get() > before,
+                "client.input lease expiry must run the key-release hook");
     }
 
     // ------------------------------------------------------------------

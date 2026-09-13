@@ -225,6 +225,17 @@ Still open (each needs in-game verification before it can be trusted):
   the required scope; `/info` reports the token's scopes; WS closes without
   `observe`. Config: `http.scopes` / `MAPI_HTTP_SCOPES`.
 
+### Slice 1.2 — Control leases (DONE 2026-09-13)
+
+- `LeaseManager` with the §5.3 contract: expiring/renewable grants,
+  `reject`/`queue`/`preempt` conflict policies, FIFO activation, expiry
+  watchdog, and per-type cleanup hooks (`client.input` releases API-held
+  keys via `MapiClientOps#releaseAllKeys`, tracked separately from physical
+  user input).
+- Endpoints: acquire/renew/release/list with `LEASE_HELD` semantics and
+  lease-type-scoped authorization; `lease.changed` events; release-all on
+  world-session end and shutdown.
+
 Phase 1 (scopes, leases, revisions, SDKs, MCP adapter, fixture-mod,
 failure-scenario suite), Phase 2 (extended tier: storage adapters, GameTest,
 region fixtures, ext SPI), Phase 3 (experimental tier) follow spec §12 with

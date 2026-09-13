@@ -52,6 +52,13 @@ public interface MapiClientOps {
      */
     ScreenshotResult captureScreenshot(long frameId);
 
+    /**
+     * Releases every key the API is currently holding (lease expiry hook,
+     * spec §5.3: on lease end all held keys/buttons are released). Keys the
+     * physical user holds are untouched — only API-driven holds.
+     */
+    void releaseAllKeys();
+
     /** The requested mapping does not exist on this client. */
     class UnknownMappingException extends IllegalArgumentException {
 

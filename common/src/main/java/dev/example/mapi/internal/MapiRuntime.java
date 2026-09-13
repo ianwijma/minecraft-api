@@ -12,6 +12,7 @@ import dev.example.mapi.internal.discovery.DiscoveryFile.DiscoverySnapshot;
 import dev.example.mapi.internal.events.EventLog;
 import dev.example.mapi.internal.http.HttpApiServer;
 import dev.example.mapi.internal.http.TicketStore;
+import dev.example.mapi.internal.lease.LeaseManager;
 import dev.example.mapi.internal.task.TaskManager;
 import dev.example.mapi.internal.task.WaitForTickTask;
 import dev.example.mapi.internal.ws.WebSocketConnection;
@@ -46,6 +47,7 @@ public final class MapiRuntime implements Mapi {
     private final MapiPlatform platform;
     private final MapiServicesImpl services = new MapiServicesImpl();
     private final TaskManager taskManager;
+    private final LeaseManager leaseManager;
     private final EventLog eventLog;
     private final TicketStore ticketStore = new TicketStore();
     private final WebSocketServer wsServer;
@@ -75,6 +77,19 @@ public final class MapiRuntime implements Mapi {
         this.taskManager = new TaskManager(platform.logger(),
                 (type, data) -> eventLog.publish(type, "api-originated", data));
         this.taskManager.registerKind(new WaitForTickTask(this));
+        this.leaseManager = new LeaseManager(platform.logger(), snapshot ->
+                eventLog.publish("lease.changed", "api-originated", Map.of(
+                        "leaseId", snapshot.id(),
+                        "lease", snapshot.lease(),
+                        "state", snapshot.state())));
+        this.leaseManager.registerExpiryHook("client.input", () ->
+                tryReadOnClientThread(() -> {
+                    var ops = clientOps;
+                    if (ops != null) {
+                        ops.releaseAllKeys();
+                    }
+                    return null;
+                }));
         this.wsServer = new WebSocketServer(ticketStore, this::authorizeToken, new WsEventListener(),
                 platform.logger());
         platform.registerServerLifecycle(new ServerLifecycleListener() {
@@ -101,6 +116,7 @@ public final class MapiRuntime implements Mapi {
                 worldSessionId = null;
                 taskManager.failAllForLifecycleChange(
                         "World session ended; tasks did not run to completion.");
+                leaseManager.releaseAll();
                 publishLifecycle("server.stopped", "worldReady", "http");
                 refreshDiscovery();
             }
@@ -559,6 +575,7 @@ public final class MapiRuntime implements Mapi {
      * file.
      */
     public synchronized void shutdown() {
+        leaseManager.releaseAll();
         taskManager.shutdown();
         stopHeartbeat();
         stopHttp();
@@ -570,6 +587,13 @@ public final class MapiRuntime implements Mapi {
      */
     public TaskManager taskManager() {
         return taskManager;
+    }
+
+    /**
+     * @return the control-lease registry
+     */
+    public LeaseManager leaseManager() {
+        return leaseManager;
     }
 
     /**

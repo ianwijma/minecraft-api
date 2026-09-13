@@ -108,6 +108,8 @@ public final class NeoForgeClientOps implements MapiClientOps {
             options -> options.keyPickItem, options -> options.keySwapOffhand,
             options -> options.keyPlayerList, options -> options.keyTogglePerspective);
 
+    private static final java.util.Set<KeyMapping> API_HELD_KEYS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     @Override
     public KeyActionResult pressKey(String mapping, String action) {
         Minecraft client = Minecraft.getInstance();
@@ -126,10 +128,12 @@ public final class NeoForgeClientOps implements MapiClientOps {
         return switch (action == null ? "" : action) {
             case "press" -> {
                 KeyMapping.set(keyMapping.getDefaultKey(), true);
+                API_HELD_KEYS.add(keyMapping);
                 yield new KeyActionResult(mapping, action, keyMapping.isDown());
             }
             case "release" -> {
                 KeyMapping.set(keyMapping.getDefaultKey(), false);
+                API_HELD_KEYS.remove(keyMapping);
                 yield new KeyActionResult(mapping, action, keyMapping.isDown());
             }
             case "tap" -> {
@@ -139,6 +143,14 @@ public final class NeoForgeClientOps implements MapiClientOps {
             default -> throw new IllegalArgumentException(
                     "action must be press, release, or tap: " + action);
         };
+    }
+
+    @Override
+    public void releaseAllKeys() {
+        for (KeyMapping keyMapping : List.copyOf(API_HELD_KEYS)) {
+            KeyMapping.set(keyMapping.getDefaultKey(), false);
+        }
+        API_HELD_KEYS.clear();
     }
 
     @Override

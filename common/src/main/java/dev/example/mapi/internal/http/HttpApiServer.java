@@ -283,6 +283,10 @@ public final class HttpApiServer {
             getTask(exchange, requestId, path.substring(TASKS_PREFIX.length() + 1));
             return;
         }
+        if (path.equals(API_PREFIX + "leases")) {
+            listLeases(exchange, requestId);
+            return;
+        }
         switch (path) {
             case API_PREFIX + "health" -> respond(exchange, requestId, 200, JsonWriter.write(health()));
             case API_PREFIX + "live" -> respond(exchange, requestId, 200, JsonWriter.write(live()));
@@ -317,6 +321,15 @@ public final class HttpApiServer {
             captureScreenshot(exchange, requestId);
             return;
         }
+        if (path.equals(API_PREFIX + "leases")) {
+            acquireLease(exchange, requestId, body);
+            return;
+        }
+        if (path.startsWith(API_PREFIX + "leases/") && path.endsWith("/renew")) {
+            renewLease(exchange, requestId, path.substring((API_PREFIX + "leases/").length(),
+                    path.length() - "/renew".length()), body);
+            return;
+        }
         error(exchange, requestId, 404, "NOT_FOUND", "Unknown endpoint: " + path);
     }
 
@@ -328,6 +341,15 @@ public final class HttpApiServer {
                 return;
             }
             cancelTask(exchange, requestId, id);
+            return;
+        }
+        if (path.startsWith(API_PREFIX + "leases/") && path.length() > (API_PREFIX + "leases/").length()) {
+            String id = path.substring((API_PREFIX + "leases/").length());
+            if (!id.matches("[0-9a-fA-F-]{8,64}")) {
+                error(exchange, requestId, 404, "NOT_FOUND", "Unknown lease: " + id);
+                return;
+            }
+            releaseLease(exchange, requestId, id);
             return;
         }
         error(exchange, requestId, 404, "NOT_FOUND", "Unknown endpoint: " + path);
@@ -865,6 +887,115 @@ public final class HttpApiServer {
                 "frameId", screenshot.frameId(),
                 "path", screenshot.path()));
         respond(exchange, requestId, 200, JsonWriter.write(responseBody));
+    }
+
+    // ------------------------------------------------------------------
+    // Lease endpoints (spec §5.3)
+    // ------------------------------------------------------------------
+
+    private String holderFingerprint() {
+        return sha256Hex(config.httpToken().getBytes(StandardCharsets.UTF_8)).substring(0, 8);
+    }
+
+    private boolean scopeCoversLease(String leaseType) {
+        String required = switch (leaseType) {
+            case "client.input", "client.ui", "client.camera" ->
+                    dev.example.mapi.internal.auth.Scope.CLIENT_CONTROL;
+            case "world.bulkEdit" -> dev.example.mapi.internal.auth.Scope.WORLD_WRITE;
+            case "server.tick" -> dev.example.mapi.internal.auth.Scope.LIFECYCLE_MANAGE;
+            default -> dev.example.mapi.internal.auth.Scope.OBSERVE;
+        };
+        return config.scopes().contains(required);
+    }
+
+    private void acquireLease(HttpExchange exchange, String requestId, byte[] body) throws IOException {
+        Object parsed;
+        try {
+            parsed = JsonParser.parse(new String(body, StandardCharsets.UTF_8));
+        } catch (ParseException e) {
+            error(exchange, requestId, 400, "INVALID_JSON", e.getMessage());
+            return;
+        }
+        if (!(parsed instanceof Map<?, ?> request)) {
+            error(exchange, requestId, 400, "INVALID_JSON", "Request body must be a JSON object");
+            return;
+        }
+        Object leaseObj = request.get("lease");
+        if (!(leaseObj instanceof String leaseType) || leaseType.isBlank()) {
+            error(exchange, requestId, 400, "INVALID_PAYLOAD", "Field 'lease' (string) is required");
+            return;
+        }
+        if (!scopeCoversLease(leaseType)) {
+            Map<String, Object> extra = new LinkedHashMap<>();
+            extra.put("required", "scope for " + leaseType);
+            error(exchange, requestId, 403, "FORBIDDEN_SCOPE",
+                    "Token lacks the scope required for lease " + leaseType, extra);
+            return;
+        }
+        Long ttlMs = request.get("ttlMs") instanceof Number number ? number.longValue() : null;
+        String conflict = request.get("conflict") instanceof String s ? s : null;
+        try {
+            var snapshot = runtime.leaseManager().acquire(leaseType, ttlMs, conflict, holderFingerprint());
+            respond(exchange, requestId, 200, JsonWriter.write(leaseJson(snapshot)));
+        } catch (dev.example.mapi.internal.lease.LeaseManager.LeaseHeldException e) {
+            Map<String, Object> extra = new LinkedHashMap<>();
+            extra.put("held", leaseJson(e.held));
+            error(exchange, requestId, 409, "LEASE_HELD", e.getMessage(), extra);
+        } catch (IllegalArgumentException e) {
+            error(exchange, requestId, 400, "INVALID_PAYLOAD", e.getMessage());
+        }
+    }
+
+    private void renewLease(HttpExchange exchange, String requestId, String id, byte[] body) throws IOException {
+        Long ttlMs = null;
+        try {
+            Object parsed = JsonParser.parse(new String(body, StandardCharsets.UTF_8));
+            if (parsed instanceof Map<?, ?> request && request.get("ttlMs") instanceof Number number) {
+                ttlMs = number.longValue();
+            }
+        } catch (ParseException e) {
+            error(exchange, requestId, 400, "INVALID_JSON", e.getMessage());
+            return;
+        }
+        try {
+            var snapshot = runtime.leaseManager().renew(id, ttlMs);
+            respond(exchange, requestId, 200, JsonWriter.write(leaseJson(snapshot)));
+        } catch (IllegalArgumentException e) {
+            error(exchange, requestId, 404, "NOT_FOUND", e.getMessage());
+        } catch (IllegalStateException e) {
+            error(exchange, requestId, 409, "WRONG_STATE", e.getMessage());
+        }
+    }
+
+    private void releaseLease(HttpExchange exchange, String requestId, String id) throws IOException {
+        try {
+            var snapshot = runtime.leaseManager().release(id);
+            respond(exchange, requestId, 200, JsonWriter.write(leaseJson(snapshot)));
+        } catch (IllegalArgumentException e) {
+            error(exchange, requestId, 404, "NOT_FOUND", e.getMessage());
+        } catch (IllegalStateException e) {
+            error(exchange, requestId, 409, "WRONG_STATE", e.getMessage());
+        }
+    }
+
+    private void listLeases(HttpExchange exchange, String requestId) throws IOException {
+        var leases = runtime.leaseManager().list();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("leases", leases.stream().map(this::leaseJson).toList());
+        body.put("total", leases.size());
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private Map<String, Object> leaseJson(dev.example.mapi.internal.lease.LeaseManager.Snapshot snapshot) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("id", snapshot.id());
+        body.put("lease", snapshot.lease());
+        body.put("state", snapshot.state());
+        body.put("acquiredAtEpochMs", snapshot.acquiredAtEpochMs());
+        body.put("expiresAtEpochMs", snapshot.expiresAtEpochMs());
+        body.put("holder", snapshot.holder());
+        return body;
     }
 
     // ------------------------------------------------------------------
