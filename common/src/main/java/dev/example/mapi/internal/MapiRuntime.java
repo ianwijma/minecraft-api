@@ -38,6 +38,7 @@ public final class MapiRuntime implements Mapi {
 
     private volatile dev.example.mapi.internal.tick.TickControlService tickControl;
     private volatile dev.example.mapi.internal.query.WorldQueryService worldQueries;
+    private volatile dev.example.mapi.internal.command.CommandDispatchService commands;
 
     private final MapiPlatform platform;
     private final MapiServicesImpl services = new MapiServicesImpl();
@@ -84,6 +85,11 @@ public final class MapiRuntime implements Mapi {
                 worldQueries = queryBackend
                         .map(b -> new dev.example.mapi.internal.query.WorldQueryService(
                                 b, worldLifecycle, MapiRuntime.this::callOnServerThread))
+                        .orElse(null);
+                var commandBackend = platform.serverBridge().commands();
+                commands = commandBackend
+                        .map(b -> new dev.example.mapi.internal.command.CommandDispatchService(
+                                b, MapiRuntime.this::callOnServerThread, eventBus))
                         .orElse(null);
                 worldLifecycle.beginLoad();
                 services.fireServerStart(handle, platform.logger());
@@ -217,6 +223,11 @@ public final class MapiRuntime implements Mapi {
     /** @return the world-query service while the bridge supports it, empty otherwise */
     public java.util.Optional<dev.example.mapi.internal.query.WorldQueryService> worldQueries() {
         return java.util.Optional.ofNullable(worldQueries);
+    }
+
+    /** @return the command dispatch service while the bridge supports it, empty otherwise */
+    public java.util.Optional<dev.example.mapi.internal.command.CommandDispatchService> commands() {
+        return java.util.Optional.ofNullable(commands);
     }
 
     /**

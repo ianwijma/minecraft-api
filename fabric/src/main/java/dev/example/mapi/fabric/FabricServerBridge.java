@@ -31,7 +31,8 @@ final class FabricServerBridge implements ServerBridge {
     @Override
     public Set<String> supportedCapabilities() {
         return current == null ? Set.of() : Set.of(
-                "server.progress-detection", "server.tick-control", "server.world-queries");
+                "server.progress-detection", "server.tick-control", "server.world-queries",
+                "server.commands");
     }
 
     @Override
@@ -45,5 +46,11 @@ final class FabricServerBridge implements ServerBridge {
         MinecraftServer server = current;
         return server == null ? Optional.empty()
                 : Optional.of(new FabricWorldQueryBackend(server));
+    }
+
+    @Override
+    public Optional<dev.example.mapi.internal.command.CommandBackend> commands() {
+        MinecraftServer server = current;
+        return server == null ? Optional.empty() : Optional.of(new FabricCommandBackend(server));
     }
 }

@@ -59,4 +59,12 @@ public interface ServerBridge {
     default java.util.Optional<dev.example.mapi.internal.query.WorldQueryBackend> worldQueries() {
         return java.util.Optional.empty();
     }
+
+    /**
+     * @return the command backend while a server is running and the loader
+     *     implements console-context command dispatch; empty otherwise
+     */
+    default java.util.Optional<dev.example.mapi.internal.command.CommandBackend> commands() {
+        return java.util.Optional.empty();
+    }
 }
