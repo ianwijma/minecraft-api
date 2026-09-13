@@ -24,7 +24,8 @@ class ProblemCodeTest {
         for (ProblemCode code : ProblemCode.values()) {
             if (code.family() == ProblemCode.Family.OPERATION) {
                 assertTrue(code.retryable() == (code == ProblemCode.SERVER_PAUSED
-                        || code == ProblemCode.CLOCK_NOT_ADVANCING),
+                        || code == ProblemCode.CLOCK_NOT_ADVANCING
+                        || code == ProblemCode.DEADLINE_EXCEEDED),
                         "unexpected retryability for " + code);
             }
         }

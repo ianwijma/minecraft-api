@@ -59,7 +59,9 @@ public enum ProblemCode {
     INSUFFICIENT_SCOPE("INSUFFICIENT_SCOPE", 403, false, Family.OPERATION,
             "The caller lacks a required scope or grant (spec §14)"),
     DESTRUCTIVE_INTENT_REQUIRED("DESTRUCTIVE_INTENT_REQUIRED", 428, false, Family.OPERATION,
-            "A destructive request needs explicit caller intent, not just the grant (spec §14)");
+            "A destructive request needs explicit caller intent, not just the grant (spec §14)"),
+    DEADLINE_EXCEEDED("DEADLINE_EXCEEDED", 504, true, Family.OPERATION,
+            "Wall-clock deadline elapsed before completion (spec §4.3)");
 
     /** Error-code family, used for tooling and documentation. */
     public enum Family {
