@@ -5,6 +5,8 @@
 | [`AGENTS.md`](../AGENTS.md) | Authoritative coding-agent guide: rules, commands, recipes |
 | [`README.md`](../README.md) | Human overview: prerequisites, quick start, artifacts |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Contribution rules and required checks |
+| [`product-spec.md`](product-spec.md) | Approved target product specification: scope, contracts, acceptance targets (ADRs pending) |
+| [`execution-plan.md`](execution-plan.md) | Spec decomposed into executable chunks: phases, dependencies, gates |
 | [`LICENSE.pending.md`](../LICENSE.pending.md) | License decision required before publishing |
 | [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) | Third-party tooling licenses |
 | [`toolchain.md`](toolchain.md) | Verified versions + official sources (2026-09-13) |

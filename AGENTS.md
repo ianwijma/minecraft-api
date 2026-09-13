@@ -13,31 +13,49 @@ or a command fails, stop and report rather than improvising.
 ## 1. Project purpose
 
 MAPI (mod id `mapi`, display name "Minecraft API", repo slug `minecraft-api`)
-is a Minecraft Java Edition **26.2** mod that ships three "API enabled" layers:
+is a Minecraft Java Edition **26.2** mod.
+
+**Approved target product definition:** `docs/product-spec.md` (2026-09-13).
+It defines three deliverable groups: (1) a Minecraft automation mod (Fabric +
+NeoForge artifacts, secure local HTTP API for observation, input, game-state
+access, synchronization, and bounded execution), (2) the API contract
+(OpenAPI) with generated TypeScript, Python, and Java SDKs, and (3) a
+reference automation runner used only out of process. The mod must work
+without the runner, MCP, an LLM, or an IDE.
+
+Currently implemented layers (the foundation the spec builds on):
 
 1. A documented, loader-neutral **public Java API** for other mods
    (`common/src/main/java/dev/example/mapi/api`).
 2. An **optional local HTTP API** (disabled by default, loopback-only,
    bearer-token authenticated) for external tools
    (`common/src/main/java/dev/example/mapi/internal/http`, documented in
-   `docs/http-api.md`).
+   `docs/http-api.md`) — at present a read-only status surface.
 3. This repository's **LLM-facing documentation and commands** (this file,
    `docs/llm-workflow.md`, `./gradlew llmContext`).
 
-It is NOT: a game-automation framework, a remote coding agent, or Fabric API.
-Fabric API is a *dependency* of the Fabric artifact only.
+The architecture ADRs required by spec §15.2 are **not yet approved**. Until
+they are, do not begin implementing expanded spec scope; code changes stay
+within the existing read-only surface.
+
+It is NOT (spec §2 non-goals): a launcher, an account-authentication or
+purchase provider, an anti-cheat-evasion tool, a protocol-level bot client, a
+remote Java/shell execution or reflection service, an MCP/LLM transport, or
+Fabric API. Fabric API is a *dependency* of the Fabric artifact only.
 
 ## 2. Efficient reading order
 
 1. `AGENTS.md` (this file)
-2. `docs/toolchain.md` — pinned versions; never change versions without
+2. `docs/product-spec.md` — approved target product definition (scope,
+   contracts, acceptance targets); ADRs pending, see §1
+3. `docs/toolchain.md` — pinned versions; never change versions without
    re-verification
-3. `docs/architecture.md` — module boundaries and data flow
-4. The area you are changing:
+4. `docs/architecture.md` — module boundaries and data flow
+5. The area you are changing:
    - public API behavior → `docs/api.md`
    - HTTP endpoints → `docs/http-api.md` + `docs/security.md`
    - build/run issues → `docs/development.md`, `docs/troubleshooting.md`
-5. `project.manifest.json` — machine-readable module/command/doc map
+6. `project.manifest.json` — machine-readable module/command/doc map
 
 ## 3. Module boundaries and where changes belong
 
@@ -131,8 +149,11 @@ On Windows use `gradlew.bat` (same task names) and Git Bash for `scripts/*.sh`.
 3. Update `docs/openapi.yaml`, `docs/http-api.md` (schema, status codes,
    errors) and `docs/security.md` if exposure changes.
 4. Add contract tests in `HttpApiServerTest` (schema + status codes).
-5. Never add endpoints that touch the filesystem, run commands, mutate the
-   world, or expose player identities.
+5. Until the ADRs required by `docs/product-spec.md` §15.2 are approved, add
+   no endpoints beyond the documented read-only status surface. After ADR
+   approval, follow spec §14 (scopes, `destructive`, `sideEffectClass`,
+   `requiresLease`, `supportedExecutionModes`); never add source-code
+   editing, shell execution, or reflection (spec §2 non-goals).
 
 **Required with every change**: update the relevant docs and tests in the
 same change set; `./gradlew verify` must pass before you report done.
@@ -156,7 +177,11 @@ same change set; `./gradlew verify` must pass before you report done.
   it is an explicit operator decision (`MAPI_ACCEPT_EULA` in
   `scripts/server-smoke.sh`).
 - Do not add an HTTP endpoint that exposes source-code editing, shell
-  execution, or anything beyond the documented read-only status surface.
+  execution, or reflection; and until the architecture ADRs required by
+  `docs/product-spec.md` §15.2 are approved, do not add anything beyond the
+  documented read-only status surface.
+- Do not implement expanded `docs/product-spec.md` scope (input, tick
+  control, streaming, runner, SDKs) before the required ADRs are approved.
 - Generated/protected directories: `build/`, `run*/`, `.gradle/`, `~/.gradle`
   (contains downloaded Minecraft artifacts), `~/.m2`. Do not commit them; do
   not treat their contents as source.
