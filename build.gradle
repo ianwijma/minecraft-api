@@ -1,0 +1,339 @@
+// minecraft-api — root build file.
+//
+// Module builds live in common/, fabric/, neoforge/, example-consumer/.
+// This file defines shared Java/Spotless conventions and stable project-level
+// commands (buildAll, testAll, formatCheck, ...) so agents and humans never
+// have to guess at loader-plugin-specific task names. See AGENTS.md.
+
+import java.nio.file.FileVisitResult
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
+
+plugins {
+    alias(libs.plugins.spotless) apply false
+}
+
+def mapiGroup = providers.gradleProperty('mapiGroup').get()
+def mapiVersion = providers.gradleProperty('mapiVersion').get()
+def javaLevel = JavaLanguageVersion.of(libs.versions.java.get().toInteger())
+
+group = mapiGroup
+version = mapiVersion
+
+subprojects {
+    group = mapiGroup
+    version = mapiVersion
+
+    repositories {
+        mavenCentral()
+    }
+
+    plugins.withId('java') {
+        java {
+            toolchain {
+                languageVersion = javaLevel
+            }
+        }
+
+        tasks.withType(JavaCompile).configureEach {
+            options.encoding = 'UTF-8'
+            options.release = javaLevel.asInt()
+        }
+
+        tasks.withType(Javadoc).configureEach {
+            options.encoding = 'UTF-8'
+            options.charSet = 'UTF-8'
+            options.memberLevel = JavadocMemberLevel.PROTECTED
+            options.addStringOption('Xdoclint:all,-missing', '-quiet')
+        }
+
+        tasks.withType(Test).configureEach {
+            useJUnitPlatform()
+            maxParallelForks = 2
+            testLogging {
+                events 'skipped', 'failed'
+                exceptionFormat = 'full'
+            }
+        }
+    }
+
+    // Formatting: deterministic, dependency-light (no third-party formatter engine).
+    apply plugin: 'com.diffplug.spotless'
+    spotless {
+        java {
+            target 'src/*/java/**/*.java'
+            importOrder()
+            trimTrailingWhitespace()
+            endWithNewline()
+            leadingTabsToSpaces(4)
+        }
+        format 'misc', {
+            target '**/*.md', '**/*.json', '**/*.yaml', '**/*.yml', '**/*.toml', '**/*.properties', '**/.gitignore', '**/.gitattributes'
+            targetExclude 'build/**', 'run/**', 'run*/**', '.gradle/**', '**/gradle-wrapper.properties'
+            trimTrailingWhitespace()
+            endWithNewline()
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Stable project-level commands (documented in AGENTS.md and the manifest).
+// ---------------------------------------------------------------------------
+
+tasks.register('buildAll', Task) {
+    group = 'build'
+    description = 'Builds the Fabric and NeoForge distributable jars.'
+    dependsOn ':fabric:build', ':neoforge:build'
+}
+
+tasks.register('testAll', Task) {
+    group = 'verification'
+    description = 'Runs all unit and HTTP contract tests (common module) plus the consumer example tests.'
+    dependsOn ':common:test', ':example-consumer:test'
+}
+
+tasks.register('formatCheck', Task) {
+    group = 'verification'
+    description = 'Verifies formatting of all modules (fails the build on diffs).'
+    dependsOn subprojects.collect { "${it.path}:spotlessCheck" }
+}
+
+tasks.register('formatApply', Task) {
+    group = 'verification'
+    description = 'Applies formatting fixes to all modules.'
+    dependsOn subprojects.collect { "${it.path}:spotlessApply" }
+}
+
+tasks.register('apiDocs', Task) {
+    group = 'documentation'
+    description = 'Generates the public API javadoc (common module).'
+    dependsOn ':common:javadoc', ':common:javadocJar'
+}
+
+tasks.register('publishLocal', Task) {
+    group = 'publishing'
+    description = 'Publishes the common API artifact to the local Maven repository (~/.m2).'
+    dependsOn ':common:publishToMavenLocal'
+}
+
+tasks.register('verify', Task) {
+    group = 'verification'
+    description = 'Core verification: formatting, tests, packaging, and manifest checks.'
+    dependsOn tasks.named('formatCheck'), tasks.named('testAll'), tasks.named('verifyDistributions'), tasks.named('validateManifest')
+}
+
+tasks.register('doctor', Exec) {
+    group = 'help'
+    description = 'Diagnoses the local development environment (JDK, wrapper, network).'
+    commandLine 'bash', 'scripts/doctor.sh'
+}
+
+// ---------------------------------------------------------------------------
+// validateManifest — keeps project.manifest.json from going stale.
+// ---------------------------------------------------------------------------
+
+tasks.register('validateManifest') {
+    group = 'verification'
+    description = 'Validates project.manifest.json against the real build (tasks, files, versions).'
+    doLast {
+        def manifest = new groovy.json.JsonSlurper().parse(file('project.manifest.json'))
+        def problems = []
+
+        if (manifest.slug != rootProject.name) problems << "slug must be '${rootProject.name}'"
+        if (manifest.modId != providers.gradleProperty('mapiModId').get()) problems << 'modId does not match mapiModId'
+        if (manifest.version.toString() != mapiVersion) problems << "version must be '${mapiVersion}'"
+        if (manifest.minecraftTarget.toString() != libs.versions.minecraft.get()) problems << 'minecraftTarget does not match libs.versions.minecraft'
+
+        manifest.modules.each { m ->
+            if (!file(m.path).isDirectory()) problems << "module path missing: ${m.path}"
+        }
+
+        def docFiles = [manifest.documentation.entrypoint, manifest.documentation.index] + manifest.documentation.files.collect { it.path }
+        docFiles.each { p ->
+            if (!file(p).isFile()) problems << "documentation file missing: ${p}"
+        }
+
+        manifest.commands.scripts.each { name, p ->
+            if (!file(p).isFile()) problems << "script missing: ${p}"
+        }
+
+        def checkTask = { String path, String taskName ->
+            def p = path == '.' ? project : project(path)
+            if (p.tasks.findByName(taskName) == null) problems << "gradle task missing: ${path == '.' ? taskName : path + ':' + taskName}"
+        }
+        def checkTaskRef = { String ref ->
+            def parts = ref.toString().tokenize(':')
+            if (parts.size() == 1) {
+                checkTask('.', parts[0])
+            } else if (parts.size() == 2) {
+                checkTask(':' + parts[0], parts[1])
+            } else {
+                problems << "malformed task reference: ${ref}"
+            }
+        }
+        manifest.commands.gradle.each { alias, taskRef -> checkTaskRef(taskRef) }
+        manifest.modules.each { m -> (m.runTasks ?: []).each { t -> checkTaskRef(t) } }
+
+        if (problems) throw new GradleException("project.manifest.json is stale:\n  - " + problems.join('\n  - '))
+        println 'project.manifest.json: OK'
+    }
+}
+
+// ---------------------------------------------------------------------------
+// llmContext — bounded, deterministic repository summary for coding LLMs.
+// Excludes secrets, VCS internals, build caches, run dirs, worlds, logs,
+// binaries, and (out-of-repo) downloaded Minecraft sources by construction.
+// ---------------------------------------------------------------------------
+
+tasks.register('llmContext') {
+    group = 'documentation'
+    description = 'Generates build/llm/CONTEXT.md, a bounded snapshot of the repository for coding agents.'
+    doLast {
+        def maxFileBytes = 120_000
+        def maxTotalBytes = 1_000_000
+
+        def skipDirs = ['.git', '.gradle', 'build', 'logs', 'crash-reports', 'saves', 'screenshots',
+                        '.idea', '.vscode', 'run-client', 'run-server'] as Set
+        def includeExts = ['java', 'gradle', 'properties', 'toml', 'md', 'json', 'yaml', 'yml', 'sh', 'cfg'] as Set
+
+        List<Path> files = []
+        Files.walkFileTree(rootDir.toPath(), new SimpleFileVisitor<Path>() {
+            FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                def name = dir.fileName.toString()
+                if (name in skipDirs || name.startsWith('run') || name == 'out' || name == 'repo') return FileVisitResult.SKIP_SUBTREE
+                return FileVisitResult.CONTINUE
+            }
+            FileVisitResult visitFile(Path p, BasicFileAttributes attrs) {
+                def name = p.fileName.toString()
+                def ext = name.contains('.') ? name.substring(name.lastIndexOf('.') + 1) : ''
+                if (!(ext in includeExts)) return FileVisitResult.CONTINUE
+                if (name == 'mapi.properties' || name.startsWith('.env') || name.contains('token')) return FileVisitResult.CONTINUE
+                if (name == 'eula.txt' || name == 'server.properties') return FileVisitResult.CONTINUE
+                files << p
+                return FileVisitResult.CONTINUE
+            }
+        })
+
+        files.sort { p -> rank(p) }
+        def out = new StringBuilder()
+        out << '# minecraft-api — LLM repository context\n\n'
+        out << "Generated by './gradlew llmContext' on ${java.time.Instant.now()}. Bounded: max ${maxFileBytes} B/file, ${maxTotalBytes} B total.\n\n"
+        out << '## Files included\n\n'
+        files.each { p -> out << "- ${rootDir.toPath().relativize(p)}\n" }
+        out << '\n'
+        long total = 0
+        boolean truncated = false
+        for (Path p : files) {
+            def bytes = Files.readAllBytes(p)
+            def rel = rootDir.toPath().relativize(p)
+            if (total + bytes.length > maxTotalBytes) { truncated = true; break }
+            out << "\n----- BEGIN FILE: ${rel} -----\n"
+            if (bytes.length > maxFileBytes) {
+                out << new String(bytes, 0, maxFileBytes, java.nio.charset.StandardCharsets.UTF_8)
+                out << "\n[TRUNCATED: file exceeds ${maxFileBytes} bytes]\n"
+                total += maxFileBytes
+            } else {
+                out << new String(bytes, java.nio.charset.StandardCharsets.UTF_8)
+                total += bytes.length
+            }
+            out << "----- END FILE: ${rel} -----\n"
+        }
+        if (truncated) out << "\n[NOTE: file list truncated to stay within the byte budget. Run again after narrowing scope.]\n"
+        def dest = layout.buildDirectory.file('llm/CONTEXT.md').get().asFile
+        dest.parentFile.mkdirs()
+        dest.text = out.toString()
+        println "LLM context written to ${dest} (${total} bytes of content)"
+    }
+}
+
+static int rank(Path p) {
+    def s = p.toString()
+    if (s.endsWith('AGENTS.md')) return 0
+    if (s.endsWith('project.manifest.json')) return 1
+    if (s.endsWith('settings.gradle') || s.endsWith('gradle.properties')) return 1
+    if (s.contains('gradle/libs.versions.toml')) return 2
+    if (s.contains('/docs/')) return 2
+    if (s.contains('/common/')) return 3
+    if (s.contains('/fabric/')) return 4
+    if (s.contains('/neoforge/')) return 5
+    return 6
+}
+
+// ---------------------------------------------------------------------------
+// verifyDistributions — packaging acceptance for both loader jars.
+// ---------------------------------------------------------------------------
+
+tasks.register('verifyDistributions') {
+    group = 'verification'
+    description = 'Verifies both distributable jars: metadata, shared classes included exactly once, no unwanted bundling.'
+    dependsOn tasks.named('buildAll')
+    doLast {
+        def version = mapiVersion
+        def commonJarFile = file("common/build/libs/minecraft-api-common-${version}.jar")
+        def fabricJarFile = file("fabric/build/libs/minecraft-api-fabric-${version}.jar")
+        def neoJarFile = file("neoforge/build/libs/minecraft-api-neoforge-${version}.jar")
+
+        [commonJarFile, fabricJarFile, neoJarFile].each {
+            if (!it.isFile()) throw new GradleException("Expected jar missing: ${it}")
+        }
+
+        def sharedEntries
+        new java.util.zip.ZipFile(commonJarFile).withCloseable { zf ->
+            sharedEntries = zf.entries().toList()
+                .findAll { !it.directory && (it.name.startsWith('dev/example/mapi/') || it.name == 'mapi/metadata.properties') }
+                .collect { it.name }
+        }
+        if (sharedEntries.isEmpty()) throw new GradleException('common jar contains no shared classes')
+
+        def problems = []
+
+        def checkJar = { java.util.zip.ZipFile zf, String label ->
+            def names = zf.entries().toList().collect { it.name }
+            sharedEntries.each { n ->
+                if (names.count(n) != 1) problems << "${label}: shared entry '${n}' appears ${names.count(n)} times"
+            }
+            return names
+        }
+
+        // ---- Fabric jar ----
+        def fabricNames
+        new java.util.zip.ZipFile(fabricJarFile).withCloseable { zf ->
+            fabricNames = checkJar(zf, 'fabric')
+            def fmjEntry = zf.getEntry('fabric.mod.json')
+            if (fmjEntry == null) { problems << 'fabric: fabric.mod.json missing' }
+            else {
+                def fmj = new groovy.json.JsonSlurper().parseText(zf.getInputStream(fmjEntry).text)
+                if (fmj.id != 'mapi') problems << "fabric: mod id is '${fmj.id}'"
+                if (fmj.version.toString() != version) problems << "fabric: version is '${fmj.version}'"
+                if (!(fmj.depends?.minecraft)) problems << 'fabric: depends.minecraft missing'
+                if (!(fmj.depends?.fabricloader)) problems << 'fabric: depends.fabricloader missing'
+                if (!(fmj.depends?.java)) problems << 'fabric: depends.java missing'
+                if (!fmj.entrypoints?.main) problems << 'fabric: main entrypoint missing'
+            }
+            ['net/neoforged/', 'dev/example/mapi/neoforge/', 'dev/example/mapi/example/', 'org/slf4j/'].each { p ->
+                if (fabricNames.any { it.startsWith(p) }) problems << "fabric: must not bundle ${p}*"
+            }
+        }
+
+        // ---- NeoForge jar ----
+        new java.util.zip.ZipFile(neoJarFile).withCloseable { zf ->
+            def neoNames = checkJar(zf, 'neoforge')
+            def tomlEntry = zf.getEntry('META-INF/neoforge.mods.toml')
+            if (tomlEntry == null) { problems << 'neoforge: META-INF/neoforge.mods.toml missing' }
+            else {
+                def toml = new String(zf.getInputStream(tomlEntry).bytes, java.nio.charset.StandardCharsets.UTF_8)
+                if (!toml.contains('modId="mapi"')) problems << 'neoforge: mods.toml missing modId="mapi"'
+                if (!toml.contains("version=\"${version}\"")) problems << "neoforge: mods.toml version mismatch"
+                if (!toml.contains('versionRange="[26.2]"')) problems << 'neoforge: mods.toml minecraft versionRange mismatch'
+            }
+            ['net/fabricmc/', 'dev/example/mapi/fabric/', 'dev/example/mapi/example/', 'org/slf4j/'].each { p ->
+                if (neoNames.any { it.startsWith(p) }) problems << "neoforge: must not bundle ${p}*"
+            }
+        }
+
+        if (problems) throw new GradleException('verifyDistributions failed:\n  - ' + problems.join('\n  - '))
+        println "verifyDistributions: OK (fabric=${fabricJarFile.name}, neoforge=${neoJarFile.name})"
+    }
+}

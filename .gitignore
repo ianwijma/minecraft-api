@@ -1,0 +1,56 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+bin/
+
+# Minecraft run directories (any loader/environment)
+run/
+run-*/
+runs/
+runClient/
+runServer/
+
+# Runtime artifacts that must never be committed
+eula.txt
+logs/
+crash-reports/
+debug.log
+usercache.json
+usernamecache.json
+ops.json
+whitelist.json
+banned-players.json
+banned-ips.json
+server.properties
+options.txt
+screenshots/
+saves/
+world/
+worlds/
+
+# Secrets and local credentials (MAPI HTTP bearer token, etc.)
+.env
+.env.*
+*token*
+**/mapi.properties
+!docs/examples/mapi.properties.example
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Java
+*.class
+hs_err_pid*.log
+replay_pid*.log

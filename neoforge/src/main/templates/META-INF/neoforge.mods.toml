@@ -1,0 +1,30 @@
+# neoforge.mods.toml for MAPI. Expanded at build time by the generateModMetadata task.
+# License placeholder: the project owner must select a license before publishing
+# (see LICENSE.pending.md).
+
+license="${mod_license}"
+
+[[mods]]
+
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+description='''
+MAPI: a small loader-neutral Java API for other mods plus an optional local
+HTTP API (disabled by default, loopback-only, bearer-token authenticated)
+for external tools.
+'''
+
+[[dependencies.${mod_id}]]
+    modId="neoforge"
+    type="required"
+    versionRange="[${neo_version},)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="minecraft"
+    type="required"
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"

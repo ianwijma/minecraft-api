@@ -1,0 +1,64 @@
+// minecraft-api — Fabric loader module.
+// Thin entrypoint + platform adapter; all shared logic lives in :common.
+
+plugins {
+    alias(libs.plugins.fabric.loom)
+}
+
+base {
+    archivesName = 'minecraft-api-fabric'
+}
+
+def minecraftVersion = libs.versions.minecraft.get()
+def fabricLoaderVersion = libs.versions.fabric.loader.get()
+def fabricApiVersion = libs.versions.fabric.api.get()
+
+dependencies {
+    minecraft "com.mojang:minecraft:${minecraftVersion}"
+    implementation libs.fabric.loader
+    implementation libs.fabric.api
+    implementation project(':common')
+}
+
+// Development run directories are kept separate per environment. The server
+// run dir can be overridden (e.g. by scripts/server-smoke.sh):
+def serverRunDir = providers.gradleProperty('mapiServerRunDir').getOrElse('run/server')
+
+loom {
+    mods {
+        mapi {
+            sourceSet sourceSets.main
+        }
+    }
+    runs {
+        client {
+            client()
+            runDir 'run/client'
+        }
+        server {
+            server()
+            runDir serverRunDir
+        }
+    }
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') {
+        expand 'version': project.version
+    }
+}
+
+java {
+    withSourcesJar()
+}
+
+// Bundle the shared common classes/resources into this distributable jar
+// (no remapping needed on Minecraft 26.x: the game ships unobfuscated).
+tasks.named('jar', Jar).configure {
+    from(project(':common').sourceSets.main.output)
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+}

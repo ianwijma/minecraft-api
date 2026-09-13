@@ -1,0 +1,44 @@
+# minecraft-api — single source of truth for dependency and plugin versions.
+# All versions here are pinned exact releases (no dynamic ranges).
+# Every entry must have a verification note in docs/toolchain.md.
+
+[versions]
+# Minecraft target (must stay exactly 26.2 until the owner decides otherwise).
+minecraft = "26.2"
+# NeoForge version range used in neoforge.mods.toml (matches minecraft exactly).
+minecraftVersionRange = "[26.2]"
+
+java = "25"
+
+# Fabric toolchain (verified 2026-09-13)
+fabric-loader = "0.19.5"
+fabric-api = "0.160.0+26.2"
+fabric-loom = "1.17.20"
+
+# NeoForge toolchain (verified 2026-09-13)
+neoforge = "26.2.0.87"
+moddev = "2.0.147"
+
+# Build tooling
+foojay-resolver = "1.0.0"
+spotless = "8.10.2"
+
+# Test + runtime-provided libraries
+junit-bom = "5.14.1"
+slf4j = "2.0.19"
+
+[plugins]
+fabric-loom = { id = "net.fabricmc.fabric-loom", version.ref = "fabric-loom" }
+neoforge-moddev = { id = "net.neoforged.moddev", version.ref = "moddev" }
+spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+
+[libraries]
+fabric-loader = { module = "net.fabricmc:fabric-loader", version.ref = "fabric-loader" }
+fabric-api = { module = "net.fabricmc.fabric-api:fabric-api", version.ref = "fabric-api" }
+
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
+
+junit-bom = { module = "org.junit:junit-bom", version.ref = "junit-bom" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
