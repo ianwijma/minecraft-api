@@ -57,6 +57,11 @@ final class FabricPlatform implements MapiPlatform {
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> listener.onServerStopped());
     }
 
+    @Override
+    public dev.example.mapi.internal.server.ServerBridge serverBridge() {
+        return new FabricServerBridge();
+    }
+
     /**
      * Server handle backed by a live {@link MinecraftServer}. Start time is
      * captured at construction (the SERVER_STARTING event).

@@ -65,6 +65,11 @@ final class NeoForgePlatform implements MapiPlatform {
         NeoForge.EVENT_BUS.addListener((ServerStoppedEvent event) -> listener.onServerStopped());
     }
 
+    @Override
+    public dev.example.mapi.internal.server.ServerBridge serverBridge() {
+        return new NeoForgeServerBridge();
+    }
+
     /**
      * Server handle backed by a live {@link MinecraftServer}. Start time is
      * captured at construction (the ServerStartingEvent).

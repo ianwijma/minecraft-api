@@ -52,4 +52,12 @@ public interface MapiPlatform {
      * @param listener the listener, never {@code null}
      */
     void registerServerLifecycle(ServerLifecycleListener listener);
+
+    /**
+     * @return the server-side bridge capabilities for this loader; the
+     *     default reports no capabilities (nothing beyond the base runtime)
+     */
+    default dev.example.mapi.internal.server.ServerBridge serverBridge() {
+        return dev.example.mapi.internal.server.ServerBridge.NONE;
+    }
 }

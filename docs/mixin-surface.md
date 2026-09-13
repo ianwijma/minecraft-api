@@ -15,8 +15,13 @@ advertised.
 
 ## Registry
 
-No mixins exist in the repository today. The current implementation uses
-loader events and the `MapiPlatform` seam only (docs/architecture.md).
+No mixins exist in the repository today. Chunk 2.1 confirmed the
+loader-events-first order: the bridge skeleton
+(`internal/server/ServerBridge` + per-loader `FabricServerBridge` /
+`NeoForgeServerBridge`) uses loader lifecycle events and the
+`MapiPlatform`/`ServerHandle` seams only. The table below stays empty until
+a capability demonstrably requires a targeted mixin, at which point its
+introducing chunk adds the row in the same change set.
 
 | Id | Target + injection point | Why no supported hook | Required/optional | Interaction with other mods | Failure behavior | Covered tests |
 | --- | --- | --- | --- | --- | --- | --- |

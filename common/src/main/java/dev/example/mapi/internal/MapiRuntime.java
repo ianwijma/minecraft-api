@@ -125,6 +125,13 @@ public final class MapiRuntime implements Mapi {
         return eventBus;
     }
 
+    /**
+     * @return the loader's server-side bridge capabilities; internal accessor
+     */
+    public dev.example.mapi.internal.server.ServerBridge serverBridge() {
+        return platform.serverBridge();
+    }
+
     // ------------------------------------------------------------------
     // Snapshot machinery (shared by the Java API and the HTTP endpoint)
     // ------------------------------------------------------------------
