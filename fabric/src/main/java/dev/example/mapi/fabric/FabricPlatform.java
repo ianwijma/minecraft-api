@@ -90,7 +90,9 @@ final class FabricPlatform implements MapiPlatform {
                     server.getPlayerList().getMaxPlayers(),
                     server.getTickCount(),
                     server.getAverageTickTimeNanos() / 1_000_000.0d,
-                    server.getMotd());
+                    server.getMotd(),
+                    server.tickRateManager().isFrozen(),
+                    server.tickRateManager().isSprinting());
         }
     }
 }

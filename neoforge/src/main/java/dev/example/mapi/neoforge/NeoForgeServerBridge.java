@@ -17,6 +17,6 @@ final class NeoForgeServerBridge implements ServerBridge {
 
     @Override
     public Set<String> supportedCapabilities() {
-        return Set.of();
+        return Set.of("server.progress-detection");
     }
 }

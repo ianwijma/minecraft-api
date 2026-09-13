@@ -36,6 +36,10 @@ public final class MapiRuntime implements Mapi {
     private final MapiServicesImpl services = new MapiServicesImpl();
     private final dev.example.mapi.internal.event.EventBus eventBus =
             new dev.example.mapi.internal.event.EventBus();
+    private final dev.example.mapi.internal.clock.ClockRegistry clocks =
+            new dev.example.mapi.internal.clock.ClockRegistry();
+    private final dev.example.mapi.internal.serverstate.ServerProgressTracker progressTracker =
+            new dev.example.mapi.internal.serverstate.ServerProgressTracker(clocks, eventBus);
     private final dev.example.mapi.internal.job.JobManager jobManager = new dev.example.mapi.internal.job.JobManager();
     private final dev.example.mapi.internal.lease.LeaseManager leaseManager =
             new dev.example.mapi.internal.lease.LeaseManager();
@@ -176,6 +180,16 @@ public final class MapiRuntime implements Mapi {
         return worldLifecycle;
     }
 
+    /** @return the named-clock registry; internal accessor */
+    public dev.example.mapi.internal.clock.ClockRegistry clocks() {
+        return clocks;
+    }
+
+    /** @return the server progress tracker; internal accessor */
+    public dev.example.mapi.internal.serverstate.ServerProgressTracker progressTracker() {
+        return progressTracker;
+    }
+
     // ------------------------------------------------------------------
     // Snapshot machinery (shared by the Java API and the HTTP endpoint)
     // ------------------------------------------------------------------
@@ -197,6 +211,8 @@ public final class MapiRuntime implements Mapi {
         try {
             RawServerInfo raw = task.get(SNAPSHOT_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
             long captured = System.currentTimeMillis();
+            progressTracker.observe(new dev.example.mapi.internal.serverstate.TickObservation(
+                    captured, raw.tickCount(), raw.tickFrozen(), raw.sprinting()));
             ServerStatusSnapshot snapshot = new ServerStatusSnapshot(captured, raw.startedAtEpochMs(),
                     raw.playerCount(), raw.maxPlayers(), raw.tickCount(), raw.averageTickTimeMs(), raw.motd());
             return SnapshotResult.of(snapshot);
