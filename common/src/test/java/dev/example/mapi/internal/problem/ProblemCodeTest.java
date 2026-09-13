@@ -31,6 +31,12 @@ class ProblemCodeTest {
     }
 
     @Test
+    void authorizationCodesUseDefinedStatuses() {
+        assertEquals(403, ProblemCode.INSUFFICIENT_SCOPE.httpStatus());
+        assertEquals(428, ProblemCode.DESTRUCTIVE_INTENT_REQUIRED.httpStatus());
+    }
+
+    @Test
     void middlewareCodesPreserveLegacyStatuses() {
         assertEquals(500, ProblemCode.INTERNAL.httpStatus());
         assertEquals(403, ProblemCode.FORBIDDEN_HOST.httpStatus());

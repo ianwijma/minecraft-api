@@ -85,6 +85,8 @@ wait → **503**:
 | 429 | `RATE_LIMITED` | over the per-client rate limit (`Retry-After`) |
 | 503 | `SERVER_BUSY` | snapshot timeout; also observed when workers saturate (connection may be dropped) |
 | 500 | `INTERNAL` | unexpected server-side failure |
+| 403 | `INSUFFICIENT_SCOPE` | caller lacks a required scope/grant (operation endpoints; spec §14) |
+| 428 | `DESTRUCTIVE_INTENT_REQUIRED` | destructive request without explicit intent (spec §14) |
 
 Error codes are centrally registered in
 `internal/problem/ProblemCode` (wire name, HTTP status, retryability).

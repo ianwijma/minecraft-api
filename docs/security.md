@@ -34,6 +34,37 @@ repository.
 | Snapshot wait | 500 ms | 503 `SERVER_BUSY` |
 | Bind conflict | n/a | error log, game unaffected |
 
+## Operation metadata and scopes (spec §14)
+
+Every operation endpoint declares its security metadata through
+`internal/operation/OperationDescriptor` and every call is checked by
+`OperationGuard`:
+
+- `requiredScopes` — the operation's normal scopes
+  (`client:connect`, `client:settings`, `server:tick-control`,
+  `server:publish`).
+- `destructive` — destructive operations additionally require the
+  `operations:destructive` grant **and** explicit request intent (428
+  `DESTRUCTIVE_INTENT_REQUIRED` without it). A request flag alone never
+  grants permission; a grant alone never replaces intent. Matching
+  target/world identity is enforced by world-scoped handlers.
+- `sideEffectClass` — `read-only`, `local`, `game`, or `unrestricted`.
+  `unrestricted` operations (administrative access) must require the
+  `operations:unrestricted` scope and are never classified by parsing
+  command names.
+- `requiresLease` — whether control-lease ownership is needed.
+- `supportedExecutionModes` — `raw-input`, `client-logic`, `privileged`;
+  unsupported requested modes fail with 422 `EXECUTION_MODE_UNSUPPORTED`
+  (no silent fallback).
+
+Scope grants come from configuration (plan chunk 4.2). Until then the
+configured bearer token grants the full set, which keeps today's behavior:
+the token authenticates, authorization metadata still gates destructive and
+unrestricted operations by intent.
+
+`executionMode` is not a permission system: it selects the mechanism, while
+scopes/destructive/intent select the authorization.
+
 ## Threat model (explicit)
 
 - **In scope:** a local user/process reading basic server status without the

@@ -54,7 +54,12 @@ public enum ProblemCode {
     SNAPSHOT_EXPIRED("SNAPSHOT_EXPIRED", 410, false, Family.OPERATION,
             "A retained snapshot exceeded its retention period (spec §12)"),
     TOOLTIP_SEMANTICS_UNAVAILABLE("TOOLTIP_SEMANTICS_UNAVAILABLE", 422, false, Family.OPERATION,
-            "Only a screenshot region is available; no semantic tooltip data (spec §10.2)");
+            "Only a screenshot region is available; no semantic tooltip data (spec §10.2)"),
+
+    INSUFFICIENT_SCOPE("INSUFFICIENT_SCOPE", 403, false, Family.OPERATION,
+            "The caller lacks a required scope or grant (spec §14)"),
+    DESTRUCTIVE_INTENT_REQUIRED("DESTRUCTIVE_INTENT_REQUIRED", 428, false, Family.OPERATION,
+            "A destructive request needs explicit caller intent, not just the grant (spec §14)");
 
     /** Error-code family, used for tooling and documentation. */
     public enum Family {
