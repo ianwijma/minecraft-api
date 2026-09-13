@@ -1,0 +1,126 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  JAVA_VERSION: "25"
+
+jobs:
+  verify:
+    name: verify (format, tests, packaging, manifest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Run core verification
+        run: ./gradlew verify --stacktrace --console=plain
+      - name: Upload test and verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-reports
+          path: |
+            common/build/reports/tests/
+            common/build/test-results/
+            build/reports/problems/
+          if-no-files-found: ignore
+
+  fabric:
+    name: fabric artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew :fabric:build --console=plain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minecraft-api-fabric
+          path: fabric/build/libs/*.jar
+
+  neoforge:
+    name: neoforge artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew :neoforge:build --console=plain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: minecraft-api-neoforge
+          path: neoforge/build/libs/*.jar
+
+  consumer:
+    name: public-API consumer example (against published artifact)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Publish to mavenLocal and build the consumer against it
+        run: |
+          ./gradlew publishLocal --console=plain
+          ./gradlew :example-consumer:build -PmapiConsumerUseMavenLocal=true --console=plain
+
+  context:
+    name: llm context + doctor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew doctor llmContext --console=plain
+      - uses: actions/upload-artifact@v4
+        with:
+          name: llm-context
+          path: build/llm/CONTEXT.md
+          if-no-files-found: ignore
+
+  server-smoke:
+    name: dedicated-server smoke test (EULA-gated, manual)
+    runs-on: ubuntu-latest
+    # Runs ONLY when the repository owner has explicitly opted in by setting
+    # the repository VARIABLE MAPI_ACCEPT_EULA=true. Accepting Mojang's EULA
+    # is an operator decision; CI never does it silently.
+    if: ${{ vars.MAPI_ACCEPT_EULA == 'true' }}
+    strategy:
+      matrix:
+        loader: [fabric, neoforge]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v4
+      - run: scripts/server-smoke.sh ${{ matrix.loader }}
+        env:
+          MAPI_ACCEPT_EULA: "true"
+          MAPI_SMOKE_TIMEOUT: "900"
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-${{ matrix.loader }}
+          path: build/smoke/
+          if-no-files-found: ignore

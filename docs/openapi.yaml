@@ -1,0 +1,152 @@
+openapi: 3.1.0
+info:
+  title: MAPI local HTTP API
+  version: "1"
+  description: >
+    Read-only status API exposed by the MAPI Minecraft mod on loopback only.
+    Requires a bearer token on every endpoint. Protocol version 1; see
+    docs/http-api.md for lifecycle, limits, and error semantics.
+servers:
+  - url: http://127.0.0.1:25586
+    description: default loopback listener (http.port, default 25586)
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/health:
+    get:
+      operationId: getHealth
+      summary: Liveness/auth check
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/info:
+    get:
+      operationId: getInfo
+      summary: Mod, API, Minecraft, and platform versions
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InfoResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/server/status:
+    get:
+      operationId: getServerStatus
+      summary: Read-only server status snapshot
+      responses:
+        "200":
+          description: OK (running or not)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: "#/components/schemas/ServerNotRunning" }
+                  - { $ref: "#/components/schemas/ServerStatusResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+        "503": { $ref: "#/components/responses/ServerBusy" }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Token from MAPI_HTTP_TOKEN (preferred) or mapi.properties http.token.
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Forbidden:
+      description: Unexpected Host or Origin header
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    RateLimited:
+      description: Rate limit exceeded (Retry-After header present)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    ServerBusy:
+      description: Server thread busy; snapshot timed out
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+  schemas:
+    ProtocolVersioned:
+      type: object
+      required: [protocolVersion]
+      properties:
+        protocolVersion:
+          type: integer
+          const: 1
+          description: HTTP protocol version; consumers must ignore unknown fields.
+    HealthResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [status]
+          properties:
+            status:
+              type: string
+              const: ok
+    InfoResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [name, version, apiVersion, minecraftVersion, platform, platformVersion]
+          properties:
+            name: { type: string, const: mapi }
+            version: { type: string, description: MAPI mod version }
+            apiVersion: { type: string, description: public Java API version }
+            minecraftVersion: { type: string, example: "26.2" }
+            platform: { type: string, enum: [fabric, neoforge] }
+            platformVersion: { type: string, description: loader version string }
+    ServerNotRunning:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [running]
+          properties:
+            running: { type: boolean, const: false }
+    ServerStatusResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [running, capturedAtEpochMs, startedAtEpochMs, uptimeMs, playerCount, maxPlayers, tickCount, averageTickTimeMs, motd]
+          properties:
+            running: { type: boolean, const: true }
+            capturedAtEpochMs: { type: integer, format: int64 }
+            startedAtEpochMs: { type: integer, format: int64 }
+            uptimeMs: { type: integer, format: int64 }
+            playerCount: { type: integer, minimum: 0, description: count only; no identities }
+            maxPlayers: { type: integer, minimum: 0 }
+            tickCount: { type: integer, format: int64, minimum: 0 }
+            averageTickTimeMs: { type: number, format: double, minimum: 0 }
+            motd: { type: string, description: plain-text MOTD, empty when unavailable }
+    ErrorResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [error]
+          properties:
+            error:
+              type: object
+              required: [code, message]
+              properties:
+                code:
+                  type: string
+                  enum: [UNAUTHORIZED, FORBIDDEN_HOST, FORBIDDEN_ORIGIN, NOT_FOUND,
+                         METHOD_NOT_ALLOWED, PAYLOAD_TOO_LARGE, RATE_LIMITED,
+                         SERVER_BUSY, INTERNAL]
+                message: { type: string }

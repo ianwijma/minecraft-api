@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "mapi",
+  "version": "${version}",
+  "name": "Minecraft API",
+  "description": "MAPI: a small loader-neutral Java API for other mods plus an optional local HTTP API for external tools.",
+  "authors": [],
+  "contact": {},
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "dev.example.mapi.fabric.MapiFabric"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.5",
+    "minecraft": "~26.2",
+    "java": ">=25",
+    "fabric-api": ">=0.160.0+26.2"
+  }
+}

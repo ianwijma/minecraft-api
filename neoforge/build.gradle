@@ -1,0 +1,75 @@
+// minecraft-api — NeoForge module.
+// Thin entrypoint + platform adapter; all real work lives in the common module.
+
+plugins {
+    alias(libs.plugins.neoforge.moddev)
+}
+
+base {
+    archivesName = 'minecraft-api-neoforge'
+}
+
+def minecraftVersion = libs.versions.minecraft.get()
+def neoVersion = libs.versions.neoforge.get()
+
+neoForge {
+    version = neoVersion
+
+    runs {
+        client {
+            client()
+            gameDirectory = project.file('run/client')
+        }
+        server {
+            server()
+            gameDirectory = project.file(
+                    providers.gradleProperty('mapiServerRunDir').getOrElse('run/server'))
+            programArgument '--nogui'
+        }
+        configureEach {
+            logLevel = org.slf4j.event.Level.INFO
+        }
+    }
+
+    mods {
+        mapi {
+            sourceSet sourceSets.main
+        }
+    }
+}
+
+// Mod metadata lives in src/main/templates/META-INF/neoforge.mods.toml and is
+// expanded at build time:
+def replaceProperties = [
+        mod_id                 : providers.gradleProperty('mapiModId').get(),
+        mod_name               : providers.gradleProperty('mapiName').get(),
+        mod_license            : providers.gradleProperty('mapiLicense').get(),
+        mod_version            : project.version.toString(),
+        minecraft_version_range: libs.versions.minecraftVersionRange.get(),
+        neo_version            : neoVersion,
+]
+def generateModMetadata = tasks.register('generateModMetadata', ProcessResources) {
+    inputs.properties replaceProperties
+    expand replaceProperties
+    from 'src/main/templates'
+    into layout.buildDirectory.dir('generated/sources/modMetadata')
+}
+sourceSets.main.resources.srcDir generateModMetadata
+neoForge.ideSyncTask generateModMetadata
+
+dependencies {
+    implementation project(':common')
+}
+
+java {
+    withSourcesJar()
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+}
+
+// Bundle the shared common classes/resources into the distributable jar.
+tasks.named('jar', Jar).configure {
+    from(project(':common').sourceSets.main.output)
+}

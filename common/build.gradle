@@ -1,0 +1,62 @@
+// minecraft-api — common module: shared, loader-neutral implementation.
+// Contains the public Java API (dev.example.mapi.api) and internal runtime
+// code (dev.example.mapi.internal). Must not import Fabric or NeoForge classes.
+
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+base {
+    archivesName = 'minecraft-api-common'
+}
+
+dependencies {
+    // Provided by Minecraft at runtime in both loaders; never bundled.
+    compileOnly libs.slf4j.api
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testImplementation libs.slf4j.api
+    testRuntimeOnly libs.junit.platform.launcher
+    testRuntimeOnly libs.slf4j.simple
+}
+
+def mapiName = providers.gradleProperty('mapiName').get()
+def mapiDescription = providers.gradleProperty('mapiDescription').get()
+
+def metadata = [
+        name       : providers.gradleProperty('mapiModId').get(),
+        displayName: mapiName,
+        version    : project.version.toString(),
+]
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('mapi/metadata.properties') {
+        expand metadata
+    }
+}
+
+java {
+    withSourcesJar()
+    withJavadocJar()
+}
+
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            artifactId = 'minecraft-api-common'
+            from components.java
+            pom {
+                name = "${mapiName} (common)"
+                description = mapiDescription
+                licenses {
+                    license {
+                        name = providers.gradleProperty('mapiLicense').get()
+                        comments = 'License selection is pending; see LICENSE.pending.md in the repository.'
+                    }
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,37 @@
+// minecraft-api — example consumer module.
+// Compiles against the public MAPI API only (dev.example.mapi.api) and is
+// NEVER included in production jars. By default it depends on the common
+// project; with -PmapiConsumerUseMavenLocal=true it consumes the artifact
+// published to ~/.m2 by ./gradlew publishLocal (validates the real publishing
+// path).
+
+plugins {
+    id 'java-library'
+}
+
+base {
+    archivesName = 'minecraft-api-consumer-example'
+}
+
+def useMavenLocal = providers.gradleProperty('mapiConsumerUseMavenLocal').getOrElse('false').toBoolean()
+if (useMavenLocal) {
+    repositories {
+        mavenLocal()
+    }
+}
+
+dependencies {
+    if (useMavenLocal) {
+        implementation "${providers.gradleProperty('mapiGroup').get()}:minecraft-api-common:${project.version}"
+    } else {
+        implementation project(':common')
+    }
+
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 25
+}
