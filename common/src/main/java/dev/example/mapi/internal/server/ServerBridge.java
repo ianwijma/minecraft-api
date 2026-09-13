@@ -51,4 +51,12 @@ public interface ServerBridge {
     default java.util.Optional<dev.example.mapi.internal.tick.TickControlBackend> tickControl() {
         return java.util.Optional.empty();
     }
+
+    /**
+     * @return the world-query backend while a server is running and the
+     *     loader implements bounded loaded-world queries; empty otherwise
+     */
+    default java.util.Optional<dev.example.mapi.internal.query.WorldQueryBackend> worldQueries() {
+        return java.util.Optional.empty();
+    }
 }

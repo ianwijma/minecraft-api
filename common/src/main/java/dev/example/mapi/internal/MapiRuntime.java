@@ -37,6 +37,7 @@ public final class MapiRuntime implements Mapi {
     public static final float MAX_TICK_RATE = 100.0f;
 
     private volatile dev.example.mapi.internal.tick.TickControlService tickControl;
+    private volatile dev.example.mapi.internal.query.WorldQueryService worldQueries;
 
     private final MapiPlatform platform;
     private final MapiServicesImpl services = new MapiServicesImpl();
@@ -78,6 +79,11 @@ public final class MapiRuntime implements Mapi {
                                 b -> new dev.example.mapi.internal.tick.TickControlService(
                                         b, leaseManager, progressTracker, worldLifecycle,
                                         MIN_TICK_RATE, MAX_TICK_RATE))
+                        .orElse(null);
+                var queryBackend = platform.serverBridge().worldQueries();
+                worldQueries = queryBackend
+                        .map(b -> new dev.example.mapi.internal.query.WorldQueryService(
+                                b, worldLifecycle, MapiRuntime.this::callOnServerThread))
                         .orElse(null);
                 worldLifecycle.beginLoad();
                 services.fireServerStart(handle, platform.logger());
@@ -206,6 +212,54 @@ public final class MapiRuntime implements Mapi {
     /** @return the tick-control service while the bridge supports it, empty otherwise */
     public java.util.Optional<dev.example.mapi.internal.tick.TickControlService> tickControl() {
         return java.util.Optional.ofNullable(tickControl);
+    }
+
+    /** @return the world-query service while the bridge supports it, empty otherwise */
+    public java.util.Optional<dev.example.mapi.internal.query.WorldQueryService> worldQueries() {
+        return java.util.Optional.ofNullable(worldQueries);
+    }
+
+    /**
+     * Runs a supplier on the server thread with the bounded snapshot wait,
+     * translating failures into problem exceptions.
+     *
+     * @param task supplier to run
+     * @param <T>  result type
+     * @return the result
+     */
+    <T> T callOnServerThread(java.util.function.Supplier<T> task) {
+        ServerHandle handle = serverHandle;
+        if (handle == null) {
+            throw new dev.example.mapi.internal.problem.ProblemException(
+                    dev.example.mapi.internal.problem.ProblemCode.WORLD_NOT_LOADED,
+                    "no server is running");
+        }
+        var future = new java.util.concurrent.FutureTask<>(task::get);
+        handle.executeOnServerThread(future);
+        try {
+            return future.get(SNAPSHOT_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            future.cancel(false);
+            throw new dev.example.mapi.internal.problem.ProblemException(
+                    dev.example.mapi.internal.problem.ProblemCode.SERVER_BUSY,
+                    "server thread busy; query timed out");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new dev.example.mapi.internal.problem.ProblemException(
+                    dev.example.mapi.internal.problem.ProblemCode.SERVER_BUSY,
+                    "interrupted while waiting for the server thread");
+        } catch (java.util.concurrent.ExecutionException e) {
+            Throwable cause = e.getCause() == null ? e : e.getCause();
+            if (cause instanceof dev.example.mapi.internal.problem.ProblemException problem) {
+                throw problem;
+            }
+            if (cause instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw new dev.example.mapi.internal.problem.ProblemException(
+                    dev.example.mapi.internal.problem.ProblemCode.INTERNAL,
+                    "world query failed: " + cause);
+        }
     }
 
     // ------------------------------------------------------------------
