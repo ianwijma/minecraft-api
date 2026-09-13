@@ -99,7 +99,8 @@ class OperationRegistryTest {
                 () -> GUARD.checkAccess(tickStep(), ALL, false, ExecutionMode.RAW_INPUT));
         assertEquals(ProblemCode.EXECUTION_MODE_UNSUPPORTED, e.code());
         assertEquals("raw-input", e.details().get("requested"));
-        assertEquals(Set.of("privileged"), Set.copyOf((List<String>) e.details().get("supported")));
+        assertEquals(Set.of("privileged"),
+                Set.copyOf((java.util.Collection<String>) e.details().get("supported")));
 
         GUARD.checkAccess(tickStep(), ALL, false, ExecutionMode.PRIVILEGED);
         GUARD.checkAccess(readStatus(), ALL, false, null);
