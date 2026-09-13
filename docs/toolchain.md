@@ -104,6 +104,17 @@ never silently change the Minecraft target (26.2) — ask the owner first.
   `net.neoforged.api.distmarker.OnlyIn` still exists in 26.2
   (`@OnlyIn(Dist.CLIENT)` + dist guard + lazy classloading is the client
   isolation contract for `dev.example.mapi.client.*` classes).
+- 26.2 client input/screenshot APIs (verified via `javap`, 2026-09-13;
+  slice 0.6): key injection goes through the static
+  `KeyMapping#set(InputConstants$Key, boolean)` / `KeyMapping#click(...)`
+  with `KeyMapping#getDefaultKey()` and runtime-reported
+  `KeyMapping#getName()` — the old `KeyboardHandler#keyPress` /
+  `MouseHandler#mouseButtonPress` are gone (input moved to the
+  `net.minecraft.client.input` event system); mappings are reachable via
+  public `Options#keyUp/keyLeft/...` fields; screenshots via
+  `Screenshot#takeScreenshot(RenderTarget, Consumer<NativeImage>)` with
+  `GameRenderer#mainRenderTarget()` (NOT `Minecraft#getMainRenderTarget`)
+  and `NativeImage#writeToFile(Path)` + `close()`.
 
 Version bumps and target changes require explicit owner approval — see
 AGENTS.md §7.

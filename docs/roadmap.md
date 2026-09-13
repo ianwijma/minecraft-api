@@ -170,15 +170,20 @@ Done in this change set:
   labels and bounds). All client APIs javap-verified against 26.2
   (`Gui#screen()` is the 26.2 screen accessor — `Minecraft` no longer has
   one).
+- Input-mode interaction: `POST /api/v1/client/input/key` (press/release/
+  tap on game-reported key mappings via `KeyMapping.set/click`; `mode`
+  enforcement — `input` only, no silent fallbacks per G7).
+- `POST /api/v1/client/screenshot`: framebuffer capture to the controlled
+  `mcapi/screenshots` path with a monotonic `frameId` and PNG metadata.
 
 Still open (each needs in-game verification before it can be trusted):
 
-- `input`-mode interaction (key/mouse injection through the client input
-  path), `mode` parameter across interaction endpoints (G7).
-- Screenshot capture with `frameId` + render-thread lifecycle scheduling.
+- Screenshot annotation, HUD toggle, region capture, and
+  render-lifecycle `frameId` correlation (the current frameId is a
+  monotonic capture id — documented Phase 0 semantics).
 - Screen tree `revision` (change counter) and richer widget roles/accessible
-  names; `wait-for` on screen predicates.
-- Game-run verification of the two client endpoints on a display-capable
+  names; `wait-for` on screen predicates; macro record/replay.
+- Game-run verification of the client endpoints on a display-capable
   machine (compile-verified only here; NOT RUN).
 - `connectionSessionId` + `clientJoined` readiness once client connection
   lifecycle events exist.

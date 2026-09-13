@@ -27,4 +27,41 @@ public interface MapiClientOps {
      *         with {@code widgetClass == null} for "no screen"
      */
     ScreenNode screenTree();
+
+    /**
+     * Input-mode key action (spec §5.2): drives the game's own key-mapping
+     * input path (the same mechanism the physical keyboard funnels into).
+     *
+     * @param mapping mapping name as reported by the game (e.g.
+     *                {@code key.forward}); only mappings the game reports
+     *                are accepted
+     * @param action  {@code press}, {@code release}, or {@code tap}
+     * @return the action result with the authoritative key state
+     * @throws UnknownMappingException when the mapping name is not reported
+     *                                 by this client
+     * @throws IllegalArgumentException when the action is unknown
+     */
+    KeyActionResult pressKey(String mapping, String action);
+
+    /**
+     * Captures the main framebuffer as PNG into the instance's
+     * {@code mcapi/screenshots} directory (controlled path).
+     *
+     * @param frameId monotonic capture identifier assigned by the caller
+     * @return the capture metadata
+     */
+    ScreenshotResult captureScreenshot(long frameId);
+
+    /** The requested mapping does not exist on this client. */
+    class UnknownMappingException extends IllegalArgumentException {
+
+        private static final long serialVersionUID = 1L;
+
+        /**
+         * @param message description including the requested mapping
+         */
+        public UnknownMappingException(String message) {
+            super(message);
+        }
+    }
 }

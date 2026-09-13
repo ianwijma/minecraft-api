@@ -554,13 +554,7 @@ class HttpApiServerTest {
     // Client reads (slice 0.6)
     // ------------------------------------------------------------------
 
-    @Test
-    void clientEndpointsRequireRegisteredOpsAndReportSnapshots() throws Exception {
-        startServer(enabledConfig());
-        HttpResponse<String> unregistered = get("/api/v1/client/status", "Authorization", "Bearer " + TOKEN);
-        assertEquals(409, unregistered.statusCode(), unregistered.body());
-        assertTrue(unregistered.body().contains("WRONG_STATE"), unregistered.body());
-
+    private void registerFakeClientOps() {
         runtime.registerClientOps(
                 new dev.example.mapi.internal.client.MapiClientOps() {
                     @Override
@@ -575,8 +569,40 @@ class HttpApiServerTest {
                                 360, java.util.List.of(new dev.example.mapi.internal.client.ScreenNode("Button",
                                         "Singleplayer", 100, 60, 200, 20, java.util.List.of())));
                     }
+
+                    @Override
+                    public dev.example.mapi.internal.client.KeyActionResult pressKey(String mapping,
+                            String action) {
+                        if (mapping.equals("key.forward")) {
+                            if (!action.equals("press") && !action.equals("release") && !action.equals("tap")) {
+                                throw new IllegalArgumentException(
+                                        "action must be press, release, or tap: " + action);
+                            }
+                            boolean pressed = action.equals("press");
+                            return new dev.example.mapi.internal.client.KeyActionResult(mapping, action,
+                                    action.equals("tap") ? null : pressed);
+                        }
+                        throw new dev.example.mapi.internal.client.MapiClientOps.UnknownMappingException(
+                                "mapping not reported by this client: " + mapping);
+                    }
+
+                    @Override
+                    public dev.example.mapi.internal.client.ScreenshotResult captureScreenshot(long frameId) {
+                        return new dev.example.mapi.internal.client.ScreenshotResult(frameId,
+                                "mcapi/screenshots/frame-" + frameId + ".png", 1280, 720, 4242);
+                    }
                 },
                 Runnable::run);
+    }
+
+    @Test
+    void clientEndpointsRequireRegisteredOpsAndReportSnapshots() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> unregistered = get("/api/v1/client/status", "Authorization", "Bearer " + TOKEN);
+        assertEquals(409, unregistered.statusCode(), unregistered.body());
+        assertTrue(unregistered.body().contains("WRONG_STATE"), unregistered.body());
+
+        registerFakeClientOps();
 
         HttpResponse<String> status = get("/api/v1/client/status", "Authorization", "Bearer " + TOKEN);
         assertEquals(200, status.statusCode(), status.body());
@@ -589,6 +615,57 @@ class HttpApiServerTest {
         assertTrue(tree.body().contains("\"coverage\":\"best-effort\""), tree.body());
         assertTrue(tree.body().contains("\"label\":\"Singleplayer\""), tree.body());
         assertTrue(tree.body().contains("\"children\":[{"), tree.body());
+    }
+
+    @Test
+    void clientInputKeyContract() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> unregistered = post("/api/v1/client/input/key",
+                "{\"mapping\":\"key.forward\",\"action\":\"press\"}", "Authorization", "Bearer " + TOKEN);
+        assertEquals(409, unregistered.statusCode(), unregistered.body());
+
+        registerFakeClientOps();
+
+        HttpResponse<String> ok = post("/api/v1/client/input/key",
+                "{\"mapping\":\"key.forward\",\"action\":\"press\"}", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, ok.statusCode(), ok.body());
+        assertTrue(ok.body().contains("\"mode\":\"input\""), ok.body());
+        assertTrue(ok.body().contains("\"isDown\":true"), ok.body());
+
+        HttpResponse<String> wrongMode = post("/api/v1/client/input/key",
+                "{\"mapping\":\"key.forward\",\"action\":\"press\",\"mode\":\"admin\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(400, wrongMode.statusCode(), wrongMode.body());
+        assertTrue(wrongMode.body().contains("INVALID_PAYLOAD"), wrongMode.body());
+
+        HttpResponse<String> unknownMapping = post("/api/v1/client/input/key",
+                "{\"mapping\":\"key.doesNotExist\",\"action\":\"press\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(400, unknownMapping.statusCode(), unknownMapping.body());
+        assertTrue(unknownMapping.body().contains("INVALID_PAYLOAD"), unknownMapping.body());
+
+        HttpResponse<String> unknownAction = post("/api/v1/client/input/key",
+                "{\"mapping\":\"key.forward\",\"action\":\"wiggle\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(400, unknownAction.statusCode(), unknownAction.body());
+    }
+
+    @Test
+    void clientScreenshotContract() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> unregistered = post("/api/v1/client/screenshot", "{}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(409, unregistered.statusCode(), unregistered.body());
+
+        registerFakeClientOps();
+        HttpResponse<String> first = post("/api/v1/client/screenshot", "{}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, first.statusCode(), first.body());
+        assertTrue(first.body().contains("\"frameId\":1"), first.body());
+        assertTrue(first.body().contains("\"bytes\":4242"), first.body());
+        HttpResponse<String> second = post("/api/v1/client/screenshot", "{}",
+                "Authorization", "Bearer " + TOKEN);
+        assertTrue(second.body().contains("\"frameId\":2"), second.body());
     }
 
     // ------------------------------------------------------------------

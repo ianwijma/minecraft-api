@@ -5,6 +5,11 @@ import com.sun.net.httpserver.HttpServer;
 import dev.example.mapi.api.ServerStatusSnapshot;
 import dev.example.mapi.internal.MapiRuntime;
 import dev.example.mapi.internal.SnapshotResult;
+import dev.example.mapi.internal.client.ClientStatusSnapshot;
+import dev.example.mapi.internal.client.KeyActionResult;
+import dev.example.mapi.internal.client.MapiClientOps;
+import dev.example.mapi.internal.client.ScreenNode;
+import dev.example.mapi.internal.client.ScreenshotResult;
 import dev.example.mapi.internal.config.MapiConfig;
 import dev.example.mapi.internal.json.JsonParser;
 import dev.example.mapi.internal.json.JsonParser.ParseException;
@@ -69,6 +74,8 @@ public final class HttpApiServer {
     private final Logger logger;
     private final RateLimiter rateLimiter;
     private final IdempotencyStore idempotencyStore = new IdempotencyStore();
+    private final java.util.concurrent.atomic.AtomicLong frameCounter =
+            new java.util.concurrent.atomic.AtomicLong();
 
     private HttpServer httpServer;
     private ThreadPoolExecutor workers;
@@ -277,6 +284,14 @@ public final class HttpApiServer {
         }
         if (path.equals(API_PREFIX + "events/ticket")) {
             mintTicket(exchange, requestId);
+            return;
+        }
+        if (path.equals(API_PREFIX + "client/input/key")) {
+            pressClientKey(exchange, requestId, body);
+            return;
+        }
+        if (path.equals(API_PREFIX + "client/screenshot")) {
+            captureScreenshot(exchange, requestId);
             return;
         }
         error(exchange, requestId, 404, "NOT_FOUND", "Unknown endpoint: " + path);
@@ -742,6 +757,90 @@ public final class HttpApiServer {
         }
         body.put("children", node.children().stream().map(this::screenNodeJson).toList());
         return body;
+    }
+
+    private void pressClientKey(HttpExchange exchange, String requestId, byte[] body) throws IOException {
+        var ops = runtime.clientOps();
+        if (ops == null) {
+            error(exchange, requestId, 409, "WRONG_STATE",
+                    "No client operations on this process (dedicated server or client not initialized).");
+            return;
+        }
+        Object parsed;
+        try {
+            parsed = JsonParser.parse(new String(body, StandardCharsets.UTF_8));
+        } catch (ParseException e) {
+            error(exchange, requestId, 400, "INVALID_JSON", e.getMessage());
+            return;
+        }
+        if (!(parsed instanceof Map<?, ?> request)) {
+            error(exchange, requestId, 400, "INVALID_JSON", "Request body must be a JSON object");
+            return;
+        }
+        Object mode = request.get("mode");
+        if (mode != null && !"input".equals(mode)) {
+            error(exchange, requestId, 400, "INVALID_PAYLOAD",
+                    "This endpoint is input-mode only; mode must be 'input' or absent (no silent fallbacks).");
+            return;
+        }
+        Object mappingObj = request.get("mapping");
+        Object actionObj = request.get("action");
+        if (!(mappingObj instanceof String mapping) || mapping.isBlank()
+                || !(actionObj instanceof String action) || action.isBlank()) {
+            error(exchange, requestId, 400, "INVALID_PAYLOAD",
+                    "Fields 'mapping' (string) and 'action' (press|release|tap) are required");
+            return;
+        }
+        var result = runtime.<dev.example.mapi.internal.client.KeyActionResult>tryReadOnClientThread(
+                () -> ops.pressKey(mapping, action));
+        if (result.failure() instanceof MapiClientOps.UnknownMappingException
+                || result.failure() instanceof IllegalArgumentException) {
+            error(exchange, requestId, 400, "INVALID_PAYLOAD", result.failure().getMessage());
+            return;
+        }
+        if (!handleReadOutcome(exchange, requestId, result)) {
+            return;
+        }
+        dev.example.mapi.internal.client.KeyActionResult actionResult = result.value();
+        Map<String, Object> responseBody = new LinkedHashMap<>();
+        responseBody.put("protocolVersion", PROTOCOL_VERSION);
+        responseBody.put("mode", "input");
+        responseBody.put("mapping", actionResult.mapping());
+        responseBody.put("action", actionResult.action());
+        if (actionResult.isDown() != null) {
+            responseBody.put("isDown", actionResult.isDown());
+        }
+        runtime.eventLog().publish("client.input.key", "api-originated", Map.of(
+                "mapping", actionResult.mapping(),
+                "action", actionResult.action()));
+        respond(exchange, requestId, 200, JsonWriter.write(responseBody));
+    }
+
+    private void captureScreenshot(HttpExchange exchange, String requestId) throws IOException {
+        var ops = runtime.clientOps();
+        if (ops == null) {
+            error(exchange, requestId, 409, "WRONG_STATE",
+                    "No client operations on this process (dedicated server or client not initialized).");
+            return;
+        }
+        long frameId = frameCounter.incrementAndGet();
+        var result = runtime.<dev.example.mapi.internal.client.ScreenshotResult>tryReadOnClientThread(
+                () -> ops.captureScreenshot(frameId));
+        if (!handleReadOutcome(exchange, requestId, result)) {
+            return;
+        }
+        dev.example.mapi.internal.client.ScreenshotResult screenshot = result.value();
+        Map<String, Object> responseBody = new LinkedHashMap<>();
+        responseBody.put("protocolVersion", PROTOCOL_VERSION);
+        responseBody.put("frameId", screenshot.frameId());
+        responseBody.put("path", screenshot.path());
+        responseBody.put("width", screenshot.width());
+        responseBody.put("height", screenshot.height());
+        responseBody.put("bytes", screenshot.bytes());
+        runtime.eventLog().publish("client.screenshot", "api-originated", Map.of(
+                "frameId", screenshot.frameId(),
+                "path", screenshot.path()));
+        respond(exchange, requestId, 200, JsonWriter.write(responseBody));
     }
 
     // ------------------------------------------------------------------

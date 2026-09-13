@@ -249,8 +249,43 @@ same bounded wait as server reads (busy → **503**).
 - `/client/screen/tree`: best-effort semantic widget tree of the open screen
   — `{"coverage":"best-effort","root":{widgetClass,label,x,y,width,height,
   children:[…]}}`. The root has no `widgetClass` when the HUD is showing.
-  The `mode` parameter and input interaction land with the next slice 0.6
-  increments (no silent fallbacks — spec §5.2).
+
+### `POST /api/v1/client/input/key` (input mode)
+
+Drives the game's own key-mapping path (`KeyMapping.set`/`click`) — the same
+mechanism the physical keyboard funnels into; no window-event spoofing, no
+direct state writes. Body:
+
+```json
+{"mapping": "key.forward", "action": "press", "mode": "input"}
+```
+
+`mapping` must be a name the client itself reports (the supported set covers
+movement/interaction keys: forward, left, back, right, jump, sneak, sprint,
+inventory, drop, chat, attack, use, pickItem, swapHands, playerlist,
+togglePerspective — unknown names → **400** `INVALID_PAYLOAD`). `action` is
+`press` | `release` | `tap` (tap = event-style click, no held state —
+movement keys should use press/release). `mode` must be `input` or absent:
+other values are rejected, **no silent fallbacks** (spec §5.2). The response
+reports the authoritative state right after the action:
+`{"mapping":…,"action":…,"isDown":true}` (`isDown` absent for `tap`).
+
+### `POST /api/v1/client/screenshot`
+
+Captures the main framebuffer as PNG into the instance's
+`mcapi/screenshots/frame-<frameId>.png` (controlled path; retrieval is via
+the game directory on the same host). `frameId` is a monotonic per-process
+identifier of the captured frame instance:
+
+```json
+{"protocolVersion":1,"frameId":1,"path":"mcapi/screenshots/frame-1.png",
+ "width":1920,"height":1080,"bytes":245123}
+```
+
+Both actions emit `client.input.key` / `client.screenshot` events
+(`api-originated`). HUD toggle, region capture, annotated screenshots with a
+render-lifecycle `frameId`, and macro record/replay are future slice 0.6
+work (documented, not yet implemented).
 
 ### WebSocket event stream
 

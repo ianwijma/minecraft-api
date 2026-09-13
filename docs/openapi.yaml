@@ -268,6 +268,40 @@ paths:
               schema: { $ref: "#/components/schemas/ScreenTreeResponse" }
         "409": { $ref: "#/components/responses/WrongState" }
         "503": { $ref: "#/components/responses/ServerBusy" }
+  /api/v1/client/screenshot:
+    post:
+      operationId: captureClientScreenshot
+      summary: Capture the main framebuffer as PNG into mcapi/screenshots
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScreenshotResponse" }
+        "409": { $ref: "#/components/responses/WrongState" }
+        "503": { $ref: "#/components/responses/ServerBusy" }
+  /api/v1/client/input/key:
+    post:
+      operationId: pressClientKey
+      summary: Input-mode key action through the game's key-mapping path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/KeyActionRequest" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/KeyActionResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/WrongState" }
+        "503": { $ref: "#/components/responses/ServerBusy" }
 components:
   securitySchemes:
     bearerAuth:
@@ -629,3 +663,35 @@ components:
         children:
           type: array
           items: { $ref: "#/components/schemas/ScreenNode" }
+    KeyActionRequest:
+      type: object
+      required: [mapping, action]
+      properties:
+        mapping:
+          type: string
+          description: mapping name as reported by the client (e.g. key.forward)
+        action: { type: string, enum: [press, release, tap] }
+        mode: { type: string, const: input, description: input-mode only; other modes are rejected }
+    KeyActionResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [mode, mapping, action]
+          properties:
+            mode: { type: string, const: input }
+            mapping: { type: string }
+            action: { type: string, enum: [press, release, tap] }
+            isDown:
+              type: boolean
+              description: authoritative state after the action; absent for tap
+    ScreenshotResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [frameId, path, width, height, bytes]
+          properties:
+            frameId: { type: integer, format: int64, description: monotonic per-process capture id }
+            path: { type: string, description: relative to the instance game directory }
+            width: { type: integer }
+            height: { type: integer }
+            bytes: { type: integer }
