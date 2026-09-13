@@ -277,6 +277,9 @@ public final class HttpApiServer {
         if (path.startsWith(API_PREFIX + "server/commands")) {
             return dev.example.mapi.internal.auth.Scope.COMMANDS_EXECUTE;
         }
+        if (path.equals(API_PREFIX + "threads") || path.equals(API_PREFIX + "memory/gc")) {
+            return dev.example.mapi.internal.auth.Scope.DIAGNOSTICS;
+        }
         return dev.example.mapi.internal.auth.Scope.OBSERVE;
     }
 
@@ -307,6 +310,7 @@ public final class HttpApiServer {
             case API_PREFIX + "client/status" -> sendClientStatus(exchange, requestId);
             case API_PREFIX + "client/screen/tree" -> sendScreenTree(exchange, requestId);
             case API_PREFIX + "mods" -> sendMods(exchange, requestId);
+            case API_PREFIX + "threads" -> sendThreads(exchange, requestId);
             default -> {
                 if (path.startsWith(API_PREFIX + "registry/")) {
                     sendRegistry(exchange, requestId, path.substring((API_PREFIX + "registry/").length()));
@@ -340,6 +344,10 @@ public final class HttpApiServer {
         }
         if (path.equals(API_PREFIX + "server/commands/execute")) {
             executeCommand(exchange, requestId, body);
+            return;
+        }
+        if (path.equals(API_PREFIX + "memory/gc")) {
+            runGc(exchange, requestId);
             return;
         }
         if (path.equals(API_PREFIX + "leases")) {
@@ -745,6 +753,58 @@ public final class HttpApiServer {
             requested.add(name);
         }
         return requested;
+    }
+
+    // ------------------------------------------------------------------
+    // Structured diagnostics (spec §6.1 extended, slice 2.2, pure JDK)
+    // ------------------------------------------------------------------
+
+    private void sendThreads(HttpExchange exchange, String requestId) throws IOException {
+        Map<String, List<String>> query = splitQuery(exchange.getRequestURI().getRawQuery());
+        int limit = intParam(query, "limit", 100, exchange, requestId);
+        if (limit < 0) {
+            return;
+        }
+        limit = Math.clamp(limit, 1, 500);
+        java.lang.management.ThreadMXBean beans = java.lang.management.ManagementFactory.getThreadMXBean();
+        if (beans.isThreadCpuTimeSupported() && !beans.isThreadCpuTimeEnabled()) {
+            beans.setThreadCpuTimeEnabled(true);
+        }
+        List<Map<String, Object>> threads = new java.util.ArrayList<>();
+        for (long threadId : beans.getAllThreadIds()) {
+            java.lang.management.ThreadInfo info = beans.getThreadInfo(threadId);
+            if (info == null) {
+                continue;
+            }
+            Map<String, Object> thread = new LinkedHashMap<>();
+            thread.put("id", threadId);
+            thread.put("name", info.getThreadName());
+            thread.put("state", info.getThreadState().name());
+            long cpuNanos = beans.isThreadCpuTimeEnabled() ? beans.getThreadCpuTime(threadId) : -1;
+            thread.put("cpuTimeMs", cpuNanos < 0 ? null : cpuNanos / 1_000_000);
+            threads.add(thread);
+        }
+        threads.sort(java.util.Comparator.comparingLong(t -> -(Long) t.get("id")));
+        int total = threads.size();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("threads", threads.subList(0, Math.min(limit, threads.size())));
+        body.put("total", total);
+        body.put("truncated", total > limit);
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private void runGc(HttpExchange exchange, String requestId) throws IOException {
+        java.lang.management.MemoryMXBean memory = java.lang.management.ManagementFactory.getMemoryMXBean();
+        long before = memory.getHeapMemoryUsage().getUsed();
+        System.gc();
+        long after = memory.getHeapMemoryUsage().getUsed();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("heapUsedBeforeBytes", before);
+        body.put("heapUsedAfterBytes", after);
+        body.put("reclaimedBytes", Math.max(0, before - after));
+        respond(exchange, requestId, 200, JsonWriter.write(body));
     }
 
     // ------------------------------------------------------------------

@@ -768,6 +768,35 @@ class HttpApiServerTest {
     }
 
     // ------------------------------------------------------------------
+    // Diagnostics (slice 2.2, diagnostics scope)
+    // ------------------------------------------------------------------
+
+    @Test
+    void diagnosticsEndpointsAndScope() throws Exception {
+        startServer(scopedConfig(java.util.List.of(
+                dev.example.mapi.internal.auth.Scope.OBSERVE,
+                dev.example.mapi.internal.auth.Scope.DIAGNOSTICS)));
+
+        HttpResponse<String> threads = get("/api/v1/threads?limit=10", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, threads.statusCode(), threads.body());
+        assertTrue(threads.body().contains("\"name\":\""), threads.body());
+        assertTrue(threads.body().contains("\"total\":"), threads.body());
+
+        HttpResponse<String> gc = post("/api/v1/memory/gc", "{}", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, gc.statusCode(), gc.body());
+        assertTrue(gc.body().contains("\"heapUsedBeforeBytes\":"), gc.body());
+        assertTrue(gc.body().contains("\"reclaimedBytes\":"), gc.body());
+    }
+
+    @Test
+    void diagnosticsRequiresScope() throws Exception {
+        startServer(scopedConfig(java.util.List.of(dev.example.mapi.internal.auth.Scope.OBSERVE)));
+        HttpResponse<String> forbidden = get("/api/v1/threads", "Authorization", "Bearer " + TOKEN);
+        assertEquals(403, forbidden.statusCode(), forbidden.body());
+        assertTrue(forbidden.body().contains("\"required\":\"diagnostics\""), forbidden.body());
+    }
+
+    // ------------------------------------------------------------------
     // Registry / tags / mods inspection (slice 2.1)
     // ------------------------------------------------------------------
 

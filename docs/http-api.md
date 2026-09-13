@@ -159,6 +159,20 @@ wait → **503**:
 {"error":{"code":"SERVER_BUSY","message":"Server thread busy; status snapshot timed out. Retry shortly."},"protocolVersion":1}
 ```
 
+### `GET /api/v1/threads`, `POST /api/v1/memory/gc` (slice 2.2)
+
+Structured diagnostics (`diagnostics` scope, pure JDK — no game-thread
+involvement):
+
+- `/threads?limit=` — thread list (id, name, state, `cpuTimeMs`) sorted
+  newest-first, capped at 500 with `total`/`truncated` metadata.
+- `/memory/gc` — requests a JVM GC and reports `heapUsedBeforeBytes`,
+  `heapUsedAfterBytes`, `reclaimedBytes`. GC hints are advisory by JVM
+  contract; the response is always produced.
+
+The vanilla game profiler surface (spec profiler start/stop) is planned but
+not implemented; there is no profiler endpoint yet.
+
 ### `GET /api/v1/registry/{type}`, `GET /api/v1/tags/{type}`, `GET /api/v1/mods` (slice 2.1)
 
 Registry and data inspection (spec §6.1, `observe` scope, owning-thread
