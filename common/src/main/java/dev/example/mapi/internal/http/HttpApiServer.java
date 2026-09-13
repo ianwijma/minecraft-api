@@ -231,6 +231,14 @@ public final class HttpApiServer {
             return;
         }
         String method = exchange.getRequestMethod().toUpperCase(Locale.ROOT);
+        String requiredScope = requiredScope(method, exchange.getRequestURI().getPath());
+        if (requiredScope != null && !config.scopes().contains(requiredScope)) {
+            Map<String, Object> extra = new LinkedHashMap<>();
+            extra.put("required", requiredScope);
+            error(exchange, requestId, 403, "FORBIDDEN_SCOPE",
+                    "Token lacks the scope required for this effect", extra);
+            return;
+        }
         if (!method.equals("GET") && !method.equals("POST") && !method.equals("DELETE")) {
             exchange.getResponseHeaders().set("Allow", "GET, POST, DELETE");
             error(exchange, requestId, 405, "METHOD_NOT_ALLOWED", "Only GET, POST, and DELETE are supported");
@@ -249,6 +257,21 @@ public final class HttpApiServer {
             case "DELETE" -> routeDelete(exchange, requestId, path);
             default -> throw new IllegalStateException("unreachable method " + method);
         }
+    }
+
+    /**
+     * Effect-based scope requirement (spec §4.2: authorize the effect, not
+     * the route). {@code null} means no additional scope beyond a valid
+     * token (currently unused — every route maps to a scope).
+     */
+    private String requiredScope(String method, String path) {
+        if (path.startsWith(API_PREFIX + "server/world/")) {
+            return dev.example.mapi.internal.auth.Scope.WORLD_READ;
+        }
+        if (path.equals(API_PREFIX + "client/input/key")) {
+            return dev.example.mapi.internal.auth.Scope.CLIENT_CONTROL;
+        }
+        return dev.example.mapi.internal.auth.Scope.OBSERVE;
     }
 
     private void routeGet(HttpExchange exchange, String requestId, String path) throws IOException {
@@ -377,6 +400,7 @@ public final class HttpApiServer {
         runtime.worldSessionId().ifPresent(id -> body.put("worldSessionId", id));
         body.put("physicalSide", runtime.physicalSide().id());
         body.put("availableLogicalSides", runtime.availableLogicalSides());
+        body.put("scopes", java.util.List.copyOf(config.scopes()));
         Map<String, Object> support = new LinkedHashMap<>();
         support.put("minecraftVersion", runtime.minecraftVersion());
         support.put("javaVersion", Runtime.version().feature());
@@ -1133,10 +1157,16 @@ public final class HttpApiServer {
 
     private static void error(HttpExchange exchange, String requestId, int status, String code, String message)
             throws IOException {
+        error(exchange, requestId, status, code, message, Map.of());
+    }
+
+    private static void error(HttpExchange exchange, String requestId, int status, String code, String message,
+            Map<String, Object> extra) throws IOException {
         Map<String, Object> error = new LinkedHashMap<>();
         error.put("code", code);
         error.put("message", message);
         error.put("requestId", requestId);
+        error.putAll(extra);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("error", error);
         body.put("protocolVersion", PROTOCOL_VERSION);

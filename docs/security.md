@@ -19,6 +19,10 @@ repository.
 - **Bearer token required on every endpoint**, including `/health`. Tokens
   are compared with constant-time `MessageDigest.isEqual`. Tokens shorter
   than 16 characters are refused at startup.
+- **Scopes (Phase 1).** The token carries a scope set (spec §4.2); the
+  gateway authorizes the effect (`observe`, `world.read`,
+  `client.control`, …) and rejects with 403 `FORBIDDEN_SCOPE`. Scope
+  violations and the required scope are logged, never secret material.
 - **No TLS.** Loopback traffic is unencrypted by design; a token prevents
   other local users/processes from casually reading status data. Do not
   expose the port beyond loopback (no tunneling without understanding the

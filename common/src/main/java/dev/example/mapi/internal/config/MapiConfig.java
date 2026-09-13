@@ -15,6 +15,7 @@ import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 
 import org.slf4j.Logger;
 
@@ -40,6 +41,8 @@ import org.slf4j.Logger;
  *       <td>Fail startup when no port can be bound (harness/CI runs)</td></tr>
  *   <tr><td>http.discoveryHeartbeatSeconds</td><td>MAPI_DISCOVERY_HEARTBEAT_SECONDS</td><td>30</td>
  *       <td>Discovery file refresh interval (staleness signal)</td></tr>
+ *   <tr><td>http.scopes</td><td>MAPI_HTTP_SCOPES</td><td>all scopes</td>
+ *       <td>Comma-separated scope set bound to the token (spec §4.2)</td></tr>
  * </table>
  *
  * <p>Token resolution order when HTTP is enabled: {@code MAPI_HTTP_TOKEN},
@@ -57,7 +60,8 @@ public record MapiConfig(
         Path tokenFile,
         int portFallback,
         boolean failFast,
-        int discoveryHeartbeatSeconds) {
+        int discoveryHeartbeatSeconds,
+        Set<String> scopes) {
 
     /** Default HTTP port. */
     public static final int DEFAULT_PORT = 25586;
@@ -93,7 +97,7 @@ public record MapiConfig(
      */
     public MapiConfig(boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute) {
         this(httpEnabled, httpPort, httpToken, rateLimitPerMinute, "mapi-" + httpPort, null, 0, false,
-                DEFAULT_DISCOVERY_HEARTBEAT_SECONDS);
+                DEFAULT_DISCOVERY_HEARTBEAT_SECONDS, dev.example.mapi.internal.auth.Scope.ALL);
     }
 
     /**
@@ -122,6 +126,13 @@ public record MapiConfig(
         boolean failFast = readBool(file, env, "http.failFast", "MAPI_HTTP_FAIL_FAST", false, logger);
         int heartbeat = readInt(file, env, "http.discoveryHeartbeatSeconds",
                 "MAPI_DISCOVERY_HEARTBEAT_SECONDS", DEFAULT_DISCOVERY_HEARTBEAT_SECONDS);
+        Set<String> scopes;
+        try {
+            scopes = dev.example.mapi.internal.auth.Scope.parse(
+                    readString(file, env, "http.scopes", "MAPI_HTTP_SCOPES", null));
+        } catch (IllegalArgumentException e) {
+            throw new MapiConfigException(e.getMessage());
+        }
 
         if (port < 1 || port > 65535) {
             throw new MapiConfigException("http.port must be between 1 and 65535 (got " + port + ")");
@@ -148,7 +159,7 @@ public record MapiConfig(
         }
 
         return new MapiConfig(enabled, port, token == null ? null : token.trim(), rateLimit, instanceId,
-                tokenFilePath, portFallback, failFast, heartbeat);
+                tokenFilePath, portFallback, failFast, heartbeat, scopes);
     }
 
     private static void requireUsableToken(String token, Path configDir) {
@@ -304,7 +315,8 @@ public record MapiConfig(
 
     private static final java.util.Set<String> KNOWN_KEYS = java.util.Set.of(
             "http.enabled", "http.port", "http.token", "http.tokenFile", "http.rateLimitPerMinute",
-            "http.instanceId", "http.portFallback", "http.failFast", "http.discoveryHeartbeatSeconds");
+            "http.instanceId", "http.portFallback", "http.failFast", "http.discoveryHeartbeatSeconds",
+            "http.scopes");
 
     private static String effective(Properties file, Map<String, String> env, String fileKey, String envKey) {
         String fromEnv = env.get(envKey);

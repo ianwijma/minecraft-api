@@ -39,6 +39,7 @@ See `docs/examples/mapi.properties.example`.
 | `http.portFallback` | `MAPI_HTTP_PORT_FALLBACK` | `0` | try up to N consecutive ports above `http.port` |
 | `http.failFast` | `MAPI_HTTP_FAIL_FAST` | `false` | hard-fail startup when no port can be bound |
 | `http.discoveryHeartbeatSeconds` | `MAPI_DISCOVERY_HEARTBEAT_SECONDS` | `30` | discovery file refresh interval (5–3600) |
+| `http.scopes` | `MAPI_HTTP_SCOPES` | all scopes | comma-separated scope set bound to the token |
 
 ### Token resolution
 
@@ -322,6 +323,20 @@ local tools can find the instance without guessing ports:
   file after a crash is detected as stale by consumers (PID + heartbeat, not
   PID alone — harness rules land with the harness).
 - Readers must treat the content as untrusted data.
+
+## Scopes (spec §4.2)
+
+The token carries a scope set (`http.scopes`, default: all). Authorization
+is effect-based, not route-based: reads and event streams require
+`observe`; `/api/v1/server/world/*` requires `world.read`;
+`/api/v1/client/input/key` requires `client.control`; task orchestration
+requires `observe` plus the task kind's own requirement. A request whose
+token lacks the required scope → **403** `FORBIDDEN_SCOPE` with
+`"required":"<scope>"`. `/api/v1/info` reports the token's scopes. Known
+scopes: `observe`, `diagnostics`, `client.control`, `world.read`,
+`world.write`, `commands.execute`, `lifecycle.manage`, `files.read`,
+`files.write`, `unsafe.execute` (the latter five gate endpoints that land
+with later Phase 1/2 slices).
 
 ## Errors and status codes
 

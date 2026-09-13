@@ -217,6 +217,14 @@ Still open (each needs in-game verification before it can be trusted):
 
 ### Phase 1 and beyond
 
+### Slice 1.1 — Scope model (DONE 2026-09-13)
+
+- Scope vocabulary (§4.2) with effect-based gateway enforcement: `observe`
+  for reads/events/tasks, `world.read` for `/server/world/*`,
+  `client.control` for `/client/input/key`; 403 `FORBIDDEN_SCOPE` carries
+  the required scope; `/info` reports the token's scopes; WS closes without
+  `observe`. Config: `http.scopes` / `MAPI_HTTP_SCOPES`.
+
 Phase 1 (scopes, leases, revisions, SDKs, MCP adapter, fixture-mod,
 failure-scenario suite), Phase 2 (extended tier: storage adapters, GameTest,
 region fixtures, ext SPI), Phase 3 (experimental tier) follow spec §12 with

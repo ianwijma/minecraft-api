@@ -551,6 +551,56 @@ class HttpApiServerTest {
     }
 
     // ------------------------------------------------------------------
+    // Scopes (spec §4.2)
+    // ------------------------------------------------------------------
+
+    private MapiConfig scopedConfig(java.util.Set<String> scopes) throws Exception {
+        int port = freePort();
+        return new MapiConfig(true, port, TOKEN, 60, "mapi-" + port, null, 0, false,
+                MapiConfig.DEFAULT_DISCOVERY_HEARTBEAT_SECONDS, scopes);
+    }
+
+    @Test
+    void scopeRestrictionsAuthorizeTheEffect() throws Exception {
+        startServer(scopedConfig(java.util.Set.of(dev.example.mapi.internal.auth.Scope.OBSERVE)));
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+
+        HttpResponse<String> okObserve = get("/api/v1/server/players", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, okObserve.statusCode(), okObserve.body());
+
+        HttpResponse<String> forbiddenRead = get(
+                "/api/v1/server/world/block?dimension=minecraft:overworld&x=0&y=0&z=0",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(403, forbiddenRead.statusCode(), forbiddenRead.body());
+        assertTrue(forbiddenRead.body().contains("FORBIDDEN_SCOPE"), forbiddenRead.body());
+        assertTrue(forbiddenRead.body().contains("\"required\":\"world.read\""), forbiddenRead.body());
+
+        HttpResponse<String> forbiddenControl = post("/api/v1/client/input/key",
+                "{\"mapping\":\"key.forward\",\"action\":\"press\"}", "Authorization", "Bearer " + TOKEN);
+        assertEquals(403, forbiddenControl.statusCode(), forbiddenControl.body());
+        assertTrue(forbiddenControl.body().contains("\"required\":\"client.control\""), forbiddenControl.body());
+    }
+
+    @Test
+    void worldReadScopeUnlocksWorldEndpoints() throws Exception {
+        startServer(scopedConfig(java.util.Set.of(dev.example.mapi.internal.auth.Scope.OBSERVE,
+                dev.example.mapi.internal.auth.Scope.WORLD_READ)));
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+        HttpResponse<String> ok = get("/api/v1/server/world/time?dimension=minecraft:overworld",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, ok.statusCode(), ok.body());
+    }
+
+    @Test
+    void infoCarriesTokenScopes() throws Exception {
+        startServer(scopedConfig(java.util.Set.of(dev.example.mapi.internal.auth.Scope.OBSERVE,
+                dev.example.mapi.internal.auth.Scope.WORLD_READ)));
+        HttpResponse<String> info = get("/api/v1/info", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, info.statusCode(), info.body());
+        assertTrue(info.body().contains("\"scopes\":[\"observe\",\"world.read\"]"), info.body());
+    }
+
+    // ------------------------------------------------------------------
     // Client reads (slice 0.6)
     // ------------------------------------------------------------------
 

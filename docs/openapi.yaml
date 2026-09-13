@@ -477,9 +477,9 @@ components:
                 code:
                   type: string
                   enum: [UNSUPPORTED, INVALID_JSON, INVALID_PAYLOAD, INVALID_QUERY, INVALID_HEADER,
-                         UNAUTHORIZED, FORBIDDEN_HOST, FORBIDDEN_ORIGIN, NOT_FOUND, DIMENSION_NOT_FOUND,
-                         METHOD_NOT_ALLOWED, WRONG_STATE, CHUNK_UNLOADED, PAYLOAD_TOO_LARGE,
-                         IDEMPOTENCY_MISMATCH, RATE_LIMITED, SERVER_BUSY, INTERNAL]
+                         UNAUTHORIZED, FORBIDDEN_HOST, FORBIDDEN_ORIGIN, FORBIDDEN_SCOPE, NOT_FOUND,
+                         DIMENSION_NOT_FOUND, METHOD_NOT_ALLOWED, WRONG_STATE, CHUNK_UNLOADED,
+                         PAYLOAD_TOO_LARGE, IDEMPOTENCY_MISMATCH, RATE_LIMITED, SERVER_BUSY, INTERNAL]
                 message: { type: string }
                 requestId: { type: string }
     PlayersResponse:

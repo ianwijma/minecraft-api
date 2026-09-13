@@ -125,6 +125,16 @@ public final class MapiRuntime implements Mapi {
     }
 
     /**
+     * @param scope scope name
+     * @return true when the active token carries the scope (false while the
+     *         API has never started)
+     */
+    public boolean hasScope(String scope) {
+        MapiConfig config = activeConfig;
+        return config != null && config.scopes().contains(scope);
+    }
+
+    /**
      * WebSocket application behavior: hello on open, subscribe handling with
      * resume + GAP semantics, event delivery.
      */
@@ -132,6 +142,10 @@ public final class MapiRuntime implements Mapi {
 
         @Override
         public void onOpen(WebSocketConnection connection) {
+            if (!hasScope(dev.example.mapi.internal.auth.Scope.OBSERVE)) {
+                connection.close(WebSocketFrames.CLOSE_POLICY, "token lacks the observe scope");
+                return;
+            }
             Map<String, Object> hello = new LinkedHashMap<>();
             hello.put("type", "hello");
             hello.put("protocolVersion", 1);
