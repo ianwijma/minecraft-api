@@ -53,6 +53,7 @@ final class FabricPlatform implements MapiPlatform {
     public void registerServerLifecycle(ServerLifecycleListener listener) {
         ServerLifecycleEvents.SERVER_STARTING.register(server ->
                 listener.onServerStarting(FabricServerHandle.starting(server)));
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> listener.onServerStarted());
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> listener.onServerStopping());
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> listener.onServerStopped());
     }

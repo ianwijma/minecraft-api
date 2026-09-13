@@ -10,6 +10,7 @@ import net.minecraft.server.MinecraftServer;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
@@ -61,6 +62,7 @@ final class NeoForgePlatform implements MapiPlatform {
     public void registerServerLifecycle(ServerLifecycleListener listener) {
         NeoForge.EVENT_BUS.addListener((ServerStartingEvent event) ->
                 listener.onServerStarting(NeoForgeServerHandle.starting(event.getServer())));
+        NeoForge.EVENT_BUS.addListener((ServerStartedEvent event) -> listener.onServerStarted());
         NeoForge.EVENT_BUS.addListener((ServerStoppingEvent event) -> listener.onServerStopping());
         NeoForge.EVENT_BUS.addListener((ServerStoppedEvent event) -> listener.onServerStopped());
     }

@@ -174,6 +174,30 @@ public final class LeaseManager {
         return count;
     }
 
+    /**
+     * Revokes every lease whose topic starts with the given prefix (used for
+     * world-scoped cleanup, topics of the form
+     * {@code world/<worldSessionId>/<topic>}).
+     *
+     * @param topicPrefix topic prefix, never {@code null}
+     * @return the number of leases revoked
+     */
+    public int revokeTopicPrefix(String topicPrefix) {
+        Objects.requireNonNull(topicPrefix, "topicPrefix");
+        int count = 0;
+        for (String topic : held.keySet().toArray(String[]::new)) {
+            if (topic.startsWith(topicPrefix)) {
+                ControlLease lease = held.remove(topic);
+                if (lease != null && !lease.revoked()) {
+                    lease.revoke(System.currentTimeMillis());
+                    notifyExpiry(lease);
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
     /** Stops the watchdog. Idempotent; held leases are revoked. */
     public void shutdown() {
         watchdog.shutdownNow();

@@ -8,6 +8,7 @@ import org.slf4j.Logger;
  *
  * <pre>
  * server starting  -&gt; onServerStarting(ServerHandle)
+ * server started   -&gt; onServerStarted()
  * server stopping  -&gt; onServerStopping()
  * server stopped   -&gt; onServerStopped()
  * </pre>
@@ -24,6 +25,13 @@ public interface ServerLifecycleListener {
      * @param handle handle to the starting server, never {@code null}
      */
     void onServerStarting(ServerHandle handle);
+
+    /**
+     * The server has started and is ready (world session active). Called on
+     * the server thread.
+     */
+    default void onServerStarted() {
+    }
 
     /**
      * The server is stopping. Called before the server thread is torn down.

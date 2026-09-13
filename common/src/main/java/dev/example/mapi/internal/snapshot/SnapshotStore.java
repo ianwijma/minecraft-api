@@ -196,6 +196,29 @@ public final class SnapshotStore {
         return snapshots.size();
     }
 
+    /**
+     * Invalidates every retained snapshot scoped to a world (spec §6).
+     *
+     * @param worldSessionId the world that unloaded
+     * @return the number of invalidated snapshots
+     */
+    public int invalidateWorld(String worldSessionId) {
+        java.util.Objects.requireNonNull(worldSessionId, "worldSessionId");
+        int removed = 0;
+        synchronized (order) {
+            for (String id : order.toArray(String[]::new)) {
+                Snapshot snapshot = snapshots.get(id);
+                if (snapshot != null
+                        && worldSessionId.equals(snapshot.worldSessionId().orElse(null))) {
+                    snapshots.remove(id);
+                    order.remove(id);
+                    removed++;
+                }
+            }
+        }
+        return removed;
+    }
+
     private boolean hasPrefix(Map<String, Tag> map, String prefixPattern) {
         if (!prefixPattern.endsWith(".*")) {
             return false;

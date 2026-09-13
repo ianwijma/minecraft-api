@@ -100,6 +100,40 @@ public class MapiRuntimeTest {
         platform.listener.onServerStopped();
     }
 
+    @Test
+    void worldSessionLifecycleIsTrackedAcrossServerLifecycle() {
+        TestPlatform platform = new TestPlatform(LOG);
+        MapiRuntime runtime = new MapiRuntime(platform);
+        assertEquals(dev.example.mapi.internal.world.WorldPhase.NONE,
+                runtime.worldLifecycle().phase());
+
+        TestServerHandle handle = TestServerHandle.inline();
+        platform.listener.onServerStarting(handle);
+        assertEquals(dev.example.mapi.internal.world.WorldPhase.LOADING,
+                runtime.worldLifecycle().phase());
+        String sessionId = runtime.worldLifecycle().currentSessionId().orElseThrow();
+
+        platform.listener.onServerStarted();
+        assertEquals(dev.example.mapi.internal.world.WorldPhase.ACTIVE,
+                runtime.worldLifecycle().phase());
+        assertEquals(sessionId, runtime.worldLifecycle().requireActive(Optional.of(sessionId)));
+
+        platform.listener.onServerStopping();
+        assertEquals(dev.example.mapi.internal.world.WorldPhase.UNLOADING,
+                runtime.worldLifecycle().phase());
+        platform.listener.onServerStopped();
+        assertEquals(dev.example.mapi.internal.world.WorldPhase.NONE,
+                runtime.worldLifecycle().phase());
+        assertThrows(dev.example.mapi.internal.problem.ProblemException.class,
+                () -> runtime.worldLifecycle().requireActive(Optional.empty()));
+
+        // The four world-session events were published in order.
+        var lifecycle = runtime.eventBus().eventsAfter(0,
+                dev.example.mapi.internal.event.EventFilter.any(), 100).events();
+        assertEquals(java.util.List.of("world.loading", "world.loaded", "world.unloading", "world.unloaded"),
+                lifecycle.stream().map(e -> e.type()).toList());
+    }
+
     /**
      * Minimal Mapi implementation for negative binding tests.
      */

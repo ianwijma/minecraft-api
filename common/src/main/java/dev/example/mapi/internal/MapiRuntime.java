@@ -26,10 +26,26 @@ public final class MapiRuntime implements Mapi {
      */
     public static final long SNAPSHOT_WAIT_MS = 500L;
 
+    /** Default retention period for retained snapshots (30 minutes). */
+    public static final long SNAPSHOT_TTL_MS = 30L * 60L * 1000L;
+
+    /** Default maximum number of retained snapshots. */
+    public static final int SNAPSHOT_MAX_COUNT = 64;
+
     private final MapiPlatform platform;
     private final MapiServicesImpl services = new MapiServicesImpl();
     private final dev.example.mapi.internal.event.EventBus eventBus =
             new dev.example.mapi.internal.event.EventBus();
+    private final dev.example.mapi.internal.job.JobManager jobManager = new dev.example.mapi.internal.job.JobManager();
+    private final dev.example.mapi.internal.lease.LeaseManager leaseManager =
+            new dev.example.mapi.internal.lease.LeaseManager();
+    private final dev.example.mapi.internal.snapshot.SnapshotStore snapshots =
+            new dev.example.mapi.internal.snapshot.SnapshotStore(
+                    SNAPSHOT_TTL_MS, SNAPSHOT_MAX_COUNT,
+                    dev.example.mapi.internal.encoding.EncodingLimits.DEFAULT);
+    private final dev.example.mapi.internal.world.WorldLifecycleCoordinator worldLifecycle =
+            new dev.example.mapi.internal.world.WorldLifecycleCoordinator(
+                    jobManager, snapshots, leaseManager, eventBus);
 
     private volatile ServerHandle serverHandle;
     private volatile HttpApiServer httpServer;
@@ -46,12 +62,19 @@ public final class MapiRuntime implements Mapi {
             @Override
             public void onServerStarting(ServerHandle handle) {
                 serverHandle = handle;
+                worldLifecycle.beginLoad();
                 services.fireServerStart(handle, platform.logger());
                 startHttp(handle);
             }
 
             @Override
+            public void onServerStarted() {
+                worldLifecycle.activated();
+            }
+
+            @Override
             public void onServerStopping() {
+                worldLifecycle.beginUnload();
                 stopHttp();
                 ServerHandle handle = serverHandle;
                 if (handle != null) {
@@ -61,6 +84,7 @@ public final class MapiRuntime implements Mapi {
 
             @Override
             public void onServerStopped() {
+                worldLifecycle.unloaded();
                 serverHandle = null;
             }
         });
@@ -130,6 +154,26 @@ public final class MapiRuntime implements Mapi {
      */
     public dev.example.mapi.internal.server.ServerBridge serverBridge() {
         return platform.serverBridge();
+    }
+
+    /** @return the runtime job manager; internal accessor */
+    public dev.example.mapi.internal.job.JobManager jobs() {
+        return jobManager;
+    }
+
+    /** @return the runtime lease manager; internal accessor */
+    public dev.example.mapi.internal.lease.LeaseManager leases() {
+        return leaseManager;
+    }
+
+    /** @return the runtime snapshot store; internal accessor */
+    public dev.example.mapi.internal.snapshot.SnapshotStore snapshots() {
+        return snapshots;
+    }
+
+    /** @return the world-lifecycle coordinator; internal accessor */
+    public dev.example.mapi.internal.world.WorldLifecycleCoordinator worldLifecycle() {
+        return worldLifecycle;
     }
 
     // ------------------------------------------------------------------
