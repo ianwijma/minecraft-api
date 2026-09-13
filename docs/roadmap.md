@@ -121,6 +121,15 @@ scenarios, and **parity across Fabric and NeoForge** enforced by tests.
   outcomes via a `RawBlockEntityRead` record, `saveWithFullMetadata`
   verified via javap on 26.2.
 
+### Slice 2.4 — Extension SPI (DONE 2026-09-13)
+
+- Public API `MapiHttpExtension` (extends `MapiService`): `requiredScope()`,
+  self-describing `schema()`, and `handle(request)` for
+  `GET|POST /api/v1/ext/{id}/…` routes; `GET …/$schema` exposes the schema.
+- Scope enforcement per extension (403 `FORBIDDEN_SCOPE`), handler
+  exceptions → 500, `ext.invoked` events, contract documented in
+  `docs/api.md` (thread-safety requirement, no-authority rule, no secrets).
+
 Each slice must keep `./gradlew verify` green (format, tests, jar
 validation, manifest) and update docs in the same change set.
 

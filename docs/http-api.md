@@ -371,6 +371,17 @@ Lease changes emit `lease.changed` events. Scopes: acquiring
 `client.control`/`world.write`/`lifecycle.manage` respectively; listing
 requires `observe`.
 
+### `GET|POST /api/v1/ext/{id}/…` (slice 2.4)
+
+Mod-provided extension surface (spec §6.2 ext SPI): every registered
+`MapiHttpExtension` (public Java API) exposes operations under its own
+prefix. Requests are authenticated and checked against the extension's
+declared `requiredScope()`; `GET …/$schema` returns the extension's
+self-describing schema; unknown extensions → **404**; handler failures →
+**500**. Every invocation emits an `ext.invoked` event. The extension adds
+no authority beyond the token's scopes — see `docs/api.md` for the
+contract mod authors implement.
+
 ### WebSocket event stream
 
 The JDK HTTP stack cannot host protocol upgrades, so the event stream runs

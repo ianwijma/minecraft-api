@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -830,6 +831,93 @@ class HttpApiServerTest {
         HttpResponse<String> forbidden = get("/api/v1/threads", "Authorization", "Bearer " + TOKEN);
         assertEquals(403, forbidden.statusCode(), forbidden.body());
         assertTrue(forbidden.body().contains("\"required\":\"diagnostics\""), forbidden.body());
+    }
+
+    // ------------------------------------------------------------------
+    // Extension SPI (slice 2.4)
+    // ------------------------------------------------------------------
+
+    @Test
+    void extensionSpiDispatchScopeAndSchema() throws Exception {
+        startServer(enabledConfig());
+        runtime.services().register("example-ext",
+                new dev.example.mapi.api.MapiHttpExtension() {
+                    @Override
+                    public String id() {
+                        return "example-ext";
+                    }
+
+                    @Override
+                    public String requiredScope() {
+                        return dev.example.mapi.internal.auth.Scope.OBSERVE;
+                    }
+
+                    @Override
+                    public Map<String, Object> schema() {
+                        return Map.of("operations", Map.of("ping", "returns pong"));
+                    }
+
+                    @Override
+                    public dev.example.mapi.api.MapiHttpExtension.MapiHttpResponse handle(
+                            dev.example.mapi.api.MapiHttpExtension.MapiHttpRequest request) {
+                        return new dev.example.mapi.api.MapiHttpExtension.MapiHttpResponse(200,
+                                Map.of("pong", request.method(), "name", request.query().getOrDefault("name", ""),
+                                        "echo", request.body().getOrDefault("msg", "")));
+                    }
+                });
+
+        HttpResponse<String> ping = get("/api/v1/ext/example-ext/ping?name=adam",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, ping.statusCode(), ping.body());
+        assertTrue(ping.body().contains("\"pong\":\"GET\""), ping.body());
+        assertTrue(ping.body().contains("\"name\":\"adam\""), ping.body());
+
+        HttpResponse<String> posted = post("/api/v1/ext/example-ext/ping", "{\"msg\":\"hello\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, posted.statusCode(), posted.body());
+        assertTrue(posted.body().contains("\"echo\":\"hello\""), posted.body());
+
+        HttpResponse<String> schema = get("/api/v1/ext/example-ext/$schema",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, schema.statusCode(), schema.body());
+        assertTrue(schema.body().contains("\"operations\""), schema.body());
+
+        HttpResponse<String> unknown = get("/api/v1/ext/nope/ping",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(404, unknown.statusCode(), unknown.body());
+        assertTrue(unknown.body().contains("Unknown extension"), unknown.body());
+    }
+
+    @Test
+    void extensionScopeEnforced() throws Exception {
+        startServer(scopedConfig(java.util.List.of(dev.example.mapi.internal.auth.Scope.OBSERVE)));
+        runtime.services().register("writer-ext",
+                new dev.example.mapi.api.MapiHttpExtension() {
+                    @Override
+                    public String id() {
+                        return "writer-ext";
+                    }
+
+                    @Override
+                    public String requiredScope() {
+                        return dev.example.mapi.internal.auth.Scope.WORLD_WRITE;
+                    }
+
+                    @Override
+                    public Map<String, Object> schema() {
+                        return Map.of();
+                    }
+
+                    @Override
+                    public dev.example.mapi.api.MapiHttpExtension.MapiHttpResponse handle(
+                            dev.example.mapi.api.MapiHttpExtension.MapiHttpRequest request) {
+                        return new dev.example.mapi.api.MapiHttpExtension.MapiHttpResponse(200, Map.of());
+                    }
+                });
+        HttpResponse<String> forbidden = get("/api/v1/ext/writer-ext/ping",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(403, forbidden.statusCode(), forbidden.body());
+        assertTrue(forbidden.body().contains("FORBIDDEN_SCOPE"), forbidden.body());
     }
 
     // ------------------------------------------------------------------

@@ -284,6 +284,11 @@ public final class HttpApiServer {
     }
 
     private void routeGet(HttpExchange exchange, String requestId, String path) throws IOException {
+        if (path.startsWith(API_PREFIX + "ext/")) {
+            dispatchExtension(exchange, requestId, "GET", path.substring((API_PREFIX + "ext/").length()),
+                    Map.of());
+            return;
+        }
         if (path.equals(TASKS_PREFIX)) {
             listTasks(exchange, requestId);
             return;
@@ -327,6 +332,21 @@ public final class HttpApiServer {
     }
 
     private void routePost(HttpExchange exchange, String requestId, String path, byte[] body) throws IOException {
+        if (path.startsWith(API_PREFIX + "ext/")) {
+            Object parsed;
+            try {
+                parsed = JsonParser.parse(new String(body, StandardCharsets.UTF_8));
+            } catch (ParseException e) {
+                error(exchange, requestId, 400, "INVALID_JSON", e.getMessage());
+                return;
+            }
+            Map<String, Object> bodyMap = parsed instanceof Map<?, ?> map
+                    ? copyOf(map)
+                    : Map.of();
+            dispatchExtension(exchange, requestId, "POST",
+                    path.substring((API_PREFIX + "ext/").length()), bodyMap);
+            return;
+        }
         if (path.equals(TASKS_PREFIX)) {
             postTask(exchange, requestId, body);
             return;
@@ -802,6 +822,69 @@ public final class HttpApiServer {
             requested.add(name);
         }
         return requested;
+    }
+
+    // ------------------------------------------------------------------
+    // Extension SPI (spec §6.2, slice 2.4)
+    // ------------------------------------------------------------------
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> copyOf(Map<?, ?> map) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            out.put(String.valueOf(entry.getKey()), entry.getValue());
+        }
+        return out;
+    }
+
+    private void dispatchExtension(HttpExchange exchange, String requestId, String method,
+            String remainder, Map<String, Object> bodyMap) throws IOException {
+        String extensionId = remainder.contains("/")
+                ? remainder.substring(0, remainder.indexOf('/'))
+                : remainder;
+        String subPath = remainder.contains("/")
+                ? remainder.substring(remainder.indexOf('/') + 1)
+                : "";
+        var service = runtime.services().get(extensionId).orElse(null);
+        if (!(service instanceof dev.example.mapi.api.MapiHttpExtension extension)) {
+            error(exchange, requestId, 404, "NOT_FOUND", "Unknown extension: " + extensionId);
+            return;
+        }
+        String requiredScope = extension.requiredScope();
+        if (!config.scopes().contains(requiredScope)) {
+            Map<String, Object> extra = new LinkedHashMap<>();
+            extra.put("required", requiredScope);
+            error(exchange, requestId, 403, "FORBIDDEN_SCOPE",
+                    "Token lacks the scope required by extension " + extensionId, extra);
+            return;
+        }
+        if ("$schema".equals(subPath) && method.equals("GET")) {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("protocolVersion", PROTOCOL_VERSION);
+            body.put("extension", extensionId);
+            body.put("schema", extension.schema());
+            respond(exchange, requestId, 200, JsonWriter.write(body));
+            return;
+        }
+        Map<String, List<String>> rawQuery = splitQuery(exchange.getRequestURI().getRawQuery());
+        Map<String, String> query = new LinkedHashMap<>();
+        rawQuery.forEach((key, values) -> query.put(key, values.getFirst()));
+        try {
+            var response = extension.handle(new dev.example.mapi.api.MapiHttpExtension.MapiHttpRequest(
+                    method, subPath, query, bodyMap));
+            int status = response.status();
+            if (status < 200 || status > 499) {
+                status = 500;
+            }
+            runtime.eventLog().publish("ext.invoked", "api-originated", Map.of(
+                    "extension", extensionId,
+                    "path", subPath,
+                    "method", method));
+            respond(exchange, requestId, status, JsonWriter.write(response.body()));
+        } catch (RuntimeException e) {
+            logger.warn("MAPI: extension '{}' failed handling {} {}", extensionId, method, subPath, e);
+            error(exchange, requestId, 500, "INTERNAL", "Extension handler failed");
+        }
     }
 
     // ------------------------------------------------------------------

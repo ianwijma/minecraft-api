@@ -12,6 +12,22 @@ Status: **experimental** (MAPI 0.x). See "Versioning" below.
 | `ServerStatusSnapshot` | Immutable record: `capturedAtEpochMs`, `startedAtEpochMs`, `playerCount`, `maxPlayers`, `tickCount`, `averageTickTimeMs`, `motd`; plus `uptimeMs()` |
 | `MapiServices` | Thread-safe registry: `register(id, service)`, `get(id)`, `all()` |
 | `MapiService` | Extension: `id()` plus `onServerStart()`/`onServerStop()` callbacks |
+| `MapiHttpExtension` | HTTP extension SPI (slice 2.4): `requiredScope()`, `schema()`, `handle(request)`; exposes operations under `/api/v1/ext/<id>/…` |
+| `MapiHttpExtension.MapiHttpRequest` | Immutable record: `method`, `path` (relative), `query`, `body` (parsed JSON; empty for GET) |
+| `MapiHttpExtension.MapiHttpResponse` | Immutable record: `status` (200–499 pass through), `body` |
+
+### MapiHttpExtension contract
+
+- Register like any `MapiService` (any thread, any time after bootstrap):
+  `mapi.services().register("your-ext", yourExtension)`.
+- `handle` runs on the **HTTP worker thread** — implementations must be
+  thread-safe; schedule game-state work onto the owning thread yourself.
+- Requests are authenticated and checked against `requiredScope()` before
+  your handler runs; authorize the **effect** when choosing it (spec §4.2).
+- `GET /api/v1/ext/<id>/$schema` returns `schema()` — keep it
+  self-describing so tools can discover your operations.
+- Handlers must never return secrets (tokens, token files, environment
+  variables); exceptions become HTTP 500 and are logged.
 
 ## Initialization and registration timing
 
