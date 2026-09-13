@@ -17,8 +17,8 @@ approved before agent-driven implementation of the expanded scope begins.
 
 | ADR | Title | Status |
 | --- | --- | --- |
-| [0001](0001-supported-minecraft-versions-and-mapping-strategy.md) | Supported Minecraft versions and mapping strategy | Proposed |
-| [0002](0002-repository-module-organization-and-java-toolchains.md) | Repository module organization and Java toolchains | Proposed |
-| [0003](0003-loader-dependency-policy-and-ci-matrix.md) | Loader dependency policy and CI matrix | Proposed |
-| [0004](0004-backport-and-end-of-support-policy.md) | Backport and end-of-support policy | Proposed |
-| [0005](0005-preprocessing-introduction-criteria.md) | Criteria for introducing preprocessing | Proposed |
+| [0001](0001-supported-minecraft-versions-and-mapping-strategy.md) | Supported Minecraft versions and mapping strategy | Accepted |
+| [0002](0002-repository-module-organization-and-java-toolchains.md) | Repository module organization and Java toolchains | Accepted |
+| [0003](0003-loader-dependency-policy-and-ci-matrix.md) | Loader dependency policy and CI matrix | Accepted |
+| [0004](0004-backport-and-end-of-support-policy.md) | Backport and end-of-support policy | Accepted |
+| [0005](0005-preprocessing-introduction-criteria.md) | Criteria for introducing preprocessing | Accepted |

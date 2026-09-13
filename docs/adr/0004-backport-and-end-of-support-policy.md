@@ -1,7 +1,7 @@
 # 0004. Backport and end-of-support policy
 
 Date: 2026-09-13
-Status: Proposed
+Status: Accepted (2026-09-13)
 
 ## Context
 

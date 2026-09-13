@@ -1,7 +1,7 @@
 # 0002. Repository module organization and Java toolchains
 
 Date: 2026-09-13
-Status: Proposed
+Status: Accepted (2026-09-13)
 
 ## Context
 

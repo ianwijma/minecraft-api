@@ -1,7 +1,7 @@
 # 0001. Supported Minecraft versions and mapping strategy
 
 Date: 2026-09-13
-Status: Proposed
+Status: Accepted (2026-09-13)
 
 ## Context
 

@@ -1,11 +1,10 @@
 # MAPI Product Specification
 
 > Status: approved as the target product definition on 2026-09-13. The
-> architecture ADRs required by §15.2 are **not yet approved**; until they
-> are, coding agents must keep code changes within the currently implemented
-> read-only HTTP status surface (see `AGENTS.md`). This document defines
-> target scope, contracts, and acceptance criteria — not the current
-> implementation state.
+> architecture ADRs required by §15.2 were approved on 2026-09-13 (see
+> `docs/adr/`); expanded scope is implemented chunk by chunk per
+> `docs/execution-plan.md`. This document defines target scope, contracts,
+> and acceptance criteria — not the current implementation state.
 
 ---
 

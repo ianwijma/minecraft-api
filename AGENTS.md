@@ -34,9 +34,12 @@ Currently implemented layers (the foundation the spec builds on):
 3. This repository's **LLM-facing documentation and commands** (this file,
    `docs/llm-workflow.md`, `./gradlew llmContext`).
 
-The architecture ADRs required by spec §15.2 are **not yet approved**. Until
-they are, do not begin implementing expanded spec scope; code changes stay
-within the existing read-only surface.
+The architecture ADRs required by spec §15.2 are **approved** (2026-09-13,
+`docs/adr/`): Minecraft 26.2 only / no mappings, staged module layout with
+Java 25, dual-loader first-class, N + N−1 support policy, preprocessing
+deferred. Expanded spec scope is implemented **chunk by chunk** following
+`docs/execution-plan.md` — commit per chunk, docs + tests in the same change
+set, `./gradlew verify` green, plan human gates respected.
 
 It is NOT (spec §2 non-goals): a launcher, an account-authentication or
 purchase provider, an anti-cheat-evasion tool, a protocol-level bot client, a
@@ -177,11 +180,12 @@ same change set; `./gradlew verify` must pass before you report done.
   it is an explicit operator decision (`MAPI_ACCEPT_EULA` in
   `scripts/server-smoke.sh`).
 - Do not add an HTTP endpoint that exposes source-code editing, shell
-  execution, or reflection; and until the architecture ADRs required by
-  `docs/product-spec.md` §15.2 are approved, do not add anything beyond the
-  documented read-only status surface.
-- Do not implement expanded `docs/product-spec.md` scope (input, tick
-  control, streaming, runner, SDKs) before the required ADRs are approved.
+  execution, or reflection (permanent, spec §2). All other endpoints follow
+  `docs/execution-plan.md` phase order and spec §14 (scopes, `destructive`,
+  `sideEffectClass`, `requiresLease`, `supportedExecutionModes`), with docs
+  and contract tests in the same change set.
+- Do not skip `docs/execution-plan.md` human gates or phase order; expanded
+  scope lands chunk by chunk (commit + push per chunk).
 - Generated/protected directories: `build/`, `run*/`, `.gradle/`, `~/.gradle`
   (contains downloaded Minecraft artifacts), `~/.m2`. Do not commit them; do
   not treat their contents as source.

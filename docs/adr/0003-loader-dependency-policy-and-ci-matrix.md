@@ -1,7 +1,7 @@
 # 0003. Loader dependency policy and CI matrix
 
 Date: 2026-09-13
-Status: Proposed
+Status: Accepted (2026-09-13)
 
 ## Context
 
