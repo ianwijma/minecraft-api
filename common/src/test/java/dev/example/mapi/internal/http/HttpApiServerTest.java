@@ -557,7 +557,8 @@ class HttpApiServerTest {
     private MapiConfig scopedConfig(java.util.Set<String> scopes) throws Exception {
         int port = freePort();
         return new MapiConfig(true, port, TOKEN, 60, "mapi-" + port, null, 0, false,
-                MapiConfig.DEFAULT_DISCOVERY_HEARTBEAT_SECONDS, scopes);
+                MapiConfig.DEFAULT_DISCOVERY_HEARTBEAT_SECONDS,
+                java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(scopes)));
     }
 
     @Test
@@ -796,6 +797,49 @@ class HttpApiServerTest {
         }
         assertTrue(releasedKeys.get() > before,
                 "client.input lease expiry must run the key-release hook");
+    }
+
+    // ------------------------------------------------------------------
+    // Session preconditions (spec §1.1/§2.3)
+    // ------------------------------------------------------------------
+
+    @Test
+    void staleSessionPreconditionsOnMutations() throws Exception {
+        startServer(enabledConfig());
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+        String worldSessionId = runtime.worldSessionId().orElseThrow();
+
+        HttpResponse<String> matching = post("/api/v1/tasks",
+                "{\"kind\":\"wait-for-tick\",\"payload\":{\"targetTick\":42},"
+                        + "\"expectedWorldSessionId\":\"" + worldSessionId + "\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(202, matching.statusCode(), matching.body());
+
+        HttpResponse<String> stale = post("/api/v1/tasks",
+                "{\"kind\":\"wait-for-tick\",\"payload\":{\"targetTick\":42},"
+                        + "\"expectedWorldSessionId\":\"00000000-0000-0000-0000-0000000000aa\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(409, stale.statusCode(), stale.body());
+        assertTrue(stale.body().contains("STALE_SESSION"), stale.body());
+        assertTrue(stale.body().contains("\"currentWorldSessionId\":\"" + worldSessionId + "\""), stale.body());
+
+        platform.lifecycleListener().onServerStopping();
+        platform.lifecycleListener().onServerStopped();
+        HttpResponse<String> afterSession = post("/api/v1/tasks",
+                "{\"kind\":\"wait-for-tick\",\"payload\":{\"targetTick\":42},"
+                        + "\"expectedWorldSessionId\":\"" + worldSessionId + "\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(409, afterSession.statusCode(), afterSession.body());
+        assertTrue(afterSession.body().contains("\"currentWorldSessionId\":null"), afterSession.body());
+
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+        registerFakeClientOps();
+        HttpResponse<String> connectionGuard = post("/api/v1/client/input/key",
+                "{\"mapping\":\"key.forward\",\"action\":\"press\","
+                        + "\"expectedConnectionSessionId\":\"abc\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(409, connectionGuard.statusCode(), connectionGuard.body());
+        assertTrue(connectionGuard.body().contains("CONNECTION_SESSION_UNAVAILABLE"), connectionGuard.body());
     }
 
     // ------------------------------------------------------------------

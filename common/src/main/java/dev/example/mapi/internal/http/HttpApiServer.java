@@ -823,6 +823,9 @@ public final class HttpApiServer {
             error(exchange, requestId, 400, "INVALID_JSON", "Request body must be a JSON object");
             return;
         }
+        if (!sessionPreconditionsHold(exchange, requestId, request)) {
+            return;
+        }
         Object mode = request.get("mode");
         if (mode != null && !"input".equals(mode)) {
             error(exchange, requestId, 400, "INVALID_PAYLOAD",
@@ -1052,6 +1055,39 @@ public final class HttpApiServer {
         respond(exchange, requestId, 200, JsonWriter.write(taskJson(snapshot)));
     }
 
+    /**
+     * Session preconditions (spec §1.1/§2.3): mutations may carry
+     * {@code expectedWorldSessionId} / {@code expectedConnectionSessionId};
+     * a mismatch rejects with 409 STALE_SESSION carrying the current ids.
+     *
+     * @return true when the preconditions hold (or none were supplied)
+     */
+    private boolean sessionPreconditionsHold(HttpExchange exchange, String requestId, Map<?, ?> request)
+            throws IOException {
+        if (request.get("expectedWorldSessionId") instanceof String expected) {
+            String current = runtime.worldSessionId().orElse(null);
+            if (!expected.equals(current)) {
+                Map<String, Object> extra = new LinkedHashMap<>();
+                extra.put("currentWorldSessionId", current);
+                error(exchange, requestId, 409, "STALE_SESSION",
+                        "World session changed since the request was formed.", extra);
+                return false;
+            }
+        }
+        if (request.get("expectedConnectionSessionId") instanceof String expectedConnection) {
+            // Client connection sessions do not exist yet (slice 0.6 open
+            // item); any supplied expectation therefore cannot match.
+            Map<String, Object> extra = new LinkedHashMap<>();
+            extra.put("currentConnectionSessionId", null);
+            extra.put("reason", "CONNECTION_SESSION_UNAVAILABLE");
+            error(exchange, requestId, 409, "STALE_SESSION",
+                    "Connection sessions are not tracked yet; expected '"
+                            + expectedConnection + "' cannot match.", extra);
+            return false;
+        }
+        return true;
+    }
+
     private void postTask(HttpExchange exchange, String requestId, byte[] body) throws IOException {
         String idempotencyKey = exchange.getRequestHeaders().getFirst("Idempotency-Key");
         String bodyHash = sha256Hex(body);
@@ -1087,6 +1123,9 @@ public final class HttpApiServer {
         }
         if (!(parsed instanceof Map<?, ?> request)) {
             error(exchange, requestId, 400, "INVALID_JSON", "Request body must be a JSON object");
+            return;
+        }
+        if (!sessionPreconditionsHold(exchange, requestId, request)) {
             return;
         }
         Object kindObj = request.get("kind");

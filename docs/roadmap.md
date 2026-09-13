@@ -236,6 +236,16 @@ Still open (each needs in-game verification before it can be trusted):
   lease-type-scoped authorization; `lease.changed` events; release-all on
   world-session end and shutdown.
 
+### Slice 1.3 — Session preconditions (DONE 2026-09-13)
+
+- Mutations (`POST /tasks`, `POST /client/input/key`, `POST
+  /client/screenshot`) accept `expectedWorldSessionId`;
+  mismatch → **409** `STALE_SESSION` with the current id (null when no
+  session). `expectedConnectionSessionId` is accepted but cannot match yet
+  (connection sessions land with client connection lifecycle) and rejects
+  with an explicit `CONNECTION_SESSION_UNAVAILABLE` reason — no silent
+  ignoring of preconditions.
+
 Phase 1 (scopes, leases, revisions, SDKs, MCP adapter, fixture-mod,
 failure-scenario suite), Phase 2 (extended tier: storage adapters, GameTest,
 region fixtures, ext SPI), Phase 3 (experimental tier) follow spec §12 with
