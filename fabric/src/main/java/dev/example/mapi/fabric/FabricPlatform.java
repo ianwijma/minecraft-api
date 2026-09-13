@@ -293,6 +293,91 @@ final class FabricPlatform implements MapiPlatform {
             return () -> tagMembers(registryFor(type), tagId);
         }
 
+        @Override
+        public java.util.function.Supplier<dev.example.mapi.internal.RawBlockEntityRead> blockEntitySupplier(
+                String dimension, int x, int y, int z) {
+            return () -> {
+                ServerLevel level = resolveLevel(dimension);
+                BlockPos pos = new BlockPos(x, y, z);
+                if (!level.hasChunkAt(pos)) {
+                    return dev.example.mapi.internal.RawBlockEntityRead.unloaded();
+                }
+                net.minecraft.world.level.block.entity.BlockEntity entity = level.getBlockEntity(pos);
+                if (entity == null) {
+                    return dev.example.mapi.internal.RawBlockEntityRead.absent();
+                }
+                net.minecraft.nbt.CompoundTag nbt = entity.saveWithFullMetadata(level.registryAccess());
+                return new dev.example.mapi.internal.RawBlockEntityRead(true,
+                        new dev.example.mapi.internal.RawBlockEntity(
+                                BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(entity.getType()).toString(),
+                                dimension, x, y, z, nbtToJson(nbt)));
+            };
+        }
+
+        private static Map<String, Object> nbtToJson(net.minecraft.nbt.CompoundTag tag) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            for (Map.Entry<String, net.minecraft.nbt.Tag> entry : tag.entrySet()) {
+                out.put(entry.getKey(), tagToJson(entry.getValue()));
+            }
+            return out;
+        }
+
+        private static Object tagToJson(net.minecraft.nbt.Tag tag) {
+            if (tag instanceof net.minecraft.nbt.CompoundTag compound) {
+                return nbtToJson(compound);
+            }
+            if (tag instanceof net.minecraft.nbt.ListTag list) {
+                List<Object> items = new ArrayList<>();
+                for (int i = 0; i < list.size(); i++) {
+                    items.add(tagToJson(list.get(i)));
+                }
+                return Map.of("list", items);
+            }
+            if (tag instanceof net.minecraft.nbt.ByteArrayTag array) {
+                List<Object> items = new ArrayList<>();
+                for (byte b : array.getAsByteArray()) {
+                    items.add(b);
+                }
+                return Map.of("ba", items);
+            }
+            if (tag instanceof net.minecraft.nbt.IntArrayTag array) {
+                List<Object> items = new ArrayList<>();
+                for (int i : array.getAsIntArray()) {
+                    items.add(i);
+                }
+                return Map.of("ia", items);
+            }
+            if (tag instanceof net.minecraft.nbt.LongArrayTag array) {
+                List<Object> items = new ArrayList<>();
+                for (long l : array.getAsLongArray()) {
+                    items.add(String.valueOf(l));
+                }
+                return Map.of("la", items);
+            }
+            if (tag instanceof net.minecraft.nbt.NumericTag numeric) {
+                if (tag instanceof net.minecraft.nbt.ByteTag byteTag) {
+                    return Map.of("b", byteTag.byteValue());
+                }
+                if (tag instanceof net.minecraft.nbt.ShortTag shortTag) {
+                    return Map.of("s", shortTag.shortValue());
+                }
+                if (tag instanceof net.minecraft.nbt.LongTag longTag) {
+                    return Map.of("l", String.valueOf(longTag.longValue()));
+                }
+                if (tag instanceof net.minecraft.nbt.FloatTag floatTag) {
+                    return Map.of("f", String.valueOf(floatTag.floatValue()));
+                }
+                if (tag instanceof net.minecraft.nbt.IntTag intTag) {
+                    return intTag.intValue();
+                }
+                return numeric.doubleValue();
+            }
+            if (tag instanceof net.minecraft.nbt.StringTag stringTag) {
+                return stringTag.value();
+            }
+            return tag.toString();
+        }
+
         private static <T> List<String> tagMembers(Registry<T> registry, String tagId) {
             TagKey<T> tagKey = TagKey.create(registry.key(), Identifier.parse(tagId));
             List<String> members = new ArrayList<>();

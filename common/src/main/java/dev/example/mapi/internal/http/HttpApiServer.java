@@ -306,6 +306,7 @@ public final class HttpApiServer {
             case API_PREFIX + "server/status" -> sendServerStatus(exchange, requestId);
             case API_PREFIX + "server/players" -> sendPlayers(exchange, requestId);
             case API_PREFIX + "server/world/block" -> sendBlock(exchange, requestId);
+            case API_PREFIX + "server/world/block-entity" -> sendBlockEntity(exchange, requestId);
             case API_PREFIX + "server/world/time" -> sendWorldTime(exchange, requestId);
             case API_PREFIX + "client/status" -> sendClientStatus(exchange, requestId);
             case API_PREFIX + "client/screen/tree" -> sendScreenTree(exchange, requestId);
@@ -654,8 +655,56 @@ public final class HttpApiServer {
         respond(exchange, requestId, 200, JsonWriter.write(body));
     }
 
-    private void sendWorldTime(HttpExchange exchange, String requestId) throws IOException {
+    private void sendBlockEntity(HttpExchange exchange, String requestId) throws IOException {
         Map<String, List<String>> query = splitQuery(exchange.getRequestURI().getRawQuery());
+        String dimension = single(query, "dimension");
+        if (dimension == null || dimension.isBlank()) {
+            error(exchange, requestId, 400, "INVALID_QUERY", "dimension is required");
+            return;
+        }
+        Integer x = coord(query, "x");
+        Integer y = coord(query, "y");
+        Integer z = coord(query, "z");
+        if (x == null || y == null || z == null) {
+            error(exchange, requestId, 400, "INVALID_QUERY", "integer x, y, and z are required");
+            return;
+        }
+        var result = runtime.tryReadOnServerThread(() -> runtime.serverHandle()
+                .blockEntitySupplier(dimension, x, y, z).get());
+        if (result.failure() instanceof dev.example.mapi.internal.UnknownDimensionException) {
+            error(exchange, requestId, 404, "DIMENSION_NOT_FOUND", result.failure().getMessage());
+            return;
+        }
+        if (!handleReadOutcome(exchange, requestId, result)) {
+            return;
+        }
+        dev.example.mapi.internal.RawBlockEntityRead read = result.value();
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("dataVersion", readDataVersion());
+        if (!read.chunkLoaded()) {
+            error(exchange, requestId, 409, "CHUNK_UNLOADED",
+                    "The containing chunk is not loaded (loaded-only policy). Load it or use a different "
+                            + "chunk policy once available.");
+            return;
+        }
+        if (read.entity() == null) {
+            body.put("available", false);
+            body.put("reason", "NO_BLOCK_ENTITY");
+            respond(exchange, requestId, 200, JsonWriter.write(body));
+            return;
+        }
+        dev.example.mapi.internal.RawBlockEntity blockEntity = read.entity();
+        body.put("available", true);
+        body.put("typeId", blockEntity.typeId());
+        body.put("dimension", blockEntity.dimension());
+        body.put("position", position(blockEntity.x(), blockEntity.y(), blockEntity.z()));
+        body.put("nbt", blockEntity.nbt());
+        body.put("policy", "loadedOnly");
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private void sendWorldTime(HttpExchange exchange, String requestId) throws IOException {        Map<String, List<String>> query = splitQuery(exchange.getRequestURI().getRawQuery());
         String dimension = single(query, "dimension");
         if (dimension == null || dimension.isBlank()) {
             error(exchange, requestId, 400, "INVALID_QUERY", "dimension is required");

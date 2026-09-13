@@ -132,4 +132,18 @@ public interface ServerHandle {
      */
     record RegistryIdPage(List<String> ids, int total) {
     }
+
+    /**
+     * Reads a block entity under the loaded-only chunk policy. Callers must
+     * only invoke this via {@link #executeOnServerThread(Runnable)}.
+     *
+     * @param dimension dimension id
+     * @param x         block x
+     * @param y         block y
+     * @param z         block z
+     * @return the read outcome (never {@code null}); the entity is
+     *         {@code null} when absent
+     * @throws UnknownDimensionException when the dimension id is unknown
+     */
+    Supplier<RawBlockEntityRead> blockEntitySupplier(String dimension, int x, int y, int z);
 }

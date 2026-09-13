@@ -768,6 +768,42 @@ class HttpApiServerTest {
     }
 
     // ------------------------------------------------------------------
+    // Block entity read (slice 2.3)
+    // ------------------------------------------------------------------
+
+    @Test
+    void blockEntityEndpointContract() throws Exception {
+        startServer(enabledConfig());
+        platform.lifecycleListener().onServerStarting(MapiRuntimeTest.TestServerHandle.inline());
+
+        HttpResponse<String> ok = get("/api/v1/server/world/block-entity?dimension=minecraft:overworld&x=0&y=0&z=0",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, ok.statusCode(), ok.body());
+        assertTrue(ok.body().contains("\"typeId\":\"minecraft:chest\""), ok.body());
+        assertTrue(ok.body().contains("\"available\":true"), ok.body());
+        assertTrue(ok.body().contains("\"nbt\":{\"Items\":{\"list\":["), ok.body());
+        assertTrue(ok.body().contains("\"Lock\":\"secret-code\""), ok.body());
+
+        HttpResponse<String> absent = get(
+                "/api/v1/server/world/block-entity?dimension=minecraft:overworld&x=998&y=0&z=0",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, absent.statusCode(), absent.body());
+        assertTrue(absent.body().contains("\"reason\":\"NO_BLOCK_ENTITY\""), absent.body());
+
+        HttpResponse<String> unloaded = get(
+                "/api/v1/server/world/block-entity?dimension=minecraft:overworld&x=999&y=0&z=0",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(409, unloaded.statusCode(), unloaded.body());
+        assertTrue(unloaded.body().contains("CHUNK_UNLOADED"), unloaded.body());
+
+        HttpResponse<String> unknownDim = get(
+                "/api/v1/server/world/block-entity?dimension=minecraft:nowhere&x=0&y=0&z=0",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(404, unknownDim.statusCode(), unknownDim.body());
+        assertTrue(unknownDim.body().contains("DIMENSION_NOT_FOUND"), unknownDim.body());
+    }
+
+    // ------------------------------------------------------------------
     // Diagnostics (slice 2.2, diagnostics scope)
     // ------------------------------------------------------------------
 

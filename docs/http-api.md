@@ -206,6 +206,25 @@ Block read under the **loaded-only** chunk policy: `{"blockId":
 `DIMENSION_NOT_FOUND`; unloaded chunk → **409** `CHUNK_UNLOADED` (explicit
 failure, never an empty guess).
 
+### `GET /api/v1/server/world/block-entity?dimension=&x=&y=&z=` (slice 2.3)
+
+Block-entity read (loaded-only policy, `world.read` scope):
+
+- Loaded chunk + block entity present → `{"available":true,"typeId":
+  "minecraft:chest","position":{…},"nbt":{…},"policy":"loadedOnly",
+  "dataVersion":…}`.
+- Loaded chunk, no block entity → `{"available":false,"reason":
+  "NO_BLOCK_ENTITY"}`.
+- Unloaded chunk → **409** `CHUNK_UNLOADED`; unknown dimension → **404**
+  `DIMENSION_NOT_FOUND`.
+
+The `nbt` payload uses the **typed NBT JSON** convention (§7, lossless):
+bytes `{"b":n}`, shorts `{"s":n}`, longs `{"l":"n"}` (string), floats
+`{"f":n}` (string of the value), byte/int/long arrays as `{"ba":[]}` /
+`{"ia":[]}` / `{"la":["…"]}`, lists as `{"list":[…]}`; ints, doubles,
+strings, and compounds are JSON-native. Read-only: this endpoint never
+mutates state.
+
 ### `GET /api/v1/server/world/time?dimension=`
 
 World clocks (26.2 time model): `gameTime`, `overworldClockTime`,

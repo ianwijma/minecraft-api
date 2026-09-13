@@ -370,5 +370,25 @@ public class MapiRuntimeTest {
                     ? java.util.List.of("minecraft:oak_planks", "minecraft:spruce_planks")
                     : java.util.List.of();
         }
+
+        @Override
+        public Supplier<dev.example.mapi.internal.RawBlockEntityRead> blockEntitySupplier(String dimension,
+                int x, int y, int z) {
+            if (dimension.equals("minecraft:nowhere")) {
+                throw new dev.example.mapi.internal.UnknownDimensionException("Unknown dimension: " + dimension);
+            }
+            if (x == 999) {
+                return () -> dev.example.mapi.internal.RawBlockEntityRead.unloaded();
+            }
+            if (x == 998) {
+                return () -> dev.example.mapi.internal.RawBlockEntityRead.absent();
+            }
+            java.util.Map<String, Object> nbt = new java.util.LinkedHashMap<>();
+            nbt.put("Items", java.util.Map.of("list", java.util.List.of()));
+            nbt.put("Lock", "secret-code");
+            nbt.put("CustomName", "{\"text\":\"Storage\"}");
+            return () -> new dev.example.mapi.internal.RawBlockEntityRead(true,
+                    new dev.example.mapi.internal.RawBlockEntity("minecraft:chest", dimension, x, y, z, nbt));
+        }
     }
 }
