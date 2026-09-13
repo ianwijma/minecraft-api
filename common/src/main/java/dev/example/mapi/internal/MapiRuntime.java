@@ -32,6 +32,12 @@ public final class MapiRuntime implements Mapi {
     /** Default maximum number of retained snapshots. */
     public static final int SNAPSHOT_MAX_COUNT = 64;
 
+    /** Default tick-control rate bounds (spec §5: configured bounds; config wiring in chunk 4.2). */
+    public static final float MIN_TICK_RATE = 1.0f;
+    public static final float MAX_TICK_RATE = 100.0f;
+
+    private volatile dev.example.mapi.internal.tick.TickControlService tickControl;
+
     private final MapiPlatform platform;
     private final MapiServicesImpl services = new MapiServicesImpl();
     private final dev.example.mapi.internal.event.EventBus eventBus =
@@ -66,6 +72,13 @@ public final class MapiRuntime implements Mapi {
             @Override
             public void onServerStarting(ServerHandle handle) {
                 serverHandle = handle;
+                var backend = platform.serverBridge().tickControl();
+                tickControl = backend
+                        .<dev.example.mapi.internal.tick.TickControlService>map(
+                                b -> new dev.example.mapi.internal.tick.TickControlService(
+                                        b, leaseManager, progressTracker, worldLifecycle,
+                                        MIN_TICK_RATE, MAX_TICK_RATE))
+                        .orElse(null);
                 worldLifecycle.beginLoad();
                 services.fireServerStart(handle, platform.logger());
                 startHttp(handle);
@@ -188,6 +201,11 @@ public final class MapiRuntime implements Mapi {
     /** @return the server progress tracker; internal accessor */
     public dev.example.mapi.internal.serverstate.ServerProgressTracker progressTracker() {
         return progressTracker;
+    }
+
+    /** @return the tick-control service while the bridge supports it, empty otherwise */
+    public java.util.Optional<dev.example.mapi.internal.tick.TickControlService> tickControl() {
+        return java.util.Optional.ofNullable(tickControl);
     }
 
     // ------------------------------------------------------------------

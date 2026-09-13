@@ -42,4 +42,13 @@ public interface ServerBridge {
      *     are namespaced strings, for example {@code world.lifecycle}.
      */
     Set<String> supportedCapabilities();
+
+    /**
+     * @return the tick-control backend while a server is running and the
+     *     loader implements tick control; empty otherwise (spec §5: absent
+     *     support is explicit, never silent)
+     */
+    default java.util.Optional<dev.example.mapi.internal.tick.TickControlBackend> tickControl() {
+        return java.util.Optional.empty();
+    }
 }

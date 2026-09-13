@@ -1,7 +1,10 @@
 package dev.example.mapi.neoforge;
 
 import dev.example.mapi.internal.server.ServerBridge;
+import dev.example.mapi.internal.tick.TickControlBackend;
+import java.util.Optional;
 import java.util.Set;
+import net.minecraft.server.MinecraftServer;
 
 /**
  * NeoForge server-side bridge. Capabilities are added here one chunk at a
@@ -10,6 +13,16 @@ import java.util.Set;
  */
 final class NeoForgeServerBridge implements ServerBridge {
 
+    private volatile MinecraftServer current;
+
+    void onServerStarting(MinecraftServer server) {
+        this.current = server;
+    }
+
+    void onServerStopped() {
+        this.current = null;
+    }
+
     @Override
     public String bridgeId() {
         return "mapi-neoforge";
@@ -17,6 +30,13 @@ final class NeoForgeServerBridge implements ServerBridge {
 
     @Override
     public Set<String> supportedCapabilities() {
-        return Set.of("server.progress-detection");
+        return current == null ? Set.of() : Set.of(
+                "server.progress-detection", "server.tick-control");
+    }
+
+    @Override
+    public Optional<TickControlBackend> tickControl() {
+        MinecraftServer server = current;
+        return server == null ? Optional.empty() : Optional.of(new NeoForgeTickControlBackend(server));
     }
 }

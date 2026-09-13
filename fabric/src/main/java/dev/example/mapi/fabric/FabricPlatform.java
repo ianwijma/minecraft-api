@@ -19,6 +19,8 @@ final class FabricPlatform implements MapiPlatform {
 
     private static final Logger LOG = LoggerFactory.getLogger("mapi");
 
+    private final FabricServerBridge bridge = new FabricServerBridge();
+
     @Override
     public PlatformType type() {
         return PlatformType.FABRIC;
@@ -51,16 +53,21 @@ final class FabricPlatform implements MapiPlatform {
 
     @Override
     public void registerServerLifecycle(ServerLifecycleListener listener) {
-        ServerLifecycleEvents.SERVER_STARTING.register(server ->
-                listener.onServerStarting(FabricServerHandle.starting(server)));
+        ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+            bridge.onServerStarting(server);
+            listener.onServerStarting(FabricServerHandle.starting(server));
+        });
         ServerLifecycleEvents.SERVER_STARTED.register(server -> listener.onServerStarted());
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> listener.onServerStopping());
-        ServerLifecycleEvents.SERVER_STOPPED.register(server -> listener.onServerStopped());
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+            bridge.onServerStopped();
+            listener.onServerStopped();
+        });
     }
 
     @Override
     public dev.example.mapi.internal.server.ServerBridge serverBridge() {
-        return new FabricServerBridge();
+        return bridge;
     }
 
     /**
