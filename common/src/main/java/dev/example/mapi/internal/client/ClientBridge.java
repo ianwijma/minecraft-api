@@ -152,6 +152,29 @@ public interface ClientBridge {
         WindowState state();
 
         /**
+         * Sets windowed dimensions. The OS may adjust the request; the
+         * returned state reports effective values (spec §9.1: never assume
+         * one logical pixel equals one framebuffer pixel).
+         *
+         * @param width  logical width, 320..3840
+         * @param height logical height, 240..2160
+         * @return the resulting state
+         */
+        WindowState setWindowed(int width, int height);
+
+        /**
+         * @param fullscreen true for fullscreen, false for windowed
+         * @return the resulting state
+         */
+        WindowState setFullscreen(boolean fullscreen);
+
+        /**
+         * @param guiScale GUI scale, 0 (auto) or 1..4
+         * @return the resulting state
+         */
+        WindowState setGuiScale(int guiScale);
+
+        /**
          * @param width            logical width
          * @param height           logical height
          * @param framebufferWidth framebuffer width (never assumed equal to

@@ -63,12 +63,14 @@ public interface MapiPlatform {
 
     /**
      * @return the client-side bridge while a game client is present and the
-     *     loader implements client capabilities; the default is
-     *     {@link dev.example.mapi.internal.client.ClientBridge#NONE} so
-     *     dedicated servers never expose client endpoints
+     *     loader implements client capabilities; the default reads the
+     *     client-only registration point
+     *     ({@link dev.example.mapi.internal.client.ClientBridgeHolder}) so
+     *     dedicated servers keep
+     *     {@link dev.example.mapi.internal.client.ClientBridge#NONE}
      */
     default dev.example.mapi.internal.client.ClientBridge clientBridge() {
-        return dev.example.mapi.internal.client.ClientBridge.NONE;
+        return dev.example.mapi.internal.client.ClientBridgeHolder.get();
     }
 
     /**

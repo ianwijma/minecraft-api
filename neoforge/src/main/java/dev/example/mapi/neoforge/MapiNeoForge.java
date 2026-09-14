@@ -28,5 +28,15 @@ public final class MapiNeoForge {
      */
     public MapiNeoForge(IEventBus modBus, ModContainer modContainer) {
         MapiBootstrap.initialize(new NeoForgePlatform());
+        // Dist-guarded client registration (docs/architecture.md): the
+        // listener body never runs on a dedicated server, so the client-only
+        // bridge class is never loaded there (spec §20).
+        modBus.addListener(net.neoforged.fml.event.lifecycle.FMLClientSetupEvent.class,
+                event -> {
+                    if (net.neoforged.fml.loading.FMLEnvironment.getDist().isClient()) {
+                        dev.example.mapi.internal.client.ClientBridgeHolder.set(
+                                new dev.example.mapi.neoforge.client.NeoForgeClientBridge());
+                    }
+                });
     }
 }

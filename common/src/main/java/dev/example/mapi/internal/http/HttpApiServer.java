@@ -394,6 +394,9 @@ public final class HttpApiServer {
             case API_PREFIX + "server/snapshot-diffs" -> handleSnapshotDiff(exchange, body, grants);
             case API_PREFIX + "server/commands" -> handleCommand(exchange, body, grants);
             case API_PREFIX + "client/actions/hold-key" -> handleHoldKey(exchange, body, grants);
+            case API_PREFIX + "client/window/set-windowed" -> handleWindowSet(exchange, body, grants, "windowed");
+            case API_PREFIX + "client/window/set-fullscreen" -> handleWindowSet(exchange, body, grants, "fullscreen");
+            case API_PREFIX + "client/window/set-gui-scale" -> handleWindowSet(exchange, body, grants, "gui-scale");
             case API_PREFIX + "process/shutdown" -> handleShutdown(exchange, body, grants);
             default -> {
                 exchange.getResponseHeaders().set("Allow", "GET");
@@ -653,6 +656,43 @@ public final class HttpApiServer {
                 .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
                         "window control is not available on this process"));
         var state = runtime.callOnClientThread(window::state);
+        respond(exchange, 200, JsonWriter.write(windowStateMap(state)));
+    }
+
+    private void handleWindowSet(HttpExchange exchange, Map<String, Object> body,
+            java.util.Set<Scope> grants, String operation) throws IOException {
+        var window = runtime.clientBridge().window()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "window control is not available on this process"));
+        var state = runtime.callOnClientThread(() -> switch (operation) {
+            case "windowed" -> {
+                int width = (int) longField(body, "width", -1);
+                int height = (int) longField(body, "height", -1);
+                if (width < 320 || width > 3840 || height < 240 || height > 2160) {
+                    throw new ProblemException(ProblemCode.BAD_REQUEST,
+                            "width must be 320..3840 and height 240..2160");
+                }
+                yield window.setWindowed(width, height);
+            }
+            case "fullscreen" -> {
+                if (!(body.get("fullscreen") instanceof Boolean fullscreen)) {
+                    throw new ProblemException(ProblemCode.BAD_REQUEST, "fullscreen must be a boolean");
+                }
+                yield window.setFullscreen(fullscreen);
+            }
+            default -> {
+                int scale = (int) longField(body, "guiScale", -1);
+                if (scale < 0 || scale > 4) {
+                    throw new ProblemException(ProblemCode.BAD_REQUEST, "guiScale must be 0..4");
+                }
+                yield window.setGuiScale(scale);
+            }
+        });
+        respond(exchange, 200, JsonWriter.write(windowStateMap(state)));
+    }
+
+    private Map<String, Object> windowStateMap(
+            dev.example.mapi.internal.client.ClientBridge.WindowBackend.WindowState state) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("protocolVersion", PROTOCOL_VERSION);
         out.put("width", state.width());
@@ -662,7 +702,7 @@ public final class HttpApiServer {
         out.put("guiScale", state.guiScale());
         out.put("fullscreen", state.fullscreen());
         out.put("revision", state.revision());
-        respond(exchange, 200, JsonWriter.write(out));
+        return out;
     }
 
     private void sendScreenshot(HttpExchange exchange) throws IOException {

@@ -10,6 +10,9 @@
   "entrypoints": {
     "main": [
       "dev.example.mapi.fabric.MapiFabric"
+    ],
+    "client": [
+      "dev.example.mapi.fabric.client.MapiFabricClient"
     ]
   },
   "depends": {
