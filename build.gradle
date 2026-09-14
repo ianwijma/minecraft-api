@@ -216,7 +216,7 @@ tasks.register('llmContext') {
 
         def skipDirs = ['.git', '.gradle', 'build', 'logs', 'crash-reports', 'saves', 'screenshots',
                         '.idea', '.vscode', 'run-client', 'run-server'] as Set
-        def includeExts = ['java', 'gradle', 'properties', 'toml', 'md', 'json', 'yaml', 'yml', 'sh', 'cfg'] as Set
+        def includeExts = ['java', 'gradle', 'properties', 'toml', 'md', 'json', 'yaml', 'yml', 'sh', 'cfg', 'txt'] as Set
 
         List<Path> files = []
         Files.walkFileTree(rootDir.toPath(), new SimpleFileVisitor<Path>() {

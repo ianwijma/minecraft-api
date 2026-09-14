@@ -101,15 +101,32 @@ referenced exclusively from client-side code:
   behind a dist guard in the mod constructor
   (`dev.example.mapi.client.neoforge.NeoForgeClientOps`).
 
-Both register a `MapiClientOps` implementation plus a client-thread
-scheduler via `MapiBootstrap.registerClientOps`; the HTTP server reaches
-client state only through that seam with bounded waits. The packaging
-tripwire (`verifyDistributions`) forbids `net/minecraft/client` references
-from every class *outside* `dev/example/mapi/client/`; the launch test on a
-dedicated server remains the authoritative check.
-
 ## Extension points for growth
 
 - New loader: add a module implementing `MapiPlatform`, keep `common` intact.
 - New endpoint: `HttpApiServer.route()` + tests + `docs/openapi.yaml`.
 - New public API: `api` interfaces + `MapiRuntime` + `docs/api.md`.
+
+## Add-endpoint checklist (spec §11)
+
+Every new HTTP route must complete all steps in the same change set
+(`AGENTS.md` §6; the `ContractSyncTest` tripwire enforces the doc steps):
+
+1. **Effect first** (§4.2): decide which effect the route has and which
+   scope authorizes it; add the mapping in `HttpApiServer.requiredScope()`
+   (or a per-extension scope for the SPI). Authorize the effect, not the
+   route.
+2. **Implement** the route in `HttpApiServer` (GET for reads; POST/DELETE
+   for mutations). Game state only on the owning thread via
+   `tryReadOnServerThread`/`tryReadOnClientThread`; immutable DTOs out.
+3. **Contract tests**: positive + negative cases in `HttpApiServerTest`
+   (auth 401, scope 403 `FORBIDDEN_SCOPE`, stale-session 409, validation
+   400, wrong-state 409) — see `docs/TESTING.md`.
+4. **Register the route** in `internal.http.ContractSyncTest` (both route
+   lists).
+5. **Document**: add the path to `docs/openapi.yaml` (subset rules apply)
+   and a section to `docs/http-api.md`; extend `docs/CAPABILITIES.md` and
+   `docs/DATA.md` if the payload introduces conventions.
+6. **Emit events** for mutations (`api-originated`) per `docs/EVENTS.md`.
+7. Run `./gradlew verify` and update `CHANGELOG.md` with a compatibility
+   note (additive vs breaking).

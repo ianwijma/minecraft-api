@@ -3,6 +3,8 @@
 | File | Purpose |
 | --- | --- |
 | [`AGENTS.md`](../AGENTS.md) | Authoritative coding-agent guide: rules, commands, recipes |
+| [`../llms.txt`](../llms.txt) | LLM entry point: surface overview, tooling map |
+| [`../CHANGELOG.md`](../CHANGELOG.md) | Notable changes with contract-compatibility notes |
 | [`SUPPORT.md`](../SUPPORT.md) | Supported Minecraft/Java/toolchain versions and version policy |
 | [`README.md`](../README.md) | Human overview: prerequisites, quick start, artifacts |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Contribution rules and required checks |
