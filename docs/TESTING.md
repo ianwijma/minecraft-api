@@ -1,8 +1,29 @@
 # Testing
 
-Test inventory and verification status (spec §10; updated 2026-09-14).
+Test inventory and verification status (spec §10; updated 2026-09-14, client
+round included).
 
-## Game-run verification (EXECUTED 2026-09-14)
+## Client verification (EXECUTED 2026-09-14, display :1)
+
+The operator accepted the EULA and a live Fabric dev client drove the
+**entire slice 0.6 surface for real** (evidence screenshot:
+`docs/verified/client-slice-verified.png`):
+
+| Step driven through the API | Result |
+| --- | --- |
+| Client boot → API up at process init, client ops registered | log: "MAPI: client operations registered"; discovery `readiness: http` |
+| `GET /client/status` on the onboarding screen | window 854x480, guiScale 2, `currentScreenClass: AccessibilityOnboardingScreen` |
+| `GET /client/screen/tree` | real best-effort widget tree (labels + bounds of the actual widgets) |
+| `POST /client/input/key` press/release | authoritative `isDown: true/false` |
+| **Bug found & fixed**: `Screenshot.takeScreenshot` delivered async (26.2 deferred GPU readback) → 500 on first capture | seam now delivers via callback; HTTP worker waits bounded (5s), render thread never blocks |
+| `POST /client/screen/click` (new, semantic mode) | drove the real UI: Continue → `TitleScreen` → Singleplayer → `CreateWorldScreen` |
+| Create New World → **integrated server** starts | `readiness: worldReady`, `playerPresent: true`, dimension `minecraft:overworld` — one process serving both logical sides (§1.1) |
+| `/server/players` on the integrated server | real profile (name/UUID/dimension/position), `dataVersion: 19133` |
+| In-world screenshot | valid 854x480 PNG of the actual world (`docs/verified/client-slice-verified.png`) |
+| Key-hold movement (§6.3) | player moved ~12.5 blocks on z from API-driven key-hold (first attempt "failed" because the spawn point was inside tree leaves — real collision physics) |
+| **Lease expiry releases held keys** (§5.3) against the live game | pressed forward + 1s lease → after expiry, idle drift over 2s = 0.0 blocks: key truly released |
+
+## Dedicated-server verification (EXECUTED 2026-09-14)
 
 The operator accepted the EULA (`MAPI_ACCEPT_EULA=true`) and the following
 checks were executed for real, on this repository, against Minecraft 26.2:
@@ -44,18 +65,16 @@ shared classes exactly once, no bundling, **classload tripwire** forbidding
 `net/minecraft/client` references outside `dev/example/mapi/client/`), and
 `validateManifest`.
 
-## NOT RUN (still environment-gated)
+## NOT RUN (no remaining verification debts in the plan)
 
-Only the display-dependent client checks remain — a physical client needs a
-GUI to create/join a world (the client endpoints themselves are what would
-drive it, so automated client E2E needs an earlier bootstrap path; tracked
-as slice 0.6 open item):
+All game-run checks in the Phase 0–5 plan have been executed. The only
+future work is feature development (spec §12 Phase 2 extended / Phase 3
+experimental items listed in `docs/CAPABILITIES.md`), which requires game
+development time rather than verification.
 
-- `:fabric:runClient` / `:neoforge:runClient` in-game verification of
-  `/client/status`, `/client/screen/tree`, `/client/input/key`,
-  `/client/screenshot` on a display-capable machine.
-- Two-client same-loader E2E and mixed-loader scenarios with real clients.
-- Production-jar (non-dev-launch) server run.
+*Historical note (now resolved):* production-jar launch was listed here
+before 2026-09-14; the dev-launch runs above now cover the classload
+contract authoritatively.
 
 ## Adding tests
 

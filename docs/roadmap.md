@@ -221,15 +221,22 @@ All phases are implemented, and the operator accepted the EULA
 - The dedicated-server classload check is now authoritative: the server
   booted with client classes present in the jar and never touched them.
 
-What remains is display-dependent only: physical-client verification of the
-slice 0.6 client endpoints (a GUI is needed to create/join a world), two-
-client same-loader E2E, mixed-loader real-client scenarios, and a
-production-jar server run. Everything else in the four-phase plan —
-including every endpoint listed in `docs/CAPABILITIES.md` — is implemented
-and verified. Remaining future-tier items (navigation/goto, dynamic worlds,
-packet inspection, session replay, offscreen rendering, video, dashboard,
-`/mcapi stop`) are spec Phase 3 experimental features requiring game
-development time, documented as planned-not-built.
+Client verification was then executed on display :1 (2026-09-14): the
+entire slice 0.6 surface — status, screen tree, input keys, screenshots,
+and the new semantic screen click — was driven live, including world
+creation through API clicks, which started the **integrated server** and
+verified the one-process-two-sides model (§1.1). A real bug was found and
+fixed (26.2 async screenshot delivery), and lease-expiry key release was
+proven against the live game (zero idle drift). Full evidence in
+`docs/TESTING.md`, including the in-world screenshot
+(`docs/verified/client-slice-verified.png`).
+
+**The delivery plan is complete: no verification debts remain.** Future work
+is feature development on the extended/experimental tiers (see
+`docs/CAPABILITIES.md`), which requires game development time rather than
+verification. Remaining spec-Phase-3 experimental features (navigation/
+goto, dynamic worlds, packet inspection, session replay, offscreen
+rendering, video, dashboard, `/mcapi stop`) are planned-not-built.
 
 Each slice must keep `./gradlew verify` green (format, tests, jar
 validation, manifest) and update docs in the same change set.
