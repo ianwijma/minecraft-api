@@ -36,8 +36,12 @@ server.properties
 options.txt
 screenshots/
 saves/
-world/
-worlds/
+# Minecraft world save directories (anchored so the Java package
+# dev.example.mapi.internal.world is never ignored).
+/world/
+/worlds/
+**/run/**/world/
+**/run/**/worlds/
 
 # Secrets and local credentials (MAPI HTTP bearer token, etc.)
 .env
