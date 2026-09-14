@@ -176,6 +176,15 @@ the `files.read` scope for reads and `files.write` for writes, **plus** the
   symlink leaves; `files.written` audit event.
 - Outside/protected paths → **403** `DENIED_PATH`; missing → **404**.
 
+### `POST /api/v1/client/screen/click` (semantic mode)
+
+Screen interaction (spec §5.2/§6.3 core): routes a click through the open
+screen's own mouse handlers (`mouseClicked`/`mouseReleased`) — the same
+mechanism a physical click funnels into. Body: `{"x":213,"y":223,"mode":
+"semantic"}` (GUI space; `mode` must be `semantic` or absent — other modes
+rejected, no silent fallbacks). Response reports `consumed` (whether the
+screen handled the click) and emits `client.screen.click`.
+
 ### `POST /api/v1/unsafe/reflect`, `POST /api/v1/unsafe/invoke` (slice 3.1, experimental)
 
 Trusted developer execution (spec §4.3): **runs with the privileges of the

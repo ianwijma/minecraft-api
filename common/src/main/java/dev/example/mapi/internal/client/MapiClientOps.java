@@ -45,12 +45,17 @@ public interface MapiClientOps {
 
     /**
      * Captures the main framebuffer as PNG into the instance's
-     * {@code mcapi/screenshots} directory (controlled path).
+     * {@code mcapi/screenshots} directory (controlled path). Runs on the
+     * render thread; 26.2 delivers the captured image asynchronously (the
+     * callback may fire on a later frame), so the result is returned through
+     * {@code onComplete} — never by return value.
      *
-     * @param frameId monotonic capture identifier assigned by the caller
-     * @return the capture metadata
+     * @param frameId    monotonic capture identifier assigned by the caller
+     * @param onComplete invoked exactly once with the result, or
+     *                   {@code (null, exception)} on failure
      */
-    ScreenshotResult captureScreenshot(long frameId);
+    void captureScreenshot(long frameId,
+            java.util.function.BiConsumer<ScreenshotResult, Exception> onComplete);
 
     /**
      * Releases every key the API is currently holding (lease expiry hook,
@@ -71,4 +76,15 @@ public interface MapiClientOps {
             super(message);
         }
     }
+
+    /**
+     * Semantic-mode screen interaction (spec §5.2/§6.3): routes a click
+     * through the open screen's own mouse handlers — the same mechanism a
+     * physical mouse click funnels into, no direct state writes.
+     *
+     * @param x GUI-space x
+     * @param y GUI-space y
+     * @return true when the screen consumed the click
+     */
+    boolean clickScreen(int x, int y);
 }

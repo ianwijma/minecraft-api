@@ -275,7 +275,8 @@ public final class HttpApiServer {
         if (path.startsWith(API_PREFIX + "server/world/")) {
             return dev.example.mapi.internal.auth.Scope.WORLD_READ;
         }
-        if (path.equals(API_PREFIX + "client/input/key")) {
+        if (path.equals(API_PREFIX + "client/input/key")
+                || path.equals(API_PREFIX + "client/screen/click")) {
             return dev.example.mapi.internal.auth.Scope.CLIENT_CONTROL;
         }
         if (path.startsWith(API_PREFIX + "server/commands")) {
@@ -382,6 +383,10 @@ public final class HttpApiServer {
         }
         if (path.equals(API_PREFIX + "client/input/key")) {
             pressClientKey(exchange, requestId, body);
+            return;
+        }
+        if (path.equals(API_PREFIX + "client/screen/click")) {
+            clickScreen(exchange, requestId, body);
             return;
         }
         if (path.equals(API_PREFIX + "client/screenshot")) {
@@ -1591,6 +1596,64 @@ public final class HttpApiServer {
         respond(exchange, requestId, 200, JsonWriter.write(responseBody));
     }
 
+    /**
+     * Semantic-mode screen click (spec §5.2): mode must be {@code semantic}
+     * (or absent); body carries GUI-space {@code x}/{@code y}. No silent
+     * fallbacks.
+     */
+    private void clickScreen(HttpExchange exchange, String requestId, byte[] body) throws IOException {
+        var ops = runtime.clientOps();
+        if (ops == null) {
+            error(exchange, requestId, 409, "WRONG_STATE",
+                    "No client operations on this process (dedicated server or client not initialized).");
+            return;
+        }
+        Object parsed;
+        try {
+            parsed = JsonParser.parse(new String(body, StandardCharsets.UTF_8));
+        } catch (ParseException e) {
+            error(exchange, requestId, 400, "INVALID_JSON", e.getMessage());
+            return;
+        }
+        if (!(parsed instanceof Map<?, ?> request)) {
+            error(exchange, requestId, 400, "INVALID_JSON", "Request body must be a JSON object");
+            return;
+        }
+        if (!sessionPreconditionsHold(exchange, requestId, request)) {
+            return;
+        }
+        Object mode = request.get("mode");
+        if (mode != null && !"semantic".equals(mode)) {
+            error(exchange, requestId, 400, "INVALID_PAYLOAD",
+                    "This endpoint is semantic-mode only; mode must be 'semantic' or absent "
+                            + "(no silent fallbacks).");
+            return;
+        }
+        Integer x = request.get("x") instanceof Number nx ? nx.intValue() : null;
+        Integer y = request.get("y") instanceof Integer yi ? yi
+                : request.get("y") instanceof Number ny ? ny.intValue() : null;
+        if (x == null || y == null || x < 0 || y < 0) {
+            error(exchange, requestId, 400, "INVALID_PAYLOAD",
+                    "Non-negative integer 'x' and 'y' (GUI space) are required");
+            return;
+        }
+        int clickX = x;
+        int clickY = y;
+        var result = runtime.<Boolean>tryReadOnClientThread(() -> ops.clickScreen(clickX, clickY));
+        if (!handleReadOutcome(exchange, requestId, result)) {
+            return;
+        }
+        Map<String, Object> responseBody = new LinkedHashMap<>();
+        responseBody.put("protocolVersion", PROTOCOL_VERSION);
+        responseBody.put("mode", "semantic");
+        responseBody.put("x", clickX);
+        responseBody.put("y", clickY);
+        responseBody.put("consumed", result.value());
+        runtime.eventLog().publish("client.screen.click", "api-originated", Map.of(
+                "x", clickX, "y", clickY, "consumed", result.value()));
+        respond(exchange, requestId, 200, JsonWriter.write(responseBody));
+    }
+
     private void captureScreenshot(HttpExchange exchange, String requestId) throws IOException {
         var ops = runtime.clientOps();
         if (ops == null) {
@@ -1599,8 +1662,7 @@ public final class HttpApiServer {
             return;
         }
         long frameId = frameCounter.incrementAndGet();
-        var result = runtime.<dev.example.mapi.internal.client.ScreenshotResult>tryReadOnClientThread(
-                () -> ops.captureScreenshot(frameId));
+        var result = runtime.tryCaptureScreenshot(frameId, 5000);
         if (!handleReadOutcome(exchange, requestId, result)) {
             return;
         }

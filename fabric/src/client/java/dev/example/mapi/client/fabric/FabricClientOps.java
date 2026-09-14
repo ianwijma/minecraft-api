@@ -148,36 +148,46 @@ final class FabricClientOps implements MapiClientOps {
     }
 
     @Override
-    public ScreenshotResult captureScreenshot(long frameId) {
+    public boolean clickScreen(int x, int y) {
+        Screen screen = Minecraft.getInstance().gui.screen();
+        if (screen == null) {
+            return false;
+        }
+        // Semantic mode: the screen's own mouse handlers (same path a
+        // physical click takes), in GUI space. Left button = GLFW 0.
+        net.minecraft.client.input.MouseButtonEvent press = new net.minecraft.client.input.MouseButtonEvent(
+                x, y, new net.minecraft.client.input.MouseButtonInfo(0, 0));
+        boolean handled = screen.mouseClicked(press, false);
+        screen.mouseReleased(press);
+        return handled;
+    }
+
+    @Override
+    public void captureScreenshot(long frameId,
+            java.util.function.BiConsumer<ScreenshotResult, Exception> onComplete) {
         Minecraft client = Minecraft.getInstance();
         Path dir = client.gameDirectory.toPath().resolve("mcapi").resolve("screenshots");
+        Path target = dir.resolve("frame-" + frameId + ".png");
         try {
             Files.createDirectories(dir);
         } catch (IOException e) {
-            throw new IllegalStateException("failed to create screenshot directory " + dir, e);
+            onComplete.accept(null, new IllegalStateException(
+                    "failed to create screenshot directory " + dir, e));
+            return;
         }
-        Path target = dir.resolve("frame-" + frameId + ".png");
-        AtomicReference<ScreenshotResult> result = new AtomicReference<>();
-        AtomicReference<IOException> failure = new AtomicReference<>();
+        // 26.2 delivers the image asynchronously after the GPU readback; the
+        // consumer may run on a later frame. The render thread never blocks.
         Screenshot.takeScreenshot(client.gameRenderer.mainRenderTarget(), image -> {
             try {
                 image.writeToFile(target);
-                result.set(new ScreenshotResult(frameId,
+                onComplete.accept(new ScreenshotResult(frameId,
                         client.gameDirectory.toPath().relativize(target).toString(),
-                        image.getWidth(), image.getHeight(), (int) Files.size(target)));
+                        image.getWidth(), image.getHeight(), (int) Files.size(target)), null);
             } catch (IOException e) {
-                failure.set(e);
+                onComplete.accept(null, new IllegalStateException("screenshot write failed", e));
             } finally {
                 image.close();
             }
         });
-        if (failure.get() != null) {
-            throw new IllegalStateException("screenshot write failed", failure.get());
-        }
-        ScreenshotResult snapshot = result.get();
-        if (snapshot == null) {
-            throw new IllegalStateException("framebuffer capture did not complete synchronously");
-        }
-        return snapshot;
     }
 }

@@ -583,6 +583,49 @@ public final class MapiRuntime implements Mapi {
     }
 
     /**
+     * Schedules a screenshot capture on the owning (client) render thread and
+     * waits on the caller's (HTTP worker) thread for the bounded budget. 26.2
+     * delivers the captured image asynchronously, so the wait may span a few
+     * frames; the render thread itself never blocks.
+     *
+     * @param frameId monotonic capture id
+     * @param waitMs  total budget in ms
+     * @return the outcome; failures carry the capture error
+     */
+    public ReadResult<dev.example.mapi.internal.client.ScreenshotResult> tryCaptureScreenshot(
+            long frameId, long waitMs) {
+        var ops = clientOps;
+        var scheduler = clientScheduler;
+        if (ops == null || scheduler == null) {
+            return ReadResult.notRunning();
+        }
+        java.util.concurrent.CompletableFuture<dev.example.mapi.internal.client.ScreenshotResult> future =
+                new java.util.concurrent.CompletableFuture<>();
+        scheduler.accept(() -> ops.captureScreenshot(frameId,
+                (result, error) -> {
+                    if (error != null) {
+                        future.completeExceptionally(error);
+                    } else {
+                        future.complete(result);
+                    }
+                }));
+        try {
+            return new ReadResult<>(future.get(waitMs, java.util.concurrent.TimeUnit.MILLISECONDS),
+                    true, false, null);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return ReadResult.busy();
+        } catch (java.util.concurrent.TimeoutException e) {
+            return ReadResult.busy();
+        } catch (java.util.concurrent.ExecutionException e) {
+            RuntimeException cause = e.getCause() instanceof RuntimeException runtime
+                    ? runtime
+                    : new IllegalStateException(e.getCause());
+            return new ReadResult<>(null, true, false, cause);
+        }
+    }
+
+    /**
      * Stops the process-scoped services (tasks, discovery heartbeat, HTTP
      * listener) and removes the discovery file. Idempotent; also registered
      * as a JVM shutdown hook so a clean exit never leaves a stale discovery

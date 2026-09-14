@@ -231,12 +231,19 @@ class FailureScenarioTest {
             }
 
             @Override
-            public dev.example.mapi.internal.client.ScreenshotResult captureScreenshot(long frameId) {
-                throw new IllegalStateException("not used");
+            public void captureScreenshot(long frameId,
+                    java.util.function.BiConsumer<dev.example.mapi.internal.client.ScreenshotResult,
+                            Exception> onComplete) {
+                onComplete.accept(null, new IllegalStateException("not used"));
             }
 
             @Override
             public void releaseAllKeys() {
+            }
+
+            @Override
+            public boolean clickScreen(int x, int y) {
+                return false;
             }
         }, Runnable::run);
 

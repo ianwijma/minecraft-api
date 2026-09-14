@@ -530,6 +530,40 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/client/screen/click:
+    post:
+      operationId: clickClientScreen
+      summary: Semantic-mode screen click at GUI coordinates (no silent fallbacks)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [x, y]
+              properties:
+                x: { type: integer, minimum: 0 }
+                y: { type: integer, minimum: 0 }
+                mode: { type: string, const: semantic }
+                expectedWorldSessionId: { type: string }
+      responses:
+        "200":
+          description: click routed through the screen's own mouse handlers
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ProtocolVersioned"
+                  - type: object
+                    required: [mode, x, y, consumed]
+                    properties:
+                      mode: { type: string, const: semantic }
+                      x: { type: integer }
+                      y: { type: integer }
+                      consumed: { type: boolean }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/WrongState" }
+        "503": { $ref: "#/components/responses/ServerBusy" }
 components:
   securitySchemes:
     bearerAuth:

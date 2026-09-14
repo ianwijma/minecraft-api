@@ -640,15 +640,22 @@ class HttpApiServerTest {
                     }
 
                     @Override
-                    public dev.example.mapi.internal.client.ScreenshotResult captureScreenshot(long frameId) {
-                        return new dev.example.mapi.internal.client.ScreenshotResult(frameId,
-                                "mcapi/screenshots/frame-" + frameId + ".png", 1280, 720, 4242);
+                    public void captureScreenshot(long frameId,
+                            java.util.function.BiConsumer<dev.example.mapi.internal.client.ScreenshotResult,
+                                    Exception> onComplete) {
+                        onComplete.accept(new dev.example.mapi.internal.client.ScreenshotResult(frameId,
+                                "mcapi/screenshots/frame-" + frameId + ".png", 1280, 720, 4242), null);
                     }
 
                     @Override
                     public void releaseAllKeys() {
                         // tracked in tests via releasedKeys counter
                         releasedKeys.incrementAndGet();
+                    }
+
+                    @Override
+                    public boolean clickScreen(int x, int y) {
+                        return x == 42 && y == 7;
                     }
                 },
                 Runnable::run);
@@ -710,6 +717,34 @@ class HttpApiServerTest {
                 "{\"mapping\":\"key.forward\",\"action\":\"wiggle\"}",
                 "Authorization", "Bearer " + TOKEN);
         assertEquals(400, unknownAction.statusCode(), unknownAction.body());
+    }
+
+    @Test
+    void clientScreenClickContract() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> unregistered = post("/api/v1/client/screen/click",
+                "{\"x\":1,\"y\":2}", "Authorization", "Bearer " + TOKEN);
+        assertEquals(409, unregistered.statusCode(), unregistered.body());
+
+        registerFakeClientOps();
+        HttpResponse<String> consumed = post("/api/v1/client/screen/click",
+                "{\"x\":42,\"y\":7}", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, consumed.statusCode(), consumed.body());
+        assertTrue(consumed.body().contains("\"mode\":\"semantic\""), consumed.body());
+        assertTrue(consumed.body().contains("\"consumed\":true"), consumed.body());
+
+        HttpResponse<String> ignored = post("/api/v1/client/screen/click",
+                "{\"x\":9,\"y\":9}", "Authorization", "Bearer " + TOKEN);
+        assertTrue(ignored.body().contains("\"consumed\":false"), ignored.body());
+
+        HttpResponse<String> wrongMode = post("/api/v1/client/screen/click",
+                "{\"x\":1,\"y\":2,\"mode\":\"admin\"}", "Authorization", "Bearer " + TOKEN);
+        assertEquals(400, wrongMode.statusCode(), wrongMode.body());
+        assertTrue(wrongMode.body().contains("no silent fallbacks"), wrongMode.body());
+
+        HttpResponse<String> missing = post("/api/v1/client/screen/click", "{}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(400, missing.statusCode(), missing.body());
     }
 
     @Test
