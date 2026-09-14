@@ -465,6 +465,39 @@ paths:
       responses:
         "200": { description: written, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/logs:
+    get:
+      operationId: getServerLogs
+      summary: Game-log lines (cursor-based, untrusted observed data)
+      parameters:
+        - { name: cursor, in: query, schema: { type: integer, default: 0 }, description: 0-based line index }
+        - { name: limit, in: query, schema: { type: integer, default: 100, minimum: 1, maximum: 200 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/logs/errors:
+    get:
+      operationId: getServerLogErrors
+      summary: Lines containing ERROR from latest.log
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/crash-reports:
+    get:
+      operationId: listCrashReports
+      summary: Crash-report files newest-first
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/capabilities:
+    get:
+      operationId: getCapabilities
+      summary: Per-operation capability entries (spec section 5)
+      parameters:
+        - { name: tier, in: query, schema: { type: string, enum: [core, extended, experimental] } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
   /api/v1/unsafe/reflect:
     post:
       operationId: unsafeReflect
