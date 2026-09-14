@@ -45,6 +45,8 @@ public final class McpServer {
         tools.put("world", this::toolWorld);
         tools.put("player", this::toolPlayer);
         tools.put("lifecycle", this::toolLifecycle);
+        tools.put("commands", this::toolCommands);
+        tools.put("ui", this::toolUi);
         tools.put("task.wait", this::toolTaskWait);
         tools.put("task.cancel", this::toolTaskCancel);
         tools.put("artifact.get", this::toolArtifact);
@@ -61,6 +63,10 @@ public final class McpServer {
         descriptors.add(descriptor("player", "List connected players (subaction=list)",
                 objectSchema("subaction")));
         descriptors.add(descriptor("lifecycle", "Server/session status (subaction=status)",
+                objectSchema("subaction")));
+        descriptors.add(descriptor("commands", "Execute a console command (commands.execute scope): command",
+                objectSchema("command", "expectedWorldSessionId")));
+        descriptors.add(descriptor("ui", "Local client observations: subaction=status|tree (client.control scope)",
                 objectSchema("subaction")));
         descriptors.add(descriptor("task.wait", "Wait for a task to finish: taskId, timeoutMs",
                 objectSchema("taskId", "timeoutMs")));
@@ -210,6 +216,29 @@ public final class McpServer {
         return httpGetTool("/api/v1/server/status", null);
     }
 
+    private ToolResult toolCommands(Map<String, Object> args) {
+        String command = stringArg(args, "command", null);
+        if (command == null) {
+            return new ToolResult("command is required", true);
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("command", command);
+        String expected = stringArg(args, "expectedWorldSessionId", null);
+        if (expected != null) {
+            body.put("expectedWorldSessionId", expected);
+        }
+        return httpPostTool("/api/v1/server/commands/execute", body);
+    }
+
+    private ToolResult toolUi(Map<String, Object> args) {
+        String subaction = stringArg(args, "subaction", "status");
+        return switch (subaction) {
+            case "status" -> httpGetTool("/api/v1/client/status", null);
+            case "tree" -> httpGetTool("/api/v1/client/screen/tree", null);
+            default -> new ToolResult("unknown ui subaction: " + subaction, true);
+        };
+    }
+
     private ToolResult toolTaskWait(Map<String, Object> args) {
         String taskId = stringArg(args, "taskId", null);
         if (taskId == null) {
@@ -252,6 +281,15 @@ public final class McpServer {
     private ToolResult httpGetTool(String path, String unused) {
         try {
             var response = instance.get(path);
+            return new ToolResult(response.getValue(), response.getKey() != 200);
+        } catch (IOException | InterruptedException e) {
+            return new ToolResult("request failed: " + e.getMessage(), true);
+        }
+    }
+
+    private ToolResult httpPostTool(String path, Map<String, Object> body) {
+        try {
+            var response = instance.post(path, InstanceClient.json(body));
             return new ToolResult(response.getValue(), response.getKey() != 200);
         } catch (IOException | InterruptedException e) {
             return new ToolResult("request failed: " + e.getMessage(), true);

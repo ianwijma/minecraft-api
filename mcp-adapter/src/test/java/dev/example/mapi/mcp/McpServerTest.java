@@ -140,6 +140,12 @@ class McpServerTest {
         String unknownText = toolText(unknown);
         assertTrue(unknownText.contains("unknown tool"), unknownText);
 
+        Map<String, Object> toolsList = exchange(instance,
+                "{\"jsonrpc\":\"2.0\",\"id\":12,\"method\":\"tools/list\",\"params\":{}}");
+        String toolsText = dev.example.mapi.internal.json.JsonWriter.write(toolsList.get("result"));
+        assertTrue(toolsText.contains("\"name\":\"commands\""), toolsText);
+        assertTrue(toolsText.contains("\"name\":\"ui\""), toolsText);
+
         Map<String, Object> methodMissing = exchange(instance,
                 "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"bogus/method\",\"params\":{}}");
         assertEquals(-32601L, (Long) InstanceClient.parseObject(
