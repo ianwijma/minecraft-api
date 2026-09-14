@@ -297,10 +297,10 @@ class ServerEndpointsTest {
         HttpResponse<String> step = post("/api/v1/server/ticks/step",
                 "{\"leaseId\":\"" + leaseId + "\",\"ticks\":2}");
         String jobId = extract(step.body(), "jobId");
-        HttpResponse<String> view = get("/api/v1/jobs/" + jobId);
-        assertEquals(200, view.statusCode());
-        assertTrue(view.body().contains("\"kind\":\"ticks.step\""), view.body());
-        assertTrue(view.body().contains("\"milestones\""), view.body());
+        // Poll to terminal state: CI workers may be slower than the step.
+        String view = waitForJob(jobId, "SUCCEEDED");
+        assertTrue(view.contains("\"kind\":\"ticks.step\""), view);
+        assertTrue(view.contains("\"milestones\""), view);
         assertEquals(404, get("/api/v1/jobs/job-99999").statusCode());
     }
 
