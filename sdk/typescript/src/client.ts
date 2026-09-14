@@ -152,6 +152,37 @@ export class MapiClient {
     return snapshot;
   }
 
+  // -- leases / commands ------------------------------------------------------
+
+  /** All lease snapshots. */
+  leases(): Promise<JsonMap> { return this.request('GET', '/api/v1/leases'); }
+
+  /** Acquires a control lease (§5.3). */
+  acquireLease(lease: string, ttlMs?: number, conflict?: 'reject' | 'queue' | 'preempt'): Promise<JsonMap> {
+    const body: JsonMap = { lease };
+    if (ttlMs !== undefined) body.ttlMs = ttlMs;
+    if (conflict !== undefined) body.conflict = conflict;
+    return this.request('POST', '/api/v1/leases', body);
+  }
+
+  /** Renews a held lease. */
+  renewLease(leaseId: string, ttlMs?: number): Promise<JsonMap> {
+    const body: JsonMap = ttlMs !== undefined ? { ttlMs } : {};
+    return this.request('POST', `/api/v1/leases/${leaseId}/renew`, body);
+  }
+
+  /** Releases a lease. */
+  releaseLease(leaseId: string): Promise<JsonMap> {
+    return this.request('DELETE', `/api/v1/leases/${leaseId}`);
+  }
+
+  /** Executes a console command (commands.execute scope). */
+  executeCommand(command: string, expectedWorldSessionId?: string): Promise<JsonMap> {
+    const body: JsonMap = { command };
+    if (expectedWorldSessionId !== undefined) body.expectedWorldSessionId = expectedWorldSessionId;
+    return this.request('POST', '/api/v1/server/commands/execute', body);
+  }
+
   /** One event page. */
   events(after = 0, limit = 100): Promise<JsonMap> {
     return this.request('GET', `/api/v1/events?after=${after}&limit=${limit}`);

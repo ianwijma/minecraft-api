@@ -91,6 +91,10 @@ class MapiHttpClientTest {
                 null, "sdk-key-1", runtime.worldSessionId().orElseThrow());
         assertEquals(taskId, replay.get("id"), "identical key+body must replay the first task");
 
+        Map<String, Object> outcome = client.executeCommand("say hi",
+                runtime.worldSessionId().orElseThrow());
+        assertEquals(Boolean.TRUE, outcome.get("success"));
+
         Map<String, Object> page = client.eventsAfter(0);
         assertTrue((Long) page.get("nextCursor") >= 1);
         assertTrue(((List<?>) page.get("events")).size() >= 1);

@@ -287,6 +287,70 @@ public final class MapiHttpClient {
     }
 
     // ------------------------------------------------------------------
+    // Leases / commands
+    // ------------------------------------------------------------------
+
+    /** @return all lease snapshots */
+    public Map<String, Object> leases() {
+        return jsonGet("/api/v1/leases");
+    }
+
+    /**
+     * @param leaseType lease type (§5.3)
+     * @param ttlMs time-to-live or {@code null} for the default
+     * @param conflict reject/queue/preempt or {@code null} for reject
+     * @return the lease snapshot
+     */
+    public Map<String, Object> acquireLease(String leaseType, Long ttlMs, String conflict) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("lease", leaseType);
+        if (ttlMs != null) {
+            body.put("ttlMs", ttlMs);
+        }
+        if (conflict != null) {
+            body.put("conflict", conflict);
+        }
+        return jsonPost("/api/v1/leases", body, null);
+    }
+
+    /**
+     * @param leaseId lease id
+     * @param ttlMs new time-to-live from now or {@code null}
+     * @return the refreshed snapshot
+     */
+    public Map<String, Object> renewLease(String leaseId, Long ttlMs) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (ttlMs != null) {
+            body.put("ttlMs", ttlMs);
+        }
+        return jsonPost("/api/v1/leases/" + leaseId + "/renew", body, null);
+    }
+
+    /**
+     * @param leaseId lease id
+     * @return the post-release snapshot
+     */
+    public Map<String, Object> releaseLease(String leaseId) {
+        return jsonDelete("/api/v1/leases/" + leaseId);
+    }
+
+    /**
+     * Executes a console command (commands.execute scope).
+     *
+     * @param command command text without leading slash
+     * @param expectedWorldSessionId stale-session precondition or {@code null}
+     * @return the execution outcome
+     */
+    public Map<String, Object> executeCommand(String command, String expectedWorldSessionId) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("command", command);
+        if (expectedWorldSessionId != null) {
+            body.put("expectedWorldSessionId", expectedWorldSessionId);
+        }
+        return jsonPost("/api/v1/server/commands/execute", body, null);
+    }
+
+    // ------------------------------------------------------------------
     // Events
     // ------------------------------------------------------------------
 

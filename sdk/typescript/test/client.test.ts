@@ -43,6 +43,10 @@ function startStub(): Promise<Server> {
           monotonicNanos: s, processSessionId: 'p', data: {},
         }));
         send(200, { protocolVersion: 1, events, truncated: false, headSeq: 10, oldestSeq: 1 });
+      } else if (url.pathname === '/api/v1/leases') {
+        send(200, { id: 'lease-1', lease: JSON.parse(body || '{}').lease, state: 'held' });
+      } else if (url.pathname === '/api/v1/server/commands/execute') {
+        send(200, { result: 1, success: true, feedback: [], command: JSON.parse(body || '{}').command });
       } else if (url.pathname === '/api/v1/tasks' && request.method === 'POST') {
         const parsed = body ? JSON.parse(body) : {};
         const key = request.headers['idempotency-key'];
@@ -101,6 +105,11 @@ test('auth, tasks with idempotency, and event cursors', async (t) => {
   assert.equal(first.id, replay.id);
   const done = await client.waitTask(String(first.id));
   assert.equal(done.state, 'succeeded');
+
+  const outcome = await client.executeCommand('say hi');
+  assert.equal(outcome.success, true);
+  const lease = await client.acquireLease('client.input', 5000);
+  assert.equal(lease.state, 'held');
 
   const page = await client.eventsAfter(0);
   assert.ok((page.nextCursor as number) >= 1);

@@ -54,8 +54,16 @@ class StubApi(BaseHTTPRequestHandler):
         elif self.path.startswith("/api/v1/tasks/"):
             task_id = self.path.rsplit("/", 1)[1]
             self._json(200, StubApi.tasks.get(task_id, {"state": "running"}))
+        elif self.path.startswith("/api/v1/leases/"):
+            self._json(200, {"id": self.path.rsplit("/", 1)[1], "state": "released"})
         else:
             self._json(404, {"error": {"code": "NOT_FOUND", "message": "", "requestId": "r"}})
+
+    def do_DELETE(self):
+        if not self._authorized():
+            self._json(401, {"error": {"code": "UNAUTHORIZED", "message": "nope", "requestId": "r1"}})
+            return
+        self._json(200, {"id": self.path.rsplit("/", 1)[1], "state": "released"})
 
     def do_POST(self):
         if not self._authorized():
@@ -80,6 +88,16 @@ class StubApi(BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(json.dumps(task).encode())))
             self.end_headers()
             self.wfile.write(json.dumps(task).encode())
+        elif self.path == "/api/v1/leases":
+            length = int(self.headers.get("Content-Length", "0"))
+            body = json.loads(self.rfile.read(length) or b"{}")
+            self._json(200, {"id": "lease-1", "lease": body.get("lease"), "state": "held"})
+        elif self.path.endswith("/renew"):
+            self._json(200, {"id": "lease-1", "state": "held"})
+        elif self.path == "/api/v1/server/commands/execute":
+            length = int(self.headers.get("Content-Length", "0"))
+            body = json.loads(self.rfile.read(length) or b"{}")
+            self._json(200, {"result": 1, "success": True, "feedback": [], "command": body.get("command")})
         else:
             self._json(404, {"error": {"code": "NOT_FOUND", "message": "", "requestId": "r"}})
 
@@ -158,6 +176,14 @@ class ClientTest(unittest.TestCase):
         self.assertEqual(first["id"], replay["id"], "same key+body must replay")
         done = self.client.wait_task(first["id"])
         self.assertEqual(done["state"], "succeeded")
+
+    def test_leases_and_commands(self):
+        lease = self.client.acquire_lease("client.input", ttl_ms=5000)
+        self.assertEqual(lease["state"], "held")
+        self.assertEqual(self.client.renew_lease("lease-1")["state"], "held")
+        self.assertEqual(self.client.release_lease("lease-1")["state"], "released")
+        outcome = self.client.execute_command("say hi")
+        self.assertTrue(outcome["success"])
 
     def test_follow_events_yields_in_order_with_gap(self):
         stream = self.client.follow_events(after=0)

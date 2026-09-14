@@ -185,6 +185,32 @@ class MapiClient:
     def cancel_task(self, task_id):
         return self._request("DELETE", f"/api/v1/tasks/{task_id}")[1]
 
+    # -- leases / commands ------------------------------------------------------
+
+    def list_leases(self):
+        return self._request("GET", "/api/v1/leases")[1]
+
+    def acquire_lease(self, lease, ttl_ms=None, conflict=None):
+        body = {"lease": lease}
+        if ttl_ms is not None:
+            body["ttlMs"] = ttl_ms
+        if conflict is not None:
+            body["conflict"] = conflict
+        return self._request("POST", "/api/v1/leases", body=body)[1]
+
+    def renew_lease(self, lease_id, ttl_ms=None):
+        body = {"ttlMs": ttl_ms} if ttl_ms is not None else {}
+        return self._request("POST", f"/api/v1/leases/{lease_id}/renew", body=body)[1]
+
+    def release_lease(self, lease_id):
+        return self._request("DELETE", f"/api/v1/leases/{lease_id}")[1]
+
+    def execute_command(self, command, expected_world_session_id=None):
+        body = {"command": command}
+        if expected_world_session_id is not None:
+            body["expectedWorldSessionId"] = expected_world_session_id
+        return self._request("POST", "/api/v1/server/commands/execute", body=body)[1]
+
     # -- events ---------------------------------------------------------------
 
     def events(self, after=0, limit=100):
