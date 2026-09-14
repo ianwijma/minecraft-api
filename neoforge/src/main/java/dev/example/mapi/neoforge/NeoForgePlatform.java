@@ -99,10 +99,13 @@ final class NeoForgePlatform implements MapiPlatform {
     @Override
     public boolean requestProcessShutdown() {
         MinecraftServer server = currentServer;
-        if (server == null) {
-            return false;
+        if (server != null) {
+            server.execute(() -> server.halt(false));
+            return true;
         }
-        server.execute(() -> server.halt(false));
+        // Main menu (no integrated server): stop the client process itself.
+        var client = net.minecraft.client.Minecraft.getInstance();
+        client.execute(client::stop);
         return true;
     }
 

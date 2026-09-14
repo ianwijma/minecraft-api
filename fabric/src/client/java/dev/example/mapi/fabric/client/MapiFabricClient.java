@@ -25,5 +25,10 @@ public final class MapiFabricClient implements ClientModInitializer {
             ClientLifecycleEvents.CLIENT_STARTED.register(client -> listener.onClientStarted());
             ClientLifecycleEvents.CLIENT_STOPPING.register(client -> listener.onClientStopping());
         });
+        MapiFabricHooks.setClientShutdownSupplier(() -> {
+            var client = net.minecraft.client.Minecraft.getInstance();
+            client.execute(client::stop);
+            return true;
+        });
     }
 }

@@ -72,7 +72,14 @@ public record MapiConfig(
      *     full set when no subset is configured; empty for an unknown token
      */
     public java.util.Set<dev.example.mapi.internal.operation.Scope> grantedScopes(String token) {
-        if (token == null || httpToken == null
+        // Auth explicitly disabled (blank token): the documented warning is
+        // "every local process gains full control, including administrative
+        // operations" - so every request gets the full scope set.
+        if (httpToken == null || httpToken.isBlank()) {
+            return java.util.Collections.unmodifiableSet(
+                    java.util.EnumSet.allOf(dev.example.mapi.internal.operation.Scope.class));
+        }
+        if (token == null
                 || !java.security.MessageDigest.isEqual(
                         httpToken.getBytes(java.nio.charset.StandardCharsets.UTF_8),
                         token.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {

@@ -88,11 +88,14 @@ final class FabricPlatform implements MapiPlatform {
     @Override
     public boolean requestProcessShutdown() {
         MinecraftServer server = currentServer;
-        if (server == null) {
-            return false;
+        if (server != null) {
+            server.execute(() -> server.halt(false));
+            return true;
         }
-        server.execute(() -> server.halt(false));
-        return true;
+        // Main menu (no integrated server): stop the client process itself
+        // via the client-installed hook (main source set has no client
+        // classes, per loom.splitEnvironmentSourceSets).
+        return MapiFabricHooks.runClientShutdown(false);
     }
 
     /**
