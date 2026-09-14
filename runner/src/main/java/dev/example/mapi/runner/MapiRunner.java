@@ -65,6 +65,8 @@ public final class MapiRunner {
                 case "run" -> runPlan(options, env);
                 case "provision-server" -> provisionServer(options, env);
                 case "replay" -> replay(options, env);
+                case "preflight" -> preflight(options);
+                case "bundle" -> bundle(options, env);
                 default -> usage();
             };
         } catch (IllegalArgumentException e) {
@@ -77,7 +79,7 @@ public final class MapiRunner {
     }
 
     private static int usage() {
-        System.out.println("{\"usage\":\"mapi-runner <version|status|wait-world|run|replay|provision-server>"
+        System.out.println("{\"usage\":\"mapi-runner <version|status|wait-world|run|replay|preflight|bundle|provision-server>"
                 + " [--base url] [--token ENV_NAME] ...\"}");
         return 2;
     }
@@ -163,6 +165,34 @@ public final class MapiRunner {
         }
         sb.append("]}");
         return sb.toString();
+    }
+
+    private static int preflight(Map<String, String> options) throws Exception {
+        String profileFile = options.get("profile");
+        if (profileFile == null) {
+            throw new IllegalArgumentException("--profile <file> is required");
+        }
+        String json = java.nio.file.Files.readString(java.nio.file.Path.of(profileFile));
+        String kind = json.contains("\"onlineMode\"") ? "server" : "client";
+        var report = TestProfiles.preflight(json, kind);
+        System.out.println(MiniJsonWriter.write(report));
+        return report.get("ok").equals(Boolean.TRUE) ? 0 : 1;
+    }
+
+    private static int bundle(Map<String, String> options, Map<String, String> env)
+            throws Exception {
+        MapiClient client = client(options, env);
+        String out = options.get("out");
+        if (out == null) {
+            throw new IllegalArgumentException("--out <dir> is required");
+        }
+        var manifest = new BundleWriter(client).write(java.nio.file.Path.of(out),
+                options.containsKey("recording") ? java.nio.file.Path.of(options.get("recording")) : null,
+                options.containsKey("report") ? java.nio.file.Files.readString(
+                        java.nio.file.Path.of(options.get("report"))) : null,
+                options.containsKey("profile") ? java.nio.file.Path.of(options.get("profile")) : null);
+        System.out.println(MiniJsonWriter.write(manifest));
+        return 0;
     }
 
     private static int provisionServer(Map<String, String> options, Map<String, String> env) {
