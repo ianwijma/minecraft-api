@@ -5,7 +5,8 @@
 [http]
     enabled = false
     port = 25586
-    token = ""
+    # auto-generated on first run; empty string DISABLES authentication
+    token = "REPLACED-AT-FIRST-RUN"
     rateLimitPerMinute = 60
     scopes = []
 [client.connect]

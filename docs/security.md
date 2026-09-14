@@ -16,9 +16,17 @@ repository.
 - **CORS disabled.** No `Access-Control-*` response headers are ever
   emitted. A request carrying an `Origin` that is not the local listener
   origin is rejected (403 `FORBIDDEN_ORIGIN`).
-- **Bearer token required on every endpoint**, including `/health`. Tokens
-  are compared with constant-time `MessageDigest.isEqual`. Tokens shorter
-  than 16 characters are refused at startup.
+- **Bearer token required on every endpoint by default**, including
+  `/health`. Tokens are compared with constant-time `MessageDigest.isEqual`.
+  Explicitly short tokens (< 16 chars) are refused at startup.
+- **Generated configs ship with a generated token.** First-run configs
+  (NeoForge `mapi-common.toml`, Fabric `mapi.json`) contain a fresh 32-byte
+  base64url token — read it from the config file; it is never logged.
+  `MAPI_HTTP_TOKEN` (env) wins over the file.
+- **Blank token = authentication disabled (explicit operator choice).**
+  Setting `http.token` to an empty string skips auth on every endpoint with
+  a loud startup warning. Danger: every local process gains full control,
+  including administrative operations. Never enable on shared machines.
 - **No TLS.** Loopback traffic is unencrypted by design; a token prevents
   other local users/processes from casually reading status data. Do not
   expose the port beyond loopback (no tunneling without understanding the

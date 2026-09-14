@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.example.mapi.internal.config.MapiTokens;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -53,10 +54,12 @@ class MapiConfigTest {
     }
 
     @Test
-    void enabledWithoutTokenIsRefused() {
-        MapiConfigException e = assertThrows(MapiConfigException.class,
-                () -> load(Map.of("MAPI_HTTP_ENABLED", "true")));
-        assertTrue(e.getMessage().contains("MAPI_HTTP_TOKEN"));
+    void enabledWithoutTokenStartsAuthOff() {
+        // Blank token is now an explicit operator choice: auth disabled with
+        // a loud warning, not a startup refusal.
+        MapiConfig config = load(Map.of("MAPI_HTTP_ENABLED", "true"));
+        assertTrue(config.httpEnabled());
+        assertTrue(!config.authRequired());
     }
 
     @Test
@@ -98,6 +101,19 @@ class MapiConfigTest {
         MapiConfig config = load(Map.of());
         assertTrue(config.httpEnabled());
         assertEquals("verylongtokenvalue123", config.httpToken());
+    }
+
+    @Test
+    void blankTokenDisablesAuthInsteadOfRefusingStart() {
+        MapiConfig config = new MapiConfig(true, 20000, "", 60);
+        assertTrue(config.httpEnabled());
+        assertTrue(!config.authRequired(), "blank token = auth explicitly disabled");
+    }
+
+    @Test
+    void generatedTokensSatisfyTheAuthRequirement() {
+        MapiConfig config = new MapiConfig(true, 20000, MapiTokens.generate(), 60);
+        assertTrue(config.authRequired());
     }
 
     @Test

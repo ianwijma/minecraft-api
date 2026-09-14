@@ -96,6 +96,23 @@ class SecurityTest {
     }
 
     @Test
+    void blankTokenExplicitlyDisablesAuthenticationWithBrowserAccess() throws Exception {
+        // Operator choice: blank http.token = auth off. Browsers (which cannot
+        // set Authorization headers) then reach every endpoint; the startup
+        // log carries a loud warning.
+        platform = new TestPlatform(LOG);
+        runtime = new MapiRuntime(platform);
+        server = new HttpApiServer(new MapiConfig(true, freePort(), "", 10_000),
+                runtime, LOG);
+        assertTrue(server.start());
+        port = server.boundAddress().getPort();
+        assertEquals(200, send("GET", "/api/v1/health", null, null).statusCode());
+        assertTrue(!send("GET", "/api/v1/health", null, null).headers()
+                .firstValue("WWW-Authenticate").isPresent());
+        assertEquals(200, send("GET", "/api/v1/server/world", null, null).statusCode());
+    }
+
+    @Test
     void tokensInQueryParametersOrBodyNeverAuthorize() throws Exception {
         startServer();
         // Query-string tokens are explicitly forbidden (spec §13.1).

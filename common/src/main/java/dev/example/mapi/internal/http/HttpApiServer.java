@@ -188,8 +188,13 @@ public final class HttpApiServer {
         streamHandler = new EventStreamHandler(runtime.eventBus());
         httpServer.setExecutor(workers);
         httpServer.start();
-        logger.info("MAPI HTTP API listening on http://127.0.0.1:{} (loopback only, bearer token required)",
-                config.httpPort());
+        if (config.authRequired()) {
+            logger.info("MAPI HTTP API listening on http://127.0.0.1:{} (loopback only, bearer token required)",
+                    config.httpPort());
+        } else {
+            logger.warn("MAPI HTTP API listening on http://127.0.0.1:{} (loopback only, "
+                    + "AUTHENTICATION DISABLED - blank http.token)", config.httpPort());
+        }
         return true;
     }
 
@@ -246,7 +251,8 @@ public final class HttpApiServer {
                 error(exchange, ProblemCode.RATE_LIMITED, "Too many requests; slow down");
                 return;
             }
-            if (!authorized(exchange.getRequestHeaders().getFirst("Authorization"))) {
+            if (config.authRequired()
+                    && !authorized(exchange.getRequestHeaders().getFirst("Authorization"))) {
                 exchange.getResponseHeaders().set("WWW-Authenticate", "Bearer realm=\"mapi\"");
                 error(exchange, ProblemCode.UNAUTHORIZED, "Missing or invalid bearer token");
                 return;
@@ -326,7 +332,7 @@ public final class HttpApiServer {
             return;
         }
         String authorization = exchange.getRequestHeaders().getFirst("Authorization");
-        if (!authorized(authorization)) {
+        if (config.authRequired() && !authorized(authorization)) {
             exchange.getResponseHeaders().set("WWW-Authenticate", "Bearer realm=\"mapi\"");
             error(exchange, ProblemCode.UNAUTHORIZED, "Missing or invalid bearer token");
             return;

@@ -1,7 +1,7 @@
 {
   "http.enabled": false,
   "http.port": 25586,
-  "http.token": "",
+  "http.token": "auto-generated-at-first-run",
   "http.rateLimitPerMinute": 60,
   "http.scopes": [],
   "client.connect.allowlist": [],

@@ -73,9 +73,8 @@ class MapiJsonConfigFileTest {
         MapiJsonConfigFile.load(configDir, Map.of(), LOG);
         Path file = configDir.resolve(MapiJsonConfigFile.JSON_FILE_NAME);
         Files.writeString(file, "{\"http.enabled\":true}");
-        // Enabled without a token: refused by fromValues validation.
-        assertThrows(MapiConfigException.class,
-                () -> MapiJsonConfigFile.load(configDir, Map.of(), LOG));
+        // Enabled with no token key: auth explicitly off, still starts.
+        assertTrue(MapiJsonConfigFile.load(configDir, Map.of(), LOG).httpEnabled());
         Files.writeString(file, "{\"http.port\":70000}");
         assertThrows(MapiConfigException.class,
                 () -> MapiJsonConfigFile.load(configDir, Map.of(), LOG));

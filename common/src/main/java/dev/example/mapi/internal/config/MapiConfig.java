@@ -160,11 +160,15 @@ public record MapiConfig(
         }
         if (enabled) {
             if (token == null || token.isBlank()) {
-                throw new MapiConfigException("MAPI HTTP API is enabled but no bearer token is configured. "
-                        + "Set the MAPI_HTTP_TOKEN environment variable (preferred) or http.token in the "
-                        + "loader-native config file. The HTTP API refuses to start without one.");
-            }
-            if (token.trim().length() < MIN_TOKEN_LENGTH) {
+                // Explicit operator choice: a blank token disables
+                // authentication entirely (dangerous - every local process
+                // gains full control, including administrative operations).
+                // First-run installs never hit this path: generated configs
+                // ship with a generated token.
+                logger.warn("MAPI: HTTP authentication is DISABLED (blank http.token). "
+                        + "Every local process can call all operations, including administrative ones. "
+                        + "Set a token or MAPI_HTTP_TOKEN to re-enable authentication.");
+            } else if (token.trim().length() < MIN_TOKEN_LENGTH) {
                 throw new MapiConfigException("MAPI HTTP API bearer token is shorter than " + MIN_TOKEN_LENGTH
                         + " characters. Generate a long random token, for example: "
                         + "python3 -c \"import secrets; print(secrets.token_urlsafe(32))\"");
@@ -172,6 +176,15 @@ public record MapiConfig(
         }
         return new MapiConfig(enabled, port, token == null ? null : token.trim(), rateLimit, scopes,
                 allowlist, lanEnabled);
+    }
+
+    /**
+     * @return true when every request must present the configured bearer
+     *     token; false when authentication is explicitly disabled via a
+     *     blank token (enabled instances only)
+     */
+    public boolean authRequired() {
+        return httpToken != null && !httpToken.isBlank();
     }
 
     private static int parseIntStrict(String raw, String name) {

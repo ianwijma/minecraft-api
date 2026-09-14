@@ -42,7 +42,7 @@ public final class MapiJsonConfigFile {
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("http.enabled", Boolean.FALSE);
         values.put("http.port", MapiConfig.DEFAULT_PORT);
-        values.put("http.token", "");
+        values.put("http.token", MapiTokens.generate());
         values.put("http.rateLimitPerMinute", MapiConfig.DEFAULT_RATE_LIMIT);
         values.put("http.scopes", new ArrayList<String>());
         values.put("client.connect.allowlist", new ArrayList<String>());

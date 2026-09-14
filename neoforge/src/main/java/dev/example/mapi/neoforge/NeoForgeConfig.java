@@ -2,6 +2,7 @@ package dev.example.mapi.neoforge;
 
 import dev.example.mapi.internal.config.MapiConfig;
 import dev.example.mapi.internal.config.MapiConfigException;
+import dev.example.mapi.internal.config.MapiTokens;
 import java.util.Arrays;
 import java.util.List;
 import net.neoforged.neoforge.common.ModConfigSpec;
@@ -24,10 +25,17 @@ public final class NeoForgeConfig {
             .comment("Loopback port to bind (fixed to 127.0.0.1, not configurable)")
             .defineInRange("http.port", MapiConfig.DEFAULT_PORT, 1, 65535);
 
+    // Generated once per config: the first-run TOML ships with a real token
+    // (write it down from the file; secrets are never logged). Explicitly
+    // blanking the value in the file DISABLES authentication.
+    private static final String GENERATED_TOKEN = MapiTokens.generate();
+
     private static final ModConfigSpec.ConfigValue<String> HTTP_TOKEN = BUILDER
-            .comment("Bearer token (>= 16 chars; prefer the MAPI_HTTP_TOKEN env var). "
-                    + "Generate: python3 -c \"import secrets; print(secrets.token_urlsafe(32))\"")
-            .define("http.token", "");
+            .comment("Bearer token (auto-generated on first run; prefer the "
+                    + "MAPI_HTTP_TOKEN env var). WARNING: setting this to an empty "
+                    + "string DISABLES authentication - every local process gains "
+                    + "full control including administrative operations.")
+            .define("http.token", GENERATED_TOKEN);
 
     private static final ModConfigSpec.IntValue HTTP_RATE_LIMIT = BUILDER
             .comment("Requests per client per minute")
