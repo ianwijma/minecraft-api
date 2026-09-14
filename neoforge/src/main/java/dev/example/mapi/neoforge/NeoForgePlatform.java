@@ -100,6 +100,12 @@ final class NeoForgePlatform implements MapiPlatform {
     }
 
     @Override
+    public boolean defersHttpToConfigEvent() {
+        // FML-managed mapi-common.toml: HTTP binds on ModConfigEvent.
+        return true;
+    }
+
+    @Override
     public Logger logger() {
         return LOG;
     }

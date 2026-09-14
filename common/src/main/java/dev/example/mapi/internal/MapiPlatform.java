@@ -65,4 +65,15 @@ public interface MapiPlatform {
      * @param listener the listener, never {@code null}
      */
     void registerServerLifecycle(ServerLifecycleListener listener);
+
+    /**
+     * Whether HTTP startup should wait for a loader-managed config event
+     * (NeoForge) instead of binding immediately from the TOML file
+     * (Fabric/tests). Default: {@code false}.
+     *
+     * @return true when {@link #configDir()} config is loader-managed
+     */
+    default boolean defersHttpToConfigEvent() {
+        return false;
+    }
 }

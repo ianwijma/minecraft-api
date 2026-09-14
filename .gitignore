@@ -44,7 +44,8 @@ worlds/
 .env.*
 *token*
 **/mapi.properties
-!docs/examples/mapi.properties.example
+**/mapi.toml
+!docs/examples/mapi.toml.example
 
 # OS junk
 .DS_Store

@@ -81,6 +81,21 @@ across the Phase 0–5 delivery slices (see `docs/roadmap.md`).
   capability tiers; the current phase still excludes command *mutation*
   beyond console execution, world mutation, chat, and source editing.
 
+### Changed (2026-09-14, later in the day)
+
+- **Breaking config change**: the configuration file is now **TOML** and is
+  **generated automatically on first start** (no manual setup needed to
+  configure connect + auth):
+  - NeoForge: loader-managed `mapi-common.toml` from a registered
+    `ModConfigSpec` (keys identical to the shared table; the HTTP listener
+    binds on `ModConfigEvent.Loading` and rebinds on `Reloading`).
+  - Fabric: `<configDir>/mapi.toml` created at process init with defaults and
+    comments (TOML is the de-facto standard on Fabric, which ships no config
+    system).
+  - Legacy `mapi.properties` is still read when present (migration), but is
+    never fabricated. `mapi.properties.example` replaced by
+    `docs/examples/mapi.toml.example`.
+
 ### Verified (2026-09-14)
 
 The operator accepted the EULA and the game-run checks were executed:

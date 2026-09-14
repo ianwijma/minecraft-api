@@ -123,7 +123,8 @@ The HTTP API is **off by default**. To enable it for a session:
 
 ```bash
 export MAPI_HTTP_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-# In the instance's config dir (<runDir>/config/mapi.properties):
+# In the instance's TOML config (generated at first start:
+#   <runDir>/config/mapi.toml on Fabric, mapi-common.toml on NeoForge):
 #   http.enabled=true
 #   http.token=<the same long token>   (env var is preferred; a token file
 #                                       at <runDir>/mcapi/token is generated

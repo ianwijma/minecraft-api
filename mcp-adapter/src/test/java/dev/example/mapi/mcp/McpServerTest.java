@@ -40,7 +40,7 @@ class McpServerTest {
             port = socket.getLocalPort();
         }
         Files.writeString(gameDir.resolve("config").resolve(MapiConfig.CONFIG_FILE_NAME),
-                "http.enabled=true\nhttp.port=" + port + "\n");
+                "[http]\nenabled = true\nport = " + port + "\n");
         Files.createDirectories(gameDir.resolve("mcapi"));
         Files.writeString(gameDir.resolve("mcapi").resolve("token"), TOKEN + "\n");
         TestPlatform platform = new TestPlatform(LOG) {

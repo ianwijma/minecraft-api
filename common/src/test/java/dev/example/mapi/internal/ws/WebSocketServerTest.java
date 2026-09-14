@@ -54,9 +54,9 @@ class WebSocketServerTest {
         try (var socket = new java.net.ServerSocket(0)) {
             port = socket.getLocalPort();
         }
-        StringBuilder config = new StringBuilder("http.enabled=true\nhttp.port=" + port
-                + "\nhttp.token=" + TOKEN + "\n");
-        extraConfig.forEach((k, v) -> config.append(k).append('=').append(v).append('\n'));
+        StringBuilder config = new StringBuilder("[http]\nenabled = true\nport = " + port
+                + "\ntoken = \"" + TOKEN + "\"\n");
+        extraConfig.forEach((k, v) -> config.append(v).append('\n'));
         Files.writeString(instanceDir.resolve("config").resolve(MapiConfig.CONFIG_FILE_NAME), config.toString());
         platform = new TestPlatform(LOG) {
             @Override

@@ -23,6 +23,16 @@ The operator accepted the EULA and a live Fabric dev client drove the
 | Key-hold movement (§6.3) | player moved ~12.5 blocks on z from API-driven key-hold (first attempt "failed" because the spawn point was inside tree leaves — real collision physics) |
 | **Lease expiry releases held keys** (§5.3) against the live game | pressed forward + 1s lease → after expiry, idle drift over 2s = 0.0 blocks: key truly released |
 
+## Config generation verified (EXECUTED 2026-09-14)
+
+- NeoForge server: FML generated `config/mapi-common.toml` from the
+  registered `ModConfigSpec` (comments + ranges, exactly like other mods);
+  no stray MAPI TOML is fabricated. HTTP binds on the config load event and
+  rebinds on reload.
+- Fabric client: MAPI generated `config/mapi.toml` at process init with
+  defaults and comments (safely `enabled = false`); env override from the
+  Gradle API task still binds the listener.
+
 ## Dedicated-server verification (EXECUTED 2026-09-14)
 
 The operator accepted the EULA (`MAPI_ACCEPT_EULA=true`) and the following

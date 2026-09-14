@@ -167,6 +167,23 @@ public final class HttpApiServer {
     }
 
     /**
+     * @param other configuration to compare against
+     * @return true when this server was started with a configuration whose
+     *         binding-relevant values match (enabled, port, token, scopes,
+     *         rate limit, switches); used to skip rebinding on config reload
+     */
+    public boolean matches(MapiConfig other) {
+        return config.httpEnabled() == other.httpEnabled()
+                && config.httpPort() == other.httpPort()
+                && java.util.Objects.equals(config.httpToken(), other.httpToken())
+                && config.rateLimitPerMinute() == other.rateLimitPerMinute()
+                && config.scopes().equals(other.scopes())
+                && config.commandPermissionLevel() == other.commandPermissionLevel()
+                && config.reflectionEnabled() == other.reflectionEnabled()
+                && config.filesEnabled() == other.filesEnabled();
+    }
+
+    /**
      * Stops the listener and its worker threads. Safe to call more than once.
      */
     public void stop() {

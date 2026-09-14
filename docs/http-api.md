@@ -24,9 +24,19 @@ Machine-readable description: [`openapi.yaml`](openapi.yaml).
 
 ## Configuration
 
-Config file: `<configDir>/mapi.properties` (per instance; in dev runs that is
-`<runDir>/config/mapi.properties`). Environment variables override the file.
-See `docs/examples/mapi.properties.example`.
+The config file is **generated automatically on first start** — never
+created manually — in the loader-native format:
+
+- **NeoForge**: FML manages `mapi-common.toml` from the registered
+  `ModConfigSpec` (standard NeoForge mod config; comments included; the HTTP
+  listener binds on the config load/reload events).
+- **Fabric** (no loader-blessed config system; TOML is the community
+  standard): MAPI creates `<configDir>/mapi.toml` with defaults and comments
+  at process init when it is missing. A legacy `mapi.properties` is still
+  read once (keys identical) for migration but never fabricated.
+
+Keys are identical on both loaders. Environment variables override file
+values.
 
 | File key | Env var | Default | Meaning |
 | --- | --- | --- | --- |
@@ -46,7 +56,7 @@ See `docs/examples/mapi.properties.example`.
 When the API is enabled, the token is resolved in this order:
 
 1. `MAPI_HTTP_TOKEN` environment variable,
-2. `http.token` in `mapi.properties`,
+2. `http.token` in the config file (`mapi.toml` / `mapi-common.toml`),
 3. the token file (`http.tokenFile`, default `<gameDir>/mcapi/token`).
 
 If the token file does not exist, MAPI generates a 256-bit random token and
@@ -163,7 +173,7 @@ wait → **503**:
 
 Sandboxed file surface (spec §4.5/§6.1): confined to the instance game
 directory, symlink-escaped paths rejected, no-follow writes, and a denylist
-protecting `mcapi/token`, `config/mapi.properties`, `eula.txt`,
+protecting `mcapi/token`, `config/mapi.properties` (legacy), `config/mapi.toml` when it contains a token, `eula.txt`,
 `server.properties`, `ops.json`, whitelist/ban caches, and `logs/`. Requires
 the `files.read` scope for reads and `files.write` for writes, **plus** the
 `files.enabled` switch (default false) — otherwise **403** `DISABLED`.

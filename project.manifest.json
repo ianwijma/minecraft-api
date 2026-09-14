@@ -6,7 +6,10 @@
   "language": "java",
   "version": "0.1.0",
   "minecraftTarget": "26.2",
-  "loaders": ["fabric", "neoforge"],
+  "loaders": [
+    "fabric",
+    "neoforge"
+  ],
   "packageGroup": "dev.example.mapi",
   "modules": [
     {
@@ -43,13 +46,23 @@
       "path": "fabric",
       "kind": "loader-adapter",
       "description": "Fabric entrypoint, platform adapter, fabric.mod.json, dev runs.",
-      "runTasks": [":fabric:runClient", ":fabric:runServer", ":fabric:runClientApi", ":fabric:runServerApi"]
+      "runTasks": [
+        ":fabric:runClient",
+        ":fabric:runServer",
+        ":fabric:runClientApi",
+        ":fabric:runServerApi"
+      ]
     },
     {
       "path": "neoforge",
       "kind": "loader-adapter",
       "description": "NeoForge entrypoint, platform adapter, mods.toml template, dev runs.",
-      "runTasks": [":neoforge:runClient", ":neoforge:runServer", ":neoforge:runClientApi", ":neoforge:runServerApi"]
+      "runTasks": [
+        ":neoforge:runClient",
+        ":neoforge:runServer",
+        ":neoforge:runClientApi",
+        ":neoforge:runServerApi"
+      ]
     },
     {
       "path": "example-consumer",
@@ -61,25 +74,82 @@
     "entrypoint": "AGENTS.md",
     "index": "docs/README.md",
     "files": [
-      { "path": "SUPPORT.md", "topic": "supported versions and version policy" },
-      { "path": "docs/toolchain.md", "topic": "verified versions and sources" },
-      { "path": "docs/architecture.md", "topic": "modules and boundaries" },
-      { "path": "docs/development.md", "topic": "build, run, test commands" },
-      { "path": "docs/api.md", "topic": "public Java API contract" },
-      { "path": "docs/http-api.md", "topic": "local HTTP endpoints and schemas" },
-      { "path": "docs/security.md", "topic": "HTTP security model" },
-      { "path": "docs/llm-workflow.md", "topic": "coding-agent workflow" },
-      { "path": "docs/troubleshooting.md", "topic": "known failure modes" },
-      { "path": "docs/roadmap.md", "topic": "target architecture review, reconciliation, and delivery plan" },
-      { "path": "docs/CAPABILITIES.md", "topic": "capability model: op, scope, tier, coverage" },
-      { "path": "docs/SEMANTICS.md", "topic": "completion levels, threading, preconditions, leases, time" },
-      { "path": "docs/EVENTS.md", "topic": "event catalog and gap/resume semantics" },
-      { "path": "docs/DATA.md", "topic": "typed NBT JSON, id conventions, error model" },
-      { "path": "docs/TESTING.md", "topic": "test inventory and NOT RUN status" },
-      { "path": "docs/RECIPES.md", "topic": "task-oriented usage recipes" },
-      { "path": "docs/openapi.yaml", "topic": "OpenAPI description of the HTTP API" },
-      { "path": "README.md", "topic": "human-facing overview and quick start" },
-      { "path": "CONTRIBUTING.md", "topic": "contribution rules" }
+      {
+        "path": "SUPPORT.md",
+        "topic": "supported versions and version policy"
+      },
+      {
+        "path": "docs/toolchain.md",
+        "topic": "verified versions and sources"
+      },
+      {
+        "path": "docs/architecture.md",
+        "topic": "modules and boundaries"
+      },
+      {
+        "path": "docs/development.md",
+        "topic": "build, run, test commands"
+      },
+      {
+        "path": "docs/api.md",
+        "topic": "public Java API contract"
+      },
+      {
+        "path": "docs/http-api.md",
+        "topic": "local HTTP endpoints and schemas"
+      },
+      {
+        "path": "docs/security.md",
+        "topic": "HTTP security model"
+      },
+      {
+        "path": "docs/llm-workflow.md",
+        "topic": "coding-agent workflow"
+      },
+      {
+        "path": "docs/troubleshooting.md",
+        "topic": "known failure modes"
+      },
+      {
+        "path": "docs/roadmap.md",
+        "topic": "target architecture review, reconciliation, and delivery plan"
+      },
+      {
+        "path": "docs/CAPABILITIES.md",
+        "topic": "capability model: op, scope, tier, coverage"
+      },
+      {
+        "path": "docs/SEMANTICS.md",
+        "topic": "completion levels, threading, preconditions, leases, time"
+      },
+      {
+        "path": "docs/EVENTS.md",
+        "topic": "event catalog and gap/resume semantics"
+      },
+      {
+        "path": "docs/DATA.md",
+        "topic": "typed NBT JSON, id conventions, error model"
+      },
+      {
+        "path": "docs/TESTING.md",
+        "topic": "test inventory and NOT RUN status"
+      },
+      {
+        "path": "docs/RECIPES.md",
+        "topic": "task-oriented usage recipes"
+      },
+      {
+        "path": "docs/openapi.yaml",
+        "topic": "OpenAPI description of the HTTP API"
+      },
+      {
+        "path": "README.md",
+        "topic": "human-facing overview and quick start"
+      },
+      {
+        "path": "CONTRIBUTING.md",
+        "topic": "contribution rules"
+      }
     ]
   },
   "commands": {
@@ -112,6 +182,12 @@
     "llmContext": "build/llm/CONTEXT.md"
   },
   "secrets": {
-    "neverCommit": ["MAPI_HTTP_TOKEN", "http.token", "eula.txt", "run directories"]
+    "neverCommit": [
+      "MAPI_HTTP_TOKEN",
+      "http.token",
+      "eula.txt",
+      "run directories",
+      "mapi.toml with tokens"
+    ]
   }
 }

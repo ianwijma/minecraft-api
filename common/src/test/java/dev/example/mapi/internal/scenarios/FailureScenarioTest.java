@@ -71,7 +71,7 @@ class FailureScenarioTest {
             freePort = socket.getLocalPort();
         }
         Files.writeString(instanceDir.resolve("config").resolve(MapiConfig.CONFIG_FILE_NAME),
-                "http.enabled=true\nhttp.port=" + freePort + "\nhttp.token=" + TOKEN + "\n");
+                "[http]\nenabled = true\nport = " + freePort + "\ntoken = \"" + TOKEN + "\"\n");
         platform = new TestPlatform(LOG) {
             @Override
             public Path configDir() {

@@ -31,8 +31,9 @@ compiler, and game runs all use it).
 | `./gradlew :neoforge:runClient` | `neoforge/run/client` |
 | `./gradlew :neoforge:runServer` | `neoforge/run/server` |
 
-Each run directory gets its own `config/` — that is where `mapi.properties`
-lives (see `docs/examples/mapi.properties.example`). The server run directory
+Each run directory gets its own `config/` — the TOML config is generated there
+on first start (Fabric: `mapi.toml`; NeoForge: FML-managed `mapi-common.toml`;
+see `docs/examples/mapi.toml.example`). The server run directory
 can be overridden with `-PmapiServerRunDir=<path>` (used by the smoke script).
 
 **These dev runs do not require the Minecraft EULA** for a plain client, but

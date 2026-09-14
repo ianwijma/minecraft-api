@@ -114,7 +114,7 @@ thread is never blocked by network work.
 ## Secrets handling in this repository
 
 - Tokens come from `MAPI_HTTP_TOKEN` (preferred), `http.token` in
-  `mapi.properties`, or the token file `<gameDir>/mcapi/token` (auto-written
+  the TOML config (`mapi.toml` / loader-managed `mapi-common.toml`), or the token file `<gameDir>/mcapi/token` (auto-written
   when enabled and absent); all are gitignored patterns. `docs/examples/`
   contains placeholder-only examples.
 - Never log token values (the code logs lengths/enablement only); never

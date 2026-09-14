@@ -1395,7 +1395,7 @@ class HttpApiServerTest {
         int port = freePort();
         Files.createDirectories(instanceDir.resolve("config"));
         Files.writeString(instanceDir.resolve("config").resolve(MapiConfig.CONFIG_FILE_NAME),
-                "http.enabled=true\nhttp.port=" + port + "\nhttp.token=token-from-config-0123456789\n");
+                "[http]\nenabled = true\nport = " + port + "\ntoken = \"token-from-config-0123456789\"\n");
 
         TestPlatform platform = new TestPlatform(LOG) {
             @Override
@@ -1447,8 +1447,8 @@ class HttpApiServerTest {
             int primary = blocker.getLocalPort();
             Files.createDirectories(instanceDir.resolve("config"));
             Files.writeString(instanceDir.resolve("config").resolve(MapiConfig.CONFIG_FILE_NAME),
-                    "http.enabled=true\nhttp.port=" + primary + "\nhttp.portFallback=2\n"
-                            + "http.token=token-from-config-0123456789\n");
+                    "[http]\nenabled = true\nport = " + primary + "\nportFallback = 2\n"
+                            + "token = \"token-from-config-0123456789\"\n");
 
             TestPlatform platform = new TestPlatform(LOG) {
                 @Override
@@ -1489,8 +1489,8 @@ class HttpApiServerTest {
         try (var blocker = new java.net.ServerSocket(primary)) {
             Files.createDirectories(instanceDir.resolve("config"));
             Files.writeString(instanceDir.resolve("config").resolve(MapiConfig.CONFIG_FILE_NAME),
-                    "http.enabled=true\nhttp.port=" + primary + "\nhttp.failFast=true\n"
-                            + "http.token=token-from-config-0123456789\n");
+                    "[http]\nenabled = true\nport = " + primary + "\nfailFast = true\n"
+                            + "token = \"token-from-config-0123456789\"\n");
             TestPlatform platform = new TestPlatform(LOG) {
                 @Override
                 public Path configDir() {

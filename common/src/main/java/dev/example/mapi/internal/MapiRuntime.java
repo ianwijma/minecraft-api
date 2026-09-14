@@ -469,6 +469,12 @@ public final class MapiRuntime implements Mapi {
     // ------------------------------------------------------------------
 
     private void startHttp() {
+        if (platform.defersHttpToConfigEvent()) {
+            // Loader-native config (NeoForge): HTTP starts on the config
+            // load event, see startHttpWith.
+            platform.logger().debug("MAPI: HTTP start deferred to loader config event");
+            return;
+        }
         MapiConfig config;
         try {
             config = MapiConfig.load(platform.configDir(), platform.gameDir(), System.getenv(),
@@ -477,11 +483,32 @@ public final class MapiRuntime implements Mapi {
             platform.logger().error("MAPI: HTTP API not started: {}", e.getMessage());
             return;
         }
+        startHttpWith(config);
+    }
+
+    /**
+     * Binds (or rebinds) the process-scoped HTTP service with a concrete
+     * configuration. Used by loader-native config flows (NeoForge
+     * {@code ModConfigEvent}) and by the file-based path. Safe to call again
+     * on reload: a no-op when nothing relevant changed, otherwise the
+     * listener is rebound.
+     *
+     * @param config validated configuration, never {@code null}
+     */
+    public synchronized void startHttpWith(MapiConfig config) {
+        Objects.requireNonNull(config, "config");
         if (!config.httpEnabled()) {
-            platform.logger().info("MAPI: local HTTP API is disabled (enable with http.enabled=true in "
-                    + "{}/mapi.properties)", platform.configDir());
+            if (httpServer != null) {
+                platform.logger().info("MAPI: HTTP API disabled by config; stopping listener");
+                shutdownListenerOnly();
+            }
             return;
         }
+        HttpApiServer existing = httpServer;
+        if (existing != null && existing.matches(config)) {
+            return;
+        }
+        shutdownListenerOnly();
         HttpApiServer httpServer = new HttpApiServer(config, this, platform.logger());
         if (!httpServer.start()) {
             if (config.failFast()) {
@@ -498,6 +525,19 @@ public final class MapiRuntime implements Mapi {
         eventLog.publish("api.started", "api-originated", Map.of(
                 "port", httpBoundPort(),
                 "eventsPort", wsBoundPort()));
+    }
+
+    private void shutdownListenerOnly() {
+        HttpApiServer existing = httpServer;
+        if (existing == null) {
+            return;
+        }
+        eventLog.publish("api.stopped", "api-originated", Map.of());
+        wsServer.stop();
+        deleteDiscoveryFile();
+        existing.stop();
+        this.httpServer = null;
+        this.activeConfig = null;
     }
 
     private void startEvents() {
