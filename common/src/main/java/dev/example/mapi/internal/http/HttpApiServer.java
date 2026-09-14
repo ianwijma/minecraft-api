@@ -92,6 +92,7 @@ public final class HttpApiServer {
         this.rateLimiter = new RateLimiter(config.rateLimitPerMinute());
         this.scopeGrants = config::grantedScopes;
         registerOperations();
+        initRoutes();
     }
 
     private void registerOperations() {
@@ -139,6 +140,16 @@ public final class HttpApiServer {
     /** @return the operation metadata registry (for introspection endpoints/tests) */
     public OperationRegistry operations() {
         return operations;
+    }
+
+    /** @return every GET route path (introspection for the OpenAPI drift test) */
+    public java.util.Set<String> getRoutePaths() {
+        return java.util.Set.copyOf(getRoutes.keySet());
+    }
+
+    /** @return every POST route path (introspection for the OpenAPI drift test) */
+    public java.util.Set<String> postRoutePaths() {
+        return java.util.Set.copyOf(postRoutes.keySet());
     }
 
     /**
@@ -355,61 +366,86 @@ public final class HttpApiServer {
         }
     }
 
+    /** A GET handler: receives the exchange (query params parsed per handler). */
+    private interface GetHandler {
+        void handle(HttpExchange exchange) throws IOException;
+    }
+
+    /** A POST handler: receives the exchange, parsed JSON body, and grants. */
+    private interface PostHandler {
+        void handle(HttpExchange exchange, Map<String, Object> body,
+                java.util.Set<Scope> grants) throws IOException;
+    }
+
+    private final Map<String, GetHandler> getRoutes = new LinkedHashMap<>();
+    private final Map<String, PostHandler> postRoutes = new LinkedHashMap<>();
+
+    private void initRoutes() {
+        getRoutes.put(API_PREFIX + "health", exchange -> respond(exchange, 200, JsonWriter.write(health())));
+        getRoutes.put(API_PREFIX + "info", exchange -> respond(exchange, 200, JsonWriter.write(info())));
+        getRoutes.put(API_PREFIX + "operations", exchange -> respond(exchange, 200, JsonWriter.write(operations.toMap())));
+        getRoutes.put(API_PREFIX + "server/status", this::sendServerStatus);
+        getRoutes.put(API_PREFIX + "server/world", this::sendWorldInfo);
+        getRoutes.put(API_PREFIX + "client", this::sendClientInfo);
+        getRoutes.put(API_PREFIX + "client/window", this::sendWindowInfo);
+        getRoutes.put(API_PREFIX + "client/screenshots", this::sendScreenshot);
+        getRoutes.put(API_PREFIX + "logs", this::sendLogs);
+        getRoutes.put(API_PREFIX + "server/ticks", this::sendTickState);
+        getRoutes.put(API_PREFIX + "server/queries/players", this::sendPlayerQuery);
+        getRoutes.put(API_PREFIX + "server/queries/entities", this::sendEntityQuery);
+        getRoutes.put(API_PREFIX + "server/queries/block", this::sendBlockQuery);
+        getRoutes.put(API_PREFIX + "server/queries/registries", this::sendRegistryList);
+        getRoutes.put(API_PREFIX + "server/queries/registry", this::sendRegistryEntries);
+        getRoutes.put(API_PREFIX + "events/stream", this::streamMiddleware);
+
+        postRoutes.put(API_PREFIX + "server/ticks/lease", this::handleTickLease);
+        postRoutes.put(API_PREFIX + "server/ticks/freeze", this::handleFreeze);
+        postRoutes.put(API_PREFIX + "server/ticks/unfreeze", this::handleUnfreeze);
+        postRoutes.put(API_PREFIX + "server/ticks/rate", this::handleTickRate);
+        postRoutes.put(API_PREFIX + "server/ticks/step",
+                (exchange, body, grants) -> handleTickStep(exchange, body, grants, false));
+        postRoutes.put(API_PREFIX + "server/ticks/step-and-observe",
+                (exchange, body, grants) -> handleTickStep(exchange, body, grants, true));
+        postRoutes.put(API_PREFIX + "server/ticks/sprint", this::handleTickSprint);
+        postRoutes.put(API_PREFIX + "server/ticks/stop", this::handleTickStop);
+        postRoutes.put(API_PREFIX + "server/snapshots", this::handleSnapshotCapture);
+        postRoutes.put(API_PREFIX + "server/snapshot-diffs", this::handleSnapshotDiff);
+        postRoutes.put(API_PREFIX + "server/commands", this::handleCommand);
+        postRoutes.put(API_PREFIX + "client/actions/hold-key", this::handleHoldKey);
+        postRoutes.put(API_PREFIX + "client/window/set-windowed",
+                (exchange, body, grants) -> handleWindowSet(exchange, body, grants, "windowed"));
+        postRoutes.put(API_PREFIX + "client/window/set-fullscreen",
+                (exchange, body, grants) -> handleWindowSet(exchange, body, grants, "fullscreen"));
+        postRoutes.put(API_PREFIX + "client/window/set-gui-scale",
+                (exchange, body, grants) -> handleWindowSet(exchange, body, grants, "gui-scale"));
+        postRoutes.put(API_PREFIX + "process/shutdown", this::handleShutdown);
+    }
+
     private void routeGet(HttpExchange exchange, String token, String path) throws IOException {
-        switch (path) {
-            case API_PREFIX + "health" -> respond(exchange, 200, JsonWriter.write(health()));
-            case API_PREFIX + "info" -> respond(exchange, 200, JsonWriter.write(info()));
-            case API_PREFIX + "operations" -> respond(exchange, 200, JsonWriter.write(operations.toMap()));
-            case API_PREFIX + "server/status" -> sendServerStatus(exchange);
-            case API_PREFIX + "server/world" -> sendWorldInfo(exchange);
-            case API_PREFIX + "client" -> sendClientInfo(exchange);
-            case API_PREFIX + "client/window" -> sendWindowInfo(exchange);
-            case API_PREFIX + "client/screenshots" -> sendScreenshot(exchange);
-            case API_PREFIX + "logs" -> sendLogs(exchange);
-            case API_PREFIX + "server/ticks" -> sendTickState(exchange);
-            case API_PREFIX + "server/queries/players" -> sendPlayerQuery(exchange);
-            case API_PREFIX + "server/queries/entities" -> sendEntityQuery(exchange);
-            case API_PREFIX + "server/queries/block" -> sendBlockQuery(exchange);
-            case API_PREFIX + "server/queries/registries" -> sendRegistryList(exchange);
-            case API_PREFIX + "server/queries/registry" -> sendRegistryEntries(exchange);
-            case API_PREFIX + "events/stream" -> streamMiddleware(exchange);
-            default -> {
-                if (path.startsWith(API_PREFIX + "jobs/")) {
-                    sendJobView(exchange, path.substring((API_PREFIX + "jobs/").length()));
-                } else {
-                    error(exchange, ProblemCode.NOT_FOUND, "Unknown endpoint: " + path);
-                }
-            }
+        GetHandler handler = getRoutes.get(path);
+        if (handler != null) {
+            handler.handle(exchange);
+            return;
         }
+        if (path.startsWith(API_PREFIX + "jobs/")) {
+            sendJobView(exchange, path.substring((API_PREFIX + "jobs/").length()));
+            return;
+        }
+        error(exchange, ProblemCode.NOT_FOUND, "Unknown endpoint: " + path);
     }
 
     private void routePost(HttpExchange exchange, String token, String path) throws IOException {
+        PostHandler handler = postRoutes.get(path);
+        if (handler == null) {
+            exchange.getResponseHeaders().set("Allow", "GET");
+            error(exchange, ProblemCode.METHOD_NOT_ALLOWED,
+                    "This endpoint only supports GET");
+            return;
+        }
         Map<String, Object> body = readJsonObject(exchange, path);
         java.util.Set<Scope> grants = scopeGrants.scopesForToken(
                 bearerToken(exchange.getRequestHeaders().getFirst("Authorization")));
-        switch (path) {
-            case API_PREFIX + "server/ticks/lease" -> handleTickLease(exchange, body, grants);
-            case API_PREFIX + "server/ticks/freeze" -> handleFreeze(exchange, body, grants);
-            case API_PREFIX + "server/ticks/unfreeze" -> handleUnfreeze(exchange, body, grants);
-            case API_PREFIX + "server/ticks/rate" -> handleTickRate(exchange, body, grants);
-            case API_PREFIX + "server/ticks/step" -> handleTickStep(exchange, body, grants, false);
-            case API_PREFIX + "server/ticks/step-and-observe" -> handleTickStep(exchange, body, grants, true);
-            case API_PREFIX + "server/ticks/sprint" -> handleTickSprint(exchange, body, grants);
-            case API_PREFIX + "server/ticks/stop" -> handleTickStop(exchange, body, grants);
-            case API_PREFIX + "server/snapshots" -> handleSnapshotCapture(exchange, body, grants);
-            case API_PREFIX + "server/snapshot-diffs" -> handleSnapshotDiff(exchange, body, grants);
-            case API_PREFIX + "server/commands" -> handleCommand(exchange, body, grants);
-            case API_PREFIX + "client/actions/hold-key" -> handleHoldKey(exchange, body, grants);
-            case API_PREFIX + "client/window/set-windowed" -> handleWindowSet(exchange, body, grants, "windowed");
-            case API_PREFIX + "client/window/set-fullscreen" -> handleWindowSet(exchange, body, grants, "fullscreen");
-            case API_PREFIX + "client/window/set-gui-scale" -> handleWindowSet(exchange, body, grants, "gui-scale");
-            case API_PREFIX + "process/shutdown" -> handleShutdown(exchange, body, grants);
-            default -> {
-                exchange.getResponseHeaders().set("Allow", "GET");
-                error(exchange, ProblemCode.METHOD_NOT_ALLOWED,
-                        "This endpoint only supports GET");
-            }
-        }
+        handler.handle(exchange, body, grants);
     }
 
     // ------------------------------------------------------------------

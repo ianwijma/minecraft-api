@@ -448,6 +448,73 @@ paths:
               schema: { $ref: "#/components/schemas/ErrorResponse" }
         "503": { $ref: "#/components/responses/CapabilityUnavailable" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/window/set-windowed:
+    post:
+      operationId: setWindowed
+      summary: Set windowed dimensions (OS may adjust; effective values returned, spec §9.1)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [width, height]
+              properties:
+                width: { type: integer, minimum: 320, maximum: 3840 }
+                height: { type: integer, minimum: 240, maximum: 2160 }
+      responses:
+        "200":
+          description: Resulting window state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WindowStateResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/window/set-fullscreen:
+    post:
+      operationId: setFullscreen
+      summary: >
+        Request fullscreen on/off. 26.2 exposes no public setter on the
+        window: the actual state is returned and the window revision bumps,
+        never assumed (spec §9.1 honesty rule).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [fullscreen]
+              properties:
+                fullscreen: { type: boolean }
+      responses:
+        "200":
+          description: Resulting window state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WindowStateResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/window/set-gui-scale:
+    post:
+      operationId: setGuiScale
+      summary: Set GUI scale (0 = auto, 1..4)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [guiScale]
+              properties:
+                guiScale: { type: integer, minimum: 0, maximum: 4 }
+      responses:
+        "200":
+          description: Resulting window state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WindowStateResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/logs:
     get:
       operationId: readLogs
