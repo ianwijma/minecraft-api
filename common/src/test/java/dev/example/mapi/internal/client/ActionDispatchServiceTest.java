@@ -92,6 +92,11 @@ class ActionDispatchServiceTest {
         public java.util.Optional<double[]> playerPosition() {
             return java.util.Optional.of(new double[] {1.0, 64.0, 2.0});
         }
+
+        @Override
+        public java.util.Optional<double[]> cameraOrientation() {
+            return java.util.Optional.of(new double[] {90.0, 0.0});
+        }
     }
 
     /** Bridge that runs tasks inline (single-threaded test). */

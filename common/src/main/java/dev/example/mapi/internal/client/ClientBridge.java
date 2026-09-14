@@ -117,21 +117,35 @@ public interface ClientBridge {
 
         /**
          * Dispatches a character input (separate from key presses, spec
-         * §3.5).
+         * §3.5). Unsupported by the keybinding-state backend (declared via
+         * coverage, spec §3.5).
          */
         void character(char c);
 
         /**
-         * Applies a raw mouse delta through the normal camera input path
-         * (raw-input mode; sensitivity remains relevant).
+         * Dispatches a raw camera delta through the player input path
+         * (raw-input mode, spec §4.2). Deltas are final camera units — the
+         * game's own mouse handler applies its sensitivity curve before
+         * this same entry point, so the curve is NOT re-applied here. The
+         * resulting orientation is readable via {@link #cameraOrientation()}.
+         *
+         * @param yawDelta   yaw delta in camera units (degrees)
+         * @param pitchDelta pitch delta in camera units (degrees)
+         * @throws IllegalStateException when no player is present (main menu)
          */
-        void mouseDelta(double dx, double dy);
+        void mouseDelta(double yawDelta, double pitchDelta);
 
         /** @return the last frame boundary at which a delta was applied */
         long lastAppliedFrame();
 
         /** @return the current client-tick boundary counter (spec §4.1) */
         long clientTick();
+
+        /**
+         * @return {@code [yaw, pitch]} of the local player when in a world,
+         *     empty otherwise (receipt orientation readback, spec §4.2)
+         */
+        Optional<double[]> cameraOrientation();
 
         /**
          * Resolves the key code currently bound to a movement mapping (for

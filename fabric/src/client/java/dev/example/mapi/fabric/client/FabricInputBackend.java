@@ -74,9 +74,26 @@ final class FabricInputBackend implements ClientBridge.InputBackend {
 
     @Override
     public void mouseDelta(double dx, double dy) {
-        // Camera deltas through the normal mouse path land with the
-        // frame-boundary chunk; not advertised via coverage.
-        throw new UnsupportedOperationException("mouse deltas land with chunk 3.2");
+        net.minecraft.client.player.LocalPlayer player =
+                net.minecraft.client.Minecraft.getInstance().player;
+        if (player == null) {
+            throw new IllegalStateException("no player present (main menu)");
+        }
+        // Same entry point MouseHandler.turnPlayer ends with: sensitivity and
+        // invert options are applied by the game before this call, so deltas
+        // here are final camera units (spec §4.2: report, don't re-curve).
+        player.turn(dx, dy);
+        appliedFrame.incrementAndGet();
+    }
+
+    @Override
+    public java.util.Optional<double[]> cameraOrientation() {
+        net.minecraft.client.player.LocalPlayer player =
+                net.minecraft.client.Minecraft.getInstance().player;
+        if (player == null) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(new double[] {player.getYRot(), player.getXRot()});
     }
 
     @Override
