@@ -188,6 +188,40 @@ are documented as not implemented rather than stubbed. This is the final
 state achievable without an operator/CI environment that can launch
 Minecraft 26.2 and accept the EULA.
 
+## 6. Phase 4 — gap-closure slices (DONE 2026-09-13)
+
+Final pass auditing the spec's core-tier list against the implementation;
+everything still codeable and verifiable in a JVM-only environment:
+
+- **4.1 `/api/v1/capabilities`** (§5): per-op scope/tier/coverage table with
+  dynamic enabled/available/authorized per requesting token; documented in
+  `docs/CAPABILITIES.md`.
+- **4.2 Logs** (§6.1 core): `/api/v1/logs` (cursor-based line pagination),
+  `/logs/errors`, `/crash-reports` under `diagnostics`, with
+  `provenance: game-logs-untrusted`. (The tripwire immediately caught 4
+  undocumented routes — fixed in the next commit, proving the workflow.)
+- **4.3 OpenAPI validation**: pinned-subset ban list + full `$ref`
+  resolution check (§10 SDK-pipeline contract).
+- **4.4 MCP parity**: `commands` and `ui` tools.
+- **4.5 SDK parity**: leases + command helpers in Python, JVM, TypeScript.
+- **4.6 §11 doc set**: CAPABILITIES, SEMANTICS, EVENTS, DATA, TESTING,
+  RECIPES.
+- **4.7 §13.9 artifact collection**: `scripts/collect-artifacts.sh` with a
+  token-redaction sweep, wired into the smoke CI job.
+
+### Delivery plan — final state (2026-09-13)
+
+All four phases are implemented to the limit of a JVM-only environment:
+Phases 0–3 (slices 0.1–0.8, 1.1–1.9, 2.1–2.5, 3.1–3.3) and the Phase 4 gap
+closure above. Everything remaining — game launches for smoke/launch-matrix
+and client verification, production-jar launch test, storage
+insert/extract, GameTest, region fixtures, navigation/goto, dynamic worlds,
+packet inspection, session replay, offscreen rendering, video, dashboard,
+and the `/mcapi stop` keybind — requires an operator/CI environment that
+can launch Minecraft 26.2 and accept the EULA (`AGENTS.md` §7 reserves that
+decision for the operator). Those items are documented as planned, not
+stubbed, in `docs/CAPABILITIES.md` and `docs/TESTING.md`.
+
 Each slice must keep `./gradlew verify` green (format, tests, jar
 validation, manifest) and update docs in the same change set.
 
