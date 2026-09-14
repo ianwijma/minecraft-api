@@ -302,6 +302,201 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "409": { $ref: "#/components/responses/WrongState" }
         "503": { $ref: "#/components/responses/ServerBusy" }
+  /api/v1/ext/{id}/{path}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: path, in: path, schema: { type: string }, description: extension sub-path; may be empty }
+    get:
+      operationId: extGet
+      summary: Mod-provided extension surface (scope checked per extension)
+      responses:
+        "200": { description: extension response, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: extPost
+      summary: Extension surface with a JSON body
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200": { description: extension response, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/registry/{type}:
+    get:
+      operationId: getRegistry
+      summary: Sorted registry id page (block, item, entity_type, …)
+      parameters:
+        - { name: type, in: path, required: true, schema: { type: string } }
+        - { name: id, in: query, schema: { type: string }, description: single-entry presence check }
+        - { name: limit, in: query, schema: { type: integer, default: 100 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503": { $ref: "#/components/responses/ServerBusy" }
+  /api/v1/tags/{type}:
+    get:
+      operationId: getTags
+      summary: Tag ids (or ?tag= members) for a registry type
+      parameters:
+        - { name: type, in: path, required: true, schema: { type: string } }
+        - { name: tag, in: query, schema: { type: string } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/mods:
+    get:
+      operationId: getMods
+      summary: Loaded mod metadata from the loader
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+  /api/v1/threads:
+    get:
+      operationId: getThreads
+      summary: Thread dump (diagnostics scope)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/memory/gc:
+    post:
+      operationId: runGc
+      summary: Request a JVM GC and report heap deltas (diagnostics scope)
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/server/commands/execute:
+    post:
+      operationId: executeServerCommand
+      summary: Console command execution with a permission ceiling
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommandExecuteRequest" }
+      responses:
+        "200": { description: outcome, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/WrongState" }
+  /api/v1/server/world/block-entity:
+    get:
+      operationId: getServerBlockEntity
+      summary: Block-entity read (loaded-only, typed NBT JSON)
+      parameters:
+        - { name: dimension, in: query, required: true, schema: { type: string } }
+        - { name: x, in: query, required: true, schema: { type: integer } }
+        - { name: y, in: query, required: true, schema: { type: integer } }
+        - { name: z, in: query, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: chunk unloaded, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /api/v1/server/world/storage:
+    get:
+      operationId: getServerStorage
+      summary: Container storage read (loaded-only, native item counts)
+      parameters:
+        - { name: dimension, in: query, required: true, schema: { type: string } }
+        - { name: x, in: query, required: true, schema: { type: integer } }
+        - { name: y, in: query, required: true, schema: { type: integer } }
+        - { name: z, in: query, required: true, schema: { type: integer } }
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: chunk unloaded, content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } } }
+  /api/v1/leases:
+    get:
+      operationId: listLeases
+      summary: List control leases
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+    post:
+      operationId: acquireLease
+      summary: Acquire a control lease (reject/queue/preempt)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [lease], properties: { lease: { type: string }, ttlMs: { type: integer }, conflict: { type: string, enum: [reject, queue, preempt] } } }
+      responses:
+        "200": { description: held, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409":
+          description: LEASE_HELD
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /api/v1/leases/{id}/renew:
+    post:
+      operationId: renewLease
+      summary: Renew a held lease
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, properties: { ttlMs: { type: integer } } }
+      responses:
+        "200": { description: renewed, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/WrongState" }
+  /api/v1/files:
+    get:
+      operationId: readFileOrDir
+      summary: Sandboxed file read / directory listing (files.read + files.enabled)
+      parameters:
+        - { name: path, in: query, schema: { type: string } }
+      responses:
+        "200": { description: dir or file, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: writeFile
+      summary: Sandboxed file write (files.write + files.enabled, base64 content)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [path], properties: { path: { type: string }, contentBase64: { type: string } } }
+      responses:
+        "200": { description: written, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/unsafe/reflect:
+    post:
+      operationId: unsafeReflect
+      summary: Class introspection (unsafe.execute + reflection.enabled)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [class], properties: { class: { type: string } } }
+      responses:
+        "200": { description: class description, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/v1/unsafe/invoke:
+    post:
+      operationId: unsafeInvoke
+      summary: Static no-arg invocation (unsafe.execute + reflection.enabled)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [class, method]
+              properties:
+                class: { type: string }
+                method: { type: string }
+      responses:
+        "200": { description: invocation result, content: { application/json: { schema: { type: object, additionalProperties: true } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
 components:
   securitySchemes:
     bearerAuth:
@@ -673,6 +868,12 @@ components:
           description: mapping name as reported by the client (e.g. key.forward)
         action: { type: string, enum: [press, release, tap] }
         mode: { type: string, const: input, description: input-mode only; other modes are rejected }
+    CommandExecuteRequest:
+      type: object
+      required: [command]
+      properties:
+        command: { type: string, description: command text without leading slash }
+        expectedWorldSessionId: { type: string }
     KeyActionResponse:
       allOf:
         - $ref: "#/components/schemas/ProtocolVersioned"

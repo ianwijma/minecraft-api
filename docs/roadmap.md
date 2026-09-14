@@ -151,6 +151,43 @@ SPI), and the OpenAPI generator pipeline. These are the remaining items
 before Phase 2 can claim spec §13 completion; they require an
 operator/CI environment that can launch the game.
 
+### Slice 3.1 — Unsafe reflection/invoke (DONE 2026-09-13)
+
+- `POST /api/v1/unsafe/reflect` (class introspection) and
+  `/api/v1/unsafe/invoke` (static no-arg invocation, owning thread when a
+  server session is active): double-gated by `unsafe.execute` scope and the
+  `reflection.enabled` switch (§4.5, 403 `DISABLED`), audited as events,
+  documented as running with the game's privileges with no sandbox claim.
+
+### Slice 3.2 — Sandboxed file surface (DONE 2026-09-13)
+
+- `FileSandbox` (pure JDK): real-path containment, symlink-escape
+  rejection, no-follow writes, denylist (token, mapi.properties, eula,
+  server.properties, ban caches, logs); `files.read`/`files.write` scopes +
+  `files.enabled` switch; bounded GET (dir listing / utf-8|base64 read) and
+  POST write with `files.written` audit events.
+- Note: `logs/` is protected by the Phase 3 sandbox beyond the spec's
+  minimum denylist — logs contain untrusted observed data (chat, paths).
+
+### Slice 3.3 — Contract-sync tripwire (DONE 2026-09-13)
+
+- `ContractSyncTest`: every implemented route must appear in
+  `docs/openapi.yaml` and `docs/http-api.md`; its first run found 13
+  endpoints missing from openapi.yaml (slices 2.1–3.2), which were then
+  documented — exactly the drift the tripwire exists to catch.
+
+### Phase 3 status (2026-09-13)
+
+Done (implementable + verifiable here): unsafe reflection/invoke (3.1),
+sandboxed files (3.2), contract-sync tripwire (3.3).
+Remaining experimental-tier items are **game-runtime-blocked by design**
+(spec §12 Phase 3): advanced navigation (goto pathfinding), dynamic worlds,
+packet inspection, session replay, offscreen rendering, video, and the
+dashboard each require a launched game to build against and verify; they
+are documented as not implemented rather than stubbed. This is the final
+state achievable without an operator/CI environment that can launch
+Minecraft 26.2 and accept the EULA.
+
 Each slice must keep `./gradlew verify` green (format, tests, jar
 validation, manifest) and update docs in the same change set.
 
