@@ -134,6 +134,54 @@ public class MapiRuntimeTest {
                 lifecycle.stream().map(e -> e.type()).toList());
     }
 
+    @Test
+    void clientLifecycleKeepsHttpAliveAcrossWorldSessions() throws Exception {
+        TestPlatform platform = new TestPlatform(LOG) {
+            @Override
+            public dev.example.mapi.internal.config.MapiConfig loadConfig(
+                    java.nio.file.Path configDir, java.util.Map<String, String> env,
+                    Logger logger) {
+                return new dev.example.mapi.internal.config.MapiConfig(true, freeTestPort(),
+                        "test-token-0123456789", 10_000);
+            }
+        };
+        MapiRuntime runtime = new MapiRuntime(platform);
+
+        // Client boots to the main menu: HTTP up without any server.
+        platform.clientListener.onClientStarted();
+        assertTrue(runtime.httpRunning(), "API must be up at the main menu");
+        assertEquals(dev.example.mapi.internal.world.WorldPhase.NONE,
+                runtime.worldLifecycle().phase());
+
+        // Integrated server session: world work starts; listener stays.
+        platform.listener.onServerStarting(TestServerHandle.inline());
+        platform.listener.onServerStarted();
+        assertTrue(runtime.httpRunning());
+        platform.listener.onServerStopping();
+        platform.listener.onServerStopped();
+        assertTrue(runtime.httpRunning(),
+                "world exit must not stop the client listener");
+        assertEquals(dev.example.mapi.internal.world.WorldPhase.NONE,
+                runtime.worldLifecycle().phase());
+
+        // Second session: startHttp is idempotent (no double-bind).
+        platform.listener.onServerStarting(TestServerHandle.inline());
+        assertTrue(runtime.httpRunning());
+
+        // Client shutdown: only now does the listener stop.
+        platform.clientListener.onClientStopping();
+        assertFalse(runtime.httpRunning());
+        assertFalse(runtime.httpRunning(), "stop must be idempotent");
+    }
+
+    private static int freeTestPort() {
+        try (var socket = new java.net.ServerSocket(0)) {
+            return socket.getLocalPort();
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     /**
      * Minimal Mapi implementation for negative binding tests.
      */
@@ -180,6 +228,7 @@ public class MapiRuntimeTest {
     public static class TestPlatform implements MapiPlatform {
         final Logger logger;
         ServerLifecycleListener listener;
+        ClientLifecycleListener clientListener;
 
         public TestPlatform(Logger logger) {
             this.logger = logger;
@@ -225,6 +274,11 @@ public class MapiRuntimeTest {
         @Override
         public void registerServerLifecycle(ServerLifecycleListener listener) {
             this.listener = listener;
+        }
+
+        @Override
+        public void registerClientLifecycle(ClientLifecycleListener listener) {
+            this.clientListener = listener;
         }
     }
 

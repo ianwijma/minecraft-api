@@ -1,6 +1,7 @@
 package dev.example.mapi.fabric;
 
 import dev.example.mapi.api.PlatformType;
+import dev.example.mapi.internal.ClientLifecycleListener;
 import dev.example.mapi.internal.MapiPlatform;
 import dev.example.mapi.internal.RawServerInfo;
 import dev.example.mapi.internal.ServerHandle;
@@ -66,6 +67,11 @@ final class FabricPlatform implements MapiPlatform {
             bridge.onServerStopped();
             listener.onServerStopped();
         });
+    }
+
+    @Override
+    public void registerClientLifecycle(ClientLifecycleListener listener) {
+        MapiFabricHooks.registerClientLifecycle(listener);
     }
 
     @Override

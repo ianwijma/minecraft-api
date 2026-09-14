@@ -83,6 +83,14 @@ final class NeoForgePlatform implements MapiPlatform {
     }
 
     @Override
+    public void registerClientLifecycle(dev.example.mapi.internal.ClientLifecycleListener listener) {
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.client.event.lifecycle.ClientStartedEvent event) ->
+                listener.onClientStarted());
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.client.event.lifecycle.ClientStoppingEvent event) ->
+                listener.onClientStopping());
+    }
+
+    @Override
     public dev.example.mapi.internal.config.MapiConfig loadConfig(java.nio.file.Path configDir,
             java.util.Map<String, String> env, org.slf4j.Logger logger) {
         return NeoForgeConfig.toMapiConfig(env, logger);

@@ -8,9 +8,13 @@ Machine-readable description: [`openapi.yaml`](openapi.yaml).
 
 ## Lifecycle
 
-- Starts when a Minecraft server (dedicated **or** integrated) starts, only
-  if enabled; stops with the server. Repeated integrated-server sessions
-  start/stop it cleanly.
+- **Clients:** starts with the game (available at the main menu, before any
+  world), survives world exit, and stops at client shutdown — main-menu
+  interaction, screenshots, and window control work without a world. The
+  `/server/*` namespace gates on world state (`WORLD_NOT_LOADED` at the
+  menu; spec §6).
+- **Dedicated servers:** starts when the server starts, stops with it, as
+  before.
 - Port conflict → error log (`MAPI HTTP API: failed to bind ...`), the game
   keeps running; no listener that session.
 - If enabled without a usable token, the API refuses to start (explicit

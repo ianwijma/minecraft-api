@@ -54,6 +54,16 @@ public interface MapiPlatform {
     void registerServerLifecycle(ServerLifecycleListener listener);
 
     /**
+     * Registers the given listener for client lifecycle callbacks. Called
+     * exactly once during MAPI bootstrap. Adapters without a client
+     * environment ignore this (dedicated servers never fire it).
+     *
+     * @param listener the listener, never {@code null}
+     */
+    default void registerClientLifecycle(ClientLifecycleListener listener) {
+    }
+
+    /**
      * Loads the resolved configuration from the loader-native config source
      * (NeoForge: auto-generated {@code config/mapi-common.toml} via
      * ModConfigSpec; Fabric: auto-generated {@code config/mapi.json}). The

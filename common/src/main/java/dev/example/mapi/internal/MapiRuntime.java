@@ -64,6 +64,7 @@ public final class MapiRuntime implements Mapi {
     private final dev.example.mapi.internal.operation.OperationRegistry clientOperations =
             new dev.example.mapi.internal.operation.OperationRegistry();
 
+    private volatile boolean clientPresent;
     private volatile ServerHandle serverHandle;
     private volatile HttpApiServer httpServer;
 
@@ -81,6 +82,21 @@ public final class MapiRuntime implements Mapi {
                 ? null
                 : new dev.example.mapi.internal.client.ActionDispatchService(
                         clientBridge, clientOperations, new dev.example.mapi.internal.operation.OperationGuard());
+        platform.registerClientLifecycle(new ClientLifecycleListener() {
+            @Override
+            public void onClientStarted() {
+                clientPresent = true;
+                startHttp();
+                eventBus.publish("client.started", java.util.Optional.empty(), Map.of());
+            }
+
+            @Override
+            public void onClientStopping() {
+                eventBus.publish("client.stopping", java.util.Optional.empty(), Map.of());
+                clientPresent = false;
+                stopHttp();
+            }
+        });
         platform.registerServerLifecycle(new ServerLifecycleListener() {
             @Override
             public void onServerStarting(ServerHandle handle) {
@@ -110,7 +126,7 @@ public final class MapiRuntime implements Mapi {
                         .orElse(null);
                 worldLifecycle.beginLoad();
                 services.fireServerStart(handle, platform.logger());
-                startHttp(handle);
+                startHttp();
             }
 
             @Override
@@ -125,7 +141,12 @@ public final class MapiRuntime implements Mapi {
                 logCapture.record(dev.example.mapi.internal.logging.LogCaptureService.Level.INFO,
                         "mapi.runtime", "server stopping (terminating world-scoped work)");
                 worldLifecycle.beginUnload();
-                stopHttp();
+                // On clients the listener stays up at the main menu (spec §6:
+                // /server/* availability changes, the process listener does
+                // not stop with the integrated server).
+                if (!clientPresent) {
+                    stopHttp();
+                }
                 ServerHandle handle = serverHandle;
                 if (handle != null) {
                     services.fireServerStop(handle, platform.logger());
@@ -411,7 +432,10 @@ public final class MapiRuntime implements Mapi {
     // HTTP lifecycle
     // ------------------------------------------------------------------
 
-    private void startHttp(ServerHandle handle) {
+    private void startHttp() {
+        if (httpServer != null) {
+            return;
+        }
         dev.example.mapi.internal.config.MapiConfig config;
         try {
             config = platform.loadConfig(platform.configDir(), System.getenv(),
