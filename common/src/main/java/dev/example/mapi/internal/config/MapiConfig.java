@@ -22,6 +22,8 @@ import org.slf4j.Logger;
  *   <tr><td>http.token</td><td>MAPI_HTTP_TOKEN</td><td>none</td><td>Bearer token; prefer the env var</td></tr>
  *   <tr><td>http.rateLimitPerMinute</td><td>MAPI_HTTP_RATE_LIMIT_PER_MINUTE</td><td>60</td><td>Requests per client per minute</td></tr>
  *   <tr><td>http.scopes</td><td>MAPI_HTTP_SCOPES</td><td>all</td><td>Comma-separated granted scopes (spec §14); absent/blank grants the full set</td></tr>
+ *   <tr><td>client.connect.allowlist</td><td>MAPI_CLIENT_CONNECT_ALLOWLIST</td><td>empty (deny all)</td><td>Comma-separated host[:port] targets for direct connection (spec §9.2)</td></tr>
+ *   <tr><td>server.lan.enabled</td><td>MAPI_SERVER_LAN_ENABLED</td><td>false</td><td>Whether integrated-server LAN publication is permitted (spec §9.3)</td></tr>
  * </table>
  *
  * <p>Secrets are never logged. The bind address is fixed to loopback and is
@@ -29,7 +31,8 @@ import org.slf4j.Logger;
  */
 public record MapiConfig(
         boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute,
-        java.util.Set<dev.example.mapi.internal.operation.Scope> httpScopes) {
+        java.util.Set<dev.example.mapi.internal.operation.Scope> httpScopes,
+        java.util.List<String> clientConnectAllowlist, boolean serverLanEnabled) {
 
     /** Default HTTP port. */
     public static final int DEFAULT_PORT = 25586;
@@ -53,7 +56,14 @@ public record MapiConfig(
      * @param rateLimitPerMinute requests per client per minute
      */
     public MapiConfig(boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute) {
-        this(httpEnabled, httpPort, httpToken, rateLimitPerMinute, java.util.Set.of());
+        this(httpEnabled, httpPort, httpToken, rateLimitPerMinute, java.util.Set.of(),
+                java.util.List.of(), false);
+    }
+
+    public MapiConfig(boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute,
+            java.util.Set<dev.example.mapi.internal.operation.Scope> httpScopes) {
+        this(httpEnabled, httpPort, httpToken, rateLimitPerMinute, httpScopes,
+                java.util.List.of(), false);
     }
 
     /**
@@ -95,6 +105,9 @@ public record MapiConfig(
         String token = readString(file, env, "http.token", "MAPI_HTTP_TOKEN", null);
         java.util.Set<dev.example.mapi.internal.operation.Scope> scopes =
                 readScopes(file, env, logger);
+        java.util.List<String> allowlist = readAllowlist(file, env, logger);
+        boolean lanEnabled = readBool(file, env, "server.lan.enabled", "MAPI_SERVER_LAN_ENABLED",
+                false, logger);
 
         if (port < 1 || port > 65535) {
             throw new MapiConfigException("http.port must be between 1 and 65535 (got " + port + ")");
@@ -114,7 +127,8 @@ public record MapiConfig(
                         + "python3 -c \"import secrets; print(secrets.token_urlsafe(32))\"");
             }
         }
-        return new MapiConfig(enabled, port, token == null ? null : token.trim(), rateLimit, scopes);
+        return new MapiConfig(enabled, port, token == null ? null : token.trim(), rateLimit, scopes,
+                allowlist, lanEnabled);
     }
 
     private static java.util.Set<dev.example.mapi.internal.operation.Scope> readScopes(
@@ -168,8 +182,31 @@ public record MapiConfig(
         return trimmed;
     }
 
+    private static java.util.List<String> readAllowlist(Properties file, Map<String, String> env,
+            Logger logger) {
+        String raw = effective(file, env, "client.connect.allowlist", "MAPI_CLIENT_CONNECT_ALLOWLIST");
+        if (raw == null || raw.isBlank()) {
+            return java.util.List.of();
+        }
+        java.util.List<String> entries = new java.util.ArrayList<>();
+        for (String part : raw.split(",")) {
+            String entry = part.trim();
+            if (entry.isEmpty()) {
+                continue;
+            }
+            if (!entry.matches("[A-Za-z0-9.\\-]+(:[0-9]{1,5})?")) {
+                throw new MapiConfigException("client.connect.allowlist entry is not host[:port]: '"
+                        + entry + "'");
+            }
+            entries.add(entry);
+        }
+        logger.info("MAPI: direct-connection allowlist configured with {} entrie(s)", entries.size());
+        return java.util.List.copyOf(entries);
+    }
+
     private static final java.util.Set<String> KNOWN_KEYS = java.util.Set.of(
-            "http.enabled", "http.port", "http.token", "http.rateLimitPerMinute", "http.scopes");
+            "http.enabled", "http.port", "http.token", "http.rateLimitPerMinute", "http.scopes",
+            "client.connect.allowlist", "server.lan.enabled");
 
     private static String effective(Properties file, Map<String, String> env, String fileKey, String envKey) {
         String fromEnv = env.get(envKey);

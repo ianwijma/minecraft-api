@@ -130,6 +130,10 @@ public final class HttpApiServer {
                 "Dispatch a server command in the console context (administrative access)",
                 Set.of(Scope.OPERATIONS_UNRESTRICTED), false, SideEffectClass.UNRESTRICTED,
                 false, privileged));
+        operations.register(new OperationDescriptor("process.shutdown",
+                "Request a graceful local shutdown of the process (administrative access)",
+                Set.of(Scope.OPERATIONS_UNRESTRICTED), false, SideEffectClass.UNRESTRICTED,
+                false, privileged));
     }
 
     /** @return the operation metadata registry (for introspection endpoints/tests) */
@@ -355,6 +359,7 @@ public final class HttpApiServer {
             case API_PREFIX + "client" -> sendClientInfo(exchange);
             case API_PREFIX + "client/window" -> sendWindowInfo(exchange);
             case API_PREFIX + "client/screenshots" -> sendScreenshot(exchange);
+            case API_PREFIX + "logs" -> sendLogs(exchange);
             case API_PREFIX + "server/ticks" -> sendTickState(exchange);
             case API_PREFIX + "server/queries/players" -> sendPlayerQuery(exchange);
             case API_PREFIX + "server/queries/entities" -> sendEntityQuery(exchange);
@@ -389,6 +394,7 @@ public final class HttpApiServer {
             case API_PREFIX + "server/snapshot-diffs" -> handleSnapshotDiff(exchange, body, grants);
             case API_PREFIX + "server/commands" -> handleCommand(exchange, body, grants);
             case API_PREFIX + "client/actions/hold-key" -> handleHoldKey(exchange, body, grants);
+            case API_PREFIX + "process/shutdown" -> handleShutdown(exchange, body, grants);
             default -> {
                 exchange.getResponseHeaders().set("Allow", "GET");
                 error(exchange, ProblemCode.METHOD_NOT_ALLOWED,
@@ -573,6 +579,51 @@ public final class HttpApiServer {
                 .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
                         "command dispatch is not available on this loader bridge"));
         respond(exchange, 200, JsonWriter.write(service.dispatch(stringField(body, "command"))));
+    }
+
+    private void handleShutdown(HttpExchange exchange, Map<String, Object> body,
+            java.util.Set<Scope> grants) throws IOException {
+        checkAccess("process.shutdown", grants, body);
+        boolean accepted = runtime.requestProcessShutdown();
+        if (!accepted) {
+            throw new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                    "graceful shutdown is not implemented on this platform adapter");
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("accepted", true);
+        out.put("note", "graceful local shutdown requested; process-scoped sessions stay available");
+        respond(exchange, 200, JsonWriter.write(out));
+    }
+
+    private void sendLogs(HttpExchange exchange) throws IOException {
+        Map<String, String> params = queryParams(exchange.getRequestURI().getRawQuery());
+        long cursor = 0;
+        if (params.get("cursor") != null) {
+            try {
+                cursor = Long.parseLong(params.get("cursor"));
+                if (cursor < 0) {
+                    throw new NumberFormatException();
+                }
+            } catch (NumberFormatException e) {
+                throw new ProblemException(ProblemCode.BAD_REQUEST, "cursor must be a non-negative integer");
+            }
+        }
+        int limit = intParam(exchange, "limit", 200);
+        var logs = runtime.logs();
+        var result = logs.entriesAfter(cursor, limit);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("attachedAtEpochMs", logs.attachedAtEpochMs());
+        out.put("latestSeq", logs.latestSeq());
+        if (result.gap()) {
+            out.put("gap", true);
+            out.put("droppedUpToSeq", result.droppedUpToSeq());
+        }
+        out.put("cursor", result.newCursor());
+        out.put("entries", result.entries().stream()
+                .map(dev.example.mapi.internal.logging.LogCaptureService.Entry::toMap).toList());
+        respond(exchange, 200, JsonWriter.write(out));
     }
 
     // ------------------------------------------------------------------

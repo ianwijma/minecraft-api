@@ -70,4 +70,26 @@ public interface MapiPlatform {
     default dev.example.mapi.internal.client.ClientBridge clientBridge() {
         return dev.example.mapi.internal.client.ClientBridge.NONE;
     }
+
+    /**
+     * Attaches a bounded log-capture sink to the process logging backend
+     * (spec §17.1). The default is a no-op: loader adapters wire the Log4j
+     * appender in their own chunks; no global logging reconfiguration is
+     * permitted.
+     *
+     * @param capture the sink to feed, never {@code null}
+     */
+    default void attachLogCapture(dev.example.mapi.internal.logging.LogCaptureService capture) {
+    }
+
+    /**
+     * Requests a graceful local shutdown of the process (spec §1.1: the mod
+     * performs graceful local shutdown only; the runner owns launch/kill).
+     * The default reports unsupported.
+     *
+     * @return true when the shutdown was accepted
+     */
+    default boolean requestProcessShutdown() {
+        return false;
+    }
 }

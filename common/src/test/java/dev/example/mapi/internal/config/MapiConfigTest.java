@@ -128,6 +128,30 @@ class MapiConfigTest {
     }
 
     @Test
+    void allowlistDefaultsToDenyAll() {
+        MapiConfig config = load(Map.of());
+        assertTrue(config.clientConnectAllowlist().isEmpty(), "empty allowlist denies all");
+        assertTrue(!config.serverLanEnabled(), "LAN publication is opt-in");
+    }
+
+    @Test
+    void allowlistAndLanKeysParse() throws IOException {
+        writeFile("http.enabled=true\nhttp.token=1234567890abcdefgh\n"
+                + "client.connect.allowlist=127.0.0.1:25565, localhost\n"
+                + "server.lan.enabled=true\n");
+        MapiConfig config = load(Map.of());
+        assertEquals(java.util.List.of("127.0.0.1:25565", "localhost"),
+                config.clientConnectAllowlist());
+        assertTrue(config.serverLanEnabled());
+    }
+
+    @Test
+    void malformedAllowlistEntryIsRefused() {
+        assertThrows(MapiConfigException.class,
+                () -> load(Map.of("MAPI_CLIENT_CONNECT_ALLOWLIST", "bad host!:99999")));
+    }
+
+    @Test
     void envScopesOverrideFile() throws IOException {
         writeFile("http.scopes=client:settings\n");
         MapiConfig config = load(Map.of(

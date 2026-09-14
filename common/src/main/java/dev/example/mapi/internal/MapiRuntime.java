@@ -41,6 +41,7 @@ public final class MapiRuntime implements Mapi {
     private volatile dev.example.mapi.internal.command.CommandDispatchService commands;
     private volatile dev.example.mapi.internal.snapshot.SnapshotCaptureService snapshotCapture;
     private final dev.example.mapi.internal.client.ActionDispatchService clientActions;
+    private final dev.example.mapi.internal.logging.LogCaptureService logCapture;
 
     private final MapiPlatform platform;
     private final MapiServicesImpl services = new MapiServicesImpl();
@@ -74,6 +75,7 @@ public final class MapiRuntime implements Mapi {
      */
     public MapiRuntime(MapiPlatform platform) {
         this.platform = Objects.requireNonNull(platform, "platform");
+        this.logCapture = new dev.example.mapi.internal.logging.LogCaptureService(512, java.util.List.of());
         var clientBridge = platform.clientBridge();
         this.clientActions = clientBridge == dev.example.mapi.internal.client.ClientBridge.NONE
                 ? null
@@ -83,6 +85,8 @@ public final class MapiRuntime implements Mapi {
             @Override
             public void onServerStarting(ServerHandle handle) {
                 serverHandle = handle;
+                logCapture.record(dev.example.mapi.internal.logging.LogCaptureService.Level.INFO,
+                        "mapi.runtime", "server starting (world session opening)");
                 var backend = platform.serverBridge().tickControl();
                 tickControl = backend
                         .<dev.example.mapi.internal.tick.TickControlService>map(
@@ -112,10 +116,14 @@ public final class MapiRuntime implements Mapi {
             @Override
             public void onServerStarted() {
                 worldLifecycle.activated();
+                logCapture.record(dev.example.mapi.internal.logging.LogCaptureService.Level.INFO,
+                        "mapi.runtime", "server started (world session active)");
             }
 
             @Override
             public void onServerStopping() {
+                logCapture.record(dev.example.mapi.internal.logging.LogCaptureService.Level.INFO,
+                        "mapi.runtime", "server stopping (terminating world-scoped work)");
                 worldLifecycle.beginUnload();
                 stopHttp();
                 ServerHandle handle = serverHandle;
@@ -263,6 +271,23 @@ public final class MapiRuntime implements Mapi {
         return clientOperations;
     }
 
+    /** @return the bounded log capture (spec §17.1); internal accessor */
+    public dev.example.mapi.internal.logging.LogCaptureService logs() {
+        return logCapture;
+    }
+
+    /**
+     * Requests a graceful local shutdown through the platform adapter (spec
+     * §1.1).
+     *
+     * @return true when the adapter accepted the request
+     */
+    public boolean requestProcessShutdown() {
+        logCapture.record(dev.example.mapi.internal.logging.LogCaptureService.Level.INFO,
+                "mapi.runtime", "process shutdown requested via API");
+        return platform.requestProcessShutdown();
+    }
+
     /**
      * Runs a supplier on the client thread via the bridge, translating
      * failures into problem exceptions.
@@ -400,6 +425,8 @@ public final class MapiRuntime implements Mapi {
                     + "{}/mapi.properties)", platform.configDir());
             return;
         }
+        logCapture.setSecrets(java.util.List.of(config.httpToken() == null ? "" : config.httpToken()));
+        platform.attachLogCapture(logCapture);
         HttpApiServer httpServer = new HttpApiServer(config, this, platform.logger());
         if (httpServer.start()) {
             this.httpServer = httpServer;
