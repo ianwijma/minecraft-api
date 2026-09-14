@@ -167,11 +167,38 @@ public interface ClientBridge {
         Optional<double[]> playerPosition();
     }
 
-    /** Screenshot backend with frame/scale metadata (spec §20 client). */
+    /**
+     * Screenshot backend with frame/scale metadata (spec §20 client).
+     *
+     * <p>26.2 screenshot readback is asynchronous at the GPU level
+     * ({@code CommandEncoder.copyTextureToBuffer} + completion callback), so
+     * capture is two-phase: {@link #beginCapture()} schedules the readback
+     * on the client thread and returns immediately; the PNG fills the temp
+     * file on a later frame. Callers poll the file from a NON-client thread
+     * (blocking the client thread on its own callback deadlocks) with a
+     * bounded wait.
+     */
     interface ScreenshotBackend {
 
-        /** @return the capture, never {@code null} */
-        Screenshot capture();
+        /**
+         * Schedules a framebuffer readback. Must run on the client thread.
+         *
+         * @return the pending capture (temp file fills asynchronously)
+         * @throws IllegalStateException when the framebuffer is incomplete
+         */
+        PendingCapture beginCapture();
+
+        /**
+         * @param tempPath  temp file the PNG is written to (caller deletes)
+         * @param width     framebuffer width
+         * @param height    framebuffer height
+         * @param frame     render frame counter
+         * @param guiScale  effective GUI scale
+         * @param screenId  active screen identifier or {@code null}
+         */
+        record PendingCapture(java.nio.file.Path tempPath, int width, int height, long frame,
+                int guiScale, String screenId) {
+        }
 
         /**
          * @param png       PNG bytes

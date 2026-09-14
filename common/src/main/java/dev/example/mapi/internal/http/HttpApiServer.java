@@ -22,6 +22,7 @@ import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -842,18 +843,47 @@ public final class HttpApiServer {
         var screenshots = runtime.clientBridge().screenshots()
                 .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
                         "screenshots are not available on this process"));
-        var shot = runtime.callOnClientThread(screenshots::capture);
+        // Phase 1 (client thread): schedule the GPU readback.
+        var pending = runtime.callOnClientThread(screenshots::beginCapture);
+        // Phase 2 (HTTP worker): poll the temp file — the PNG fills on a
+        // later frame; blocking the client thread here would deadlock.
+        long deadline = System.currentTimeMillis() + 5000;
+        byte[] png;
+        try {
+            while (true) {
+                long size = Files.exists(pending.tempPath())
+                        ? Files.size(pending.tempPath()) : 0;
+                if (size > 0) {
+                    png = Files.readAllBytes(pending.tempPath());
+                    break;
+                }
+                if (System.currentTimeMillis() >= deadline) {
+                    throw new ProblemException(ProblemCode.SERVER_BUSY,
+                            "GPU readback did not complete within 5000 ms");
+                }
+                Thread.sleep(25);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ProblemException(ProblemCode.SERVER_BUSY, "interrupted");
+        } finally {
+            try {
+                Files.deleteIfExists(pending.tempPath());
+            } catch (IOException ignored) {
+                // cleanup is best-effort; response already built below if read
+            }
+        }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("protocolVersion", PROTOCOL_VERSION);
-        out.put("width", shot.width());
-        out.put("height", shot.height());
-        out.put("frame", shot.frame());
-        out.put("guiScale", shot.guiScale());
-        if (shot.screenId() != null) {
-            out.put("screenId", shot.screenId());
+        out.put("width", pending.width());
+        out.put("height", pending.height());
+        out.put("frame", pending.frame());
+        out.put("guiScale", pending.guiScale());
+        if (pending.screenId() != null) {
+            out.put("screenId", pending.screenId());
         }
-        out.put("capturedAtEpochMs", shot.capturedAtEpochMs());
-        out.put("pngBase64", java.util.Base64.getEncoder().encodeToString(shot.png()));
+        out.put("capturedAtEpochMs", System.currentTimeMillis());
+        out.put("pngBase64", java.util.Base64.getEncoder().encodeToString(png));
         respond(exchange, 200, JsonWriter.write(out));
     }
 

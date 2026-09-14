@@ -203,7 +203,7 @@ public final class NeoForgeClientBridge implements ClientBridge {
     private final class NeoForgeScreenshots implements ScreenshotBackend {
 
         @Override
-        public Screenshot capture() {
+        public PendingCapture beginCapture() {
             Minecraft client = Minecraft.getInstance();
             com.mojang.blaze3d.pipeline.RenderTarget target =
                     client.gameRenderer.mainRenderTarget();
@@ -214,32 +214,21 @@ public final class NeoForgeClientBridge implements ClientBridge {
                 throw new ProblemException(ProblemCode.INTERNAL,
                         "screenshot temp file failed: " + e);
             }
-            try {
-                Consumer<NativeImage> writer = image -> {
-                    try {
-                        image.writeToFile(temp.toFile());
-                    } catch (IOException e) {
-                        throw new IllegalStateException(e);
-                    } finally {
-                        image.close();
-                    }
-                };
-                net.minecraft.client.Screenshot.takeScreenshot(target, writer);
-                byte[] png = Files.readAllBytes(temp);
-                Screen screen = client.gui.screen();
-                return new ClientBridge.ScreenshotBackend.Screenshot(png, target.width,
-                        target.height, client.getFrameTimeNs(), currentState().guiScale(),
-                        screen == null ? null : screen.getClass().getSimpleName(),
-                        System.currentTimeMillis());
-            } catch (IOException e) {
-                throw new ProblemException(ProblemCode.INTERNAL, "screenshot read failed: " + e);
-            } finally {
+            Screen screen = client.gui.screen();
+            PendingCapture pending = new PendingCapture(temp, target.width,
+                    target.height, client.getFrameTimeNs(), currentState().guiScale(),
+                    screen == null ? null : screen.getClass().getSimpleName());
+            Consumer<NativeImage> writer = image -> {
                 try {
-                    Files.deleteIfExists(temp);
-                } catch (IOException ignored) {
-                    // temp cleanup is best-effort
+                    image.writeToFile(temp.toFile());
+                } catch (IOException e) {
+                    throw new IllegalStateException(e);
+                } finally {
+                    image.close();
                 }
-            }
+            };
+            net.minecraft.client.Screenshot.takeScreenshot(target, writer);
+            return pending;
         }
     }
 }
