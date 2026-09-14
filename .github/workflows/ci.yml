@@ -117,6 +117,9 @@ jobs:
         env:
           MAPI_ACCEPT_EULA: "true"
           MAPI_SMOKE_TIMEOUT: "900"
+      - name: Collect diagnostic artifacts (spec 13.9)
+        if: always()
+        run: scripts/collect-artifacts.sh build/smoke/${{ matrix.loader }}/run build/smoke/artifacts
       - name: Upload smoke logs
         if: always()
         uses: actions/upload-artifact@v4
