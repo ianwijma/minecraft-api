@@ -14,6 +14,7 @@ import dev.example.mapi.internal.client.MapiClientOps;
 import dev.example.mapi.internal.client.ScreenNode;
 import dev.example.mapi.internal.client.ScreenshotResult;
 import dev.example.mapi.internal.config.MapiConfig;
+import dev.example.mapi.internal.files.FileSandbox;
 import dev.example.mapi.internal.json.JsonParser;
 import dev.example.mapi.internal.json.JsonParser.ParseException;
 import dev.example.mapi.internal.json.JsonWriter;
@@ -25,12 +26,15 @@ import java.io.InputStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadFactory;
@@ -283,6 +287,11 @@ public final class HttpApiServer {
         if (path.startsWith(API_PREFIX + "unsafe/")) {
             return dev.example.mapi.internal.auth.Scope.UNSAFE_EXECUTE;
         }
+        if (path.equals(API_PREFIX + "files")) {
+            return method.equals("GET")
+                    ? dev.example.mapi.internal.auth.Scope.FILES_READ
+                    : dev.example.mapi.internal.auth.Scope.FILES_WRITE;
+        }
         return dev.example.mapi.internal.auth.Scope.OBSERVE;
     }
 
@@ -302,6 +311,10 @@ public final class HttpApiServer {
         }
         if (path.equals(API_PREFIX + "leases")) {
             listLeases(exchange, requestId);
+            return;
+        }
+        if (path.equals(API_PREFIX + "files")) {
+            serveFile(exchange, requestId);
             return;
         }
         switch (path) {
@@ -385,6 +398,10 @@ public final class HttpApiServer {
         }
         if (path.equals(API_PREFIX + "leases")) {
             acquireLease(exchange, requestId, body);
+            return;
+        }
+        if (path.equals(API_PREFIX + "files")) {
+            writeFile(exchange, requestId, body);
             return;
         }
         if (path.startsWith(API_PREFIX + "leases/") && path.endsWith("/renew")) {
@@ -948,6 +965,107 @@ public final class HttpApiServer {
         } catch (RuntimeException e) {
             logger.warn("MAPI: extension '{}' failed handling {} {}", extensionId, method, subPath, e);
             error(exchange, requestId, 500, "INTERNAL", "Extension handler failed");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Sandboxed files (spec §4.5/§6.1, slice 3.2) — game-dir confined,
+    // symlink-checked, denylisted; files.* scopes + files.enabled switch.
+    // ------------------------------------------------------------------
+
+    private boolean filesAvailable(HttpExchange exchange, String requestId) throws IOException {
+        if (!config.filesEnabled()) {
+            error(exchange, requestId, 403, "DISABLED",
+                    "The file surface is disabled (files.enabled=false; spec §4.5).");
+            return false;
+        }
+        return true;
+    }
+
+    private FileSandbox sandbox() throws IOException {
+        return new FileSandbox(runtime.gameDir());
+    }
+
+    private void serveFile(HttpExchange exchange, String requestId) throws IOException {
+        if (!filesAvailable(exchange, requestId)) {
+            return;
+        }
+        Map<String, List<String>> query = splitQuery(exchange.getRequestURI().getRawQuery());
+        String userPath = single(query, "path");
+        try {
+            FileSandbox sandbox = sandbox();
+            Optional<Path> resolved = sandbox.resolve(userPath);
+            if (resolved.isEmpty()) {
+                error(exchange, requestId, 403, "DENIED_PATH",
+                        "Path is outside the sandbox or protected (spec §4.5 denylist).");
+                return;
+            }
+            Path path = resolved.get();
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("protocolVersion", PROTOCOL_VERSION);
+            body.put("path", userPath == null ? "" : userPath.trim());
+            if (Files.isDirectory(path)) {
+                body.put("type", "dir");
+                body.put("entries", sandbox.list(path));
+            } else if (Files.isRegularFile(path)) {
+                body.put("type", "file");
+                body.putAll(sandbox.read(path));
+            } else {
+                error(exchange, requestId, 404, "NOT_FOUND", "No such file: " + userPath);
+                return;
+            }
+            respond(exchange, requestId, 200, JsonWriter.write(body));
+        } catch (IOException e) {
+            error(exchange, requestId, 500, "INTERNAL", "File access failed: " + e.getMessage());
+        }
+    }
+
+    private void writeFile(HttpExchange exchange, String requestId, byte[] body) throws IOException {
+        if (!filesAvailable(exchange, requestId)) {
+            return;
+        }
+        Object parsed;
+        try {
+            parsed = JsonParser.parse(new String(body, StandardCharsets.UTF_8));
+        } catch (ParseException e) {
+            error(exchange, requestId, 400, "INVALID_JSON", e.getMessage());
+            return;
+        }
+        String userPath = null;
+        byte[] content = new byte[0];
+        if (parsed instanceof Map<?, ?> request) {
+            userPath = request.get("path") instanceof String name ? name : null;
+            if (request.get("contentBase64") instanceof String encoded) {
+                try {
+                    content = java.util.Base64.getDecoder().decode(encoded);
+                } catch (IllegalArgumentException e) {
+                    error(exchange, requestId, 400, "INVALID_PAYLOAD", "contentBase64 is not valid base64");
+                    return;
+                }
+            }
+        }
+        if (userPath == null || userPath.isBlank()) {
+            error(exchange, requestId, 400, "INVALID_PAYLOAD", "Field 'path' (string) is required");
+            return;
+        }
+        try {
+            FileSandbox sandbox = sandbox();
+            Optional<Path> resolved = sandbox.resolve(userPath);
+            if (resolved.isEmpty()) {
+                error(exchange, requestId, 403, "DENIED_PATH",
+                        "Path is outside the sandbox or protected (spec §4.5 denylist).");
+                return;
+            }
+            sandbox.write(resolved.get(), content);
+            Map<String, Object> responseBody = new LinkedHashMap<>();
+            responseBody.put("protocolVersion", PROTOCOL_VERSION);
+            responseBody.put("path", userPath.trim());
+            responseBody.put("bytes", content.length);
+            runtime.eventLog().publish("files.written", "api-originated", Map.of(
+                    "path", userPath.trim(), "bytes", content.length));
+            respond(exchange, requestId, 200, JsonWriter.write(responseBody));
+        } catch (IOException e) {
+            error(exchange, requestId, 500, "INTERNAL", "File write failed: " + e.getMessage());
         }
     }
 

@@ -302,6 +302,13 @@ public final class MapiRuntime implements Mapi {
     }
 
     /**
+     * @return the instance game directory (sandbox root for the file surface)
+     */
+    public java.nio.file.Path gameDir() {
+        return platform.gameDir();
+    }
+
+    /**
      * @return the logical sides this process can currently serve; the client
      *         side appears once client operations are registered
      */

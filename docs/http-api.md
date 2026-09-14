@@ -159,6 +159,23 @@ wait → **503**:
 {"error":{"code":"SERVER_BUSY","message":"Server thread busy; status snapshot timed out. Retry shortly."},"protocolVersion":1}
 ```
 
+### `GET /api/v1/files?path=`, `PUT|POST /api/v1/files` (slice 3.2, experimental)
+
+Sandboxed file surface (spec §4.5/§6.1): confined to the instance game
+directory, symlink-escaped paths rejected, no-follow writes, and a denylist
+protecting `mcapi/token`, `config/mapi.properties`, `eula.txt`,
+`server.properties`, `ops.json`, whitelist/ban caches, and `logs/`. Requires
+the `files.read` scope for reads and `files.write` for writes, **plus** the
+`files.enabled` switch (default false) — otherwise **403** `DISABLED`.
+
+- `GET …?path=` — empty path lists the root; a directory returns
+  `{type:"dir",entries:[{name,dir,size,symlink}]}`; a file returns
+  `{type:"file",encoding:"utf-8"|"base64",content,truncated,size}` (content
+  bounded at 1 MiB with `truncated:true` beyond).
+- `POST {"path","contentBase64"}` — create/overwrite (≤1 MiB), refusing
+  symlink leaves; `files.written` audit event.
+- Outside/protected paths → **403** `DENIED_PATH`; missing → **404**.
+
 ### `POST /api/v1/unsafe/reflect`, `POST /api/v1/unsafe/invoke` (slice 3.1, experimental)
 
 Trusted developer execution (spec §4.3): **runs with the privileges of the

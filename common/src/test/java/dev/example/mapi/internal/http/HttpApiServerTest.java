@@ -560,7 +560,7 @@ class HttpApiServerTest {
         return new MapiConfig(true, port, TOKEN, 60, "mapi-" + port, null, 0, false,
                 MapiConfig.DEFAULT_DISCOVERY_HEARTBEAT_SECONDS,
                 java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(scopes)),
-                MapiConfig.DEFAULT_COMMAND_PERMISSION_LEVEL, false);
+                MapiConfig.DEFAULT_COMMAND_PERMISSION_LEVEL, false, false);
     }
 
     @Test
@@ -843,6 +843,92 @@ class HttpApiServerTest {
     }
 
     // ------------------------------------------------------------------
+    // Sandboxed files (slice 3.2)
+    // ------------------------------------------------------------------
+
+    @Test
+    void fileSurfaceGatingAndContract() throws Exception {
+        // Disabled by default.
+        startServer(new MapiConfig(true, freePort(), TOKEN, 60));
+        HttpResponse<String> disabled = get("/api/v1/files?path=", "Authorization", "Bearer " + TOKEN);
+        assertEquals(403, disabled.statusCode(), disabled.body());
+        assertTrue(disabled.body().contains("DISABLED"), disabled.body());
+
+        // Scope enforcement: observe-only token cannot read files.
+        startServer(scopedConfig(java.util.List.of(dev.example.mapi.internal.auth.Scope.OBSERVE)));
+        HttpResponse<String> forbidden = get("/api/v1/files?path=", "Authorization", "Bearer " + TOKEN);
+        assertEquals(403, forbidden.statusCode(), forbidden.body());
+        assertTrue(forbidden.body().contains("\"required\":\"files.read\""), forbidden.body());
+    }
+
+    @Test
+    void fileReadWriteRoundTripWithDenylist() throws Exception {
+        int freePort = freePort();
+        platform = new TestPlatform(LOG) {
+            @Override
+            public Path configDir() {
+                return Path.of("config");
+            }
+
+            @Override
+            public Path gameDir() {
+                return gameDirOverride;
+            }
+        };
+        gameDirOverride = Files.createTempDirectory("mapi-files-test");
+        runtime = new MapiRuntime(platform);
+        server = new HttpApiServer(new MapiConfig(true, freePort, TOKEN, 60, "mapi-" + freePort, null, 0,
+                false, MapiConfig.DEFAULT_DISCOVERY_HEARTBEAT_SECONDS,
+                java.util.Set.of(dev.example.mapi.internal.auth.Scope.OBSERVE,
+                        dev.example.mapi.internal.auth.Scope.FILES_READ,
+                        dev.example.mapi.internal.auth.Scope.FILES_WRITE),
+                MapiConfig.DEFAULT_COMMAND_PERMISSION_LEVEL, false, true), runtime, LOG);
+        assertTrue(server.start());
+        port = freePort;
+
+        // Write inside the sandbox.
+        HttpResponse<String> written = post("/api/v1/files",
+                "{\"path\":\"notes/todo.txt\",\"contentBase64\":\""
+                        + java.util.Base64.getEncoder().encodeToString("do stuff".getBytes()) + "\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, written.statusCode(), written.body());
+        assertTrue(Files.readString(gameDirOverride.resolve("notes").resolve("todo.txt"))
+                .equals("do stuff"));
+
+        // Read it back (dir listing + file content).
+        HttpResponse<String> dir = get("/api/v1/files?path=notes", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, dir.statusCode(), dir.body());
+        assertTrue(dir.body().contains("\"type\":\"dir\""), dir.body());
+        assertTrue(dir.body().contains("\"name\":\"todo.txt\""), dir.body());
+
+        HttpResponse<String> file = get("/api/v1/files?path=notes/todo.txt",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, file.statusCode(), file.body());
+        assertTrue(file.body().contains("\"encoding\":\"utf-8\""), file.body());
+        assertTrue(file.body().contains("\"content\":\"do stuff\""), file.body());
+
+        // Denylist: token file protected even though it exists in the game dir.
+        Files.createDirectories(gameDirOverride.resolve("mcapi"));
+        Files.writeString(gameDirOverride.resolve("mcapi").resolve("token"), TOKEN + "\n");
+        HttpResponse<String> denied = get("/api/v1/files?path=mcapi/token",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(403, denied.statusCode(), denied.body());
+        assertTrue(denied.body().contains("DENIED_PATH"), denied.body());
+
+        HttpResponse<String> escape = get("/api/v1/files?path=../../etc/passwd",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(403, escape.statusCode(), escape.body());
+        assertTrue(escape.body().contains("DENIED_PATH"), escape.body());
+
+        // Missing path entry.
+        HttpResponse<String> missing = get("/api/v1/files?path=not/here.txt",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(404, missing.statusCode(), missing.body());
+    }
+
+    private Path gameDirOverride;
+
+    // ------------------------------------------------------------------
     // Unsafe reflection surface (slice 3.1)
     // ------------------------------------------------------------------
 
@@ -872,7 +958,7 @@ class HttpApiServerTest {
                 MapiConfig.DEFAULT_DISCOVERY_HEARTBEAT_SECONDS,
                 java.util.Set.of(dev.example.mapi.internal.auth.Scope.OBSERVE,
                         dev.example.mapi.internal.auth.Scope.UNSAFE_EXECUTE),
-                MapiConfig.DEFAULT_COMMAND_PERMISSION_LEVEL, true));
+                MapiConfig.DEFAULT_COMMAND_PERMISSION_LEVEL, true, false));
 
         HttpResponse<String> describe = post("/api/v1/unsafe/reflect",
                 "{\"class\":\"java.lang.String\"}", "Authorization", "Bearer " + TOKEN);
