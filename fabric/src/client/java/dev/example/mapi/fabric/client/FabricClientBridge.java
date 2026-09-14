@@ -28,6 +28,7 @@ import net.minecraft.client.renderer.GameRenderer;
 final class FabricClientBridge implements ClientBridge {
 
     private final AtomicLong windowRevision = new AtomicLong();
+    private final FabricInputBackend inputBackend = new FabricInputBackend();
 
     @Override
     public String bridgeId() {
@@ -36,14 +37,12 @@ final class FabricClientBridge implements ClientBridge {
 
     @Override
     public java.util.Set<String> supportedCapabilities() {
-        return java.util.Set.of("client.window", "client.screenshots");
+        return java.util.Set.of("client.window", "client.screenshots", "client.input");
     }
 
     @Override
     public Optional<InputBackend> input() {
-        // Raw input dispatch through the game's keybinding state lands with
-        // chunk 3.1's full backend; it is not advertised until then.
-        return Optional.empty();
+        return Optional.of(inputBackend);
     }
 
     @Override
@@ -54,6 +53,14 @@ final class FabricClientBridge implements ClientBridge {
     @Override
     public Optional<WindowBackend> window() {
         return Optional.of(new FabricWindow());
+    }
+
+    /**
+     * Called from the client entrypoint: registers the tick counter and any
+     * other client-thread hooks exactly once.
+     */
+    void initialize() {
+        inputBackend.registerTickCounter();
     }
 
     @Override

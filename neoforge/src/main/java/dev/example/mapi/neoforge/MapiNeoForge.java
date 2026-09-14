@@ -34,8 +34,10 @@ public final class MapiNeoForge {
         modBus.addListener(net.neoforged.fml.event.lifecycle.FMLClientSetupEvent.class,
                 event -> {
                     if (net.neoforged.fml.loading.FMLEnvironment.getDist().isClient()) {
-                        dev.example.mapi.internal.client.ClientBridgeHolder.set(
-                                new dev.example.mapi.neoforge.client.NeoForgeClientBridge());
+                        dev.example.mapi.neoforge.client.NeoForgeClientBridge bridge =
+                                new dev.example.mapi.neoforge.client.NeoForgeClientBridge();
+                        bridge.initialize();
+                        dev.example.mapi.internal.client.ClientBridgeHolder.set(bridge);
                     }
                 });
     }
