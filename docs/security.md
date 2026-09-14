@@ -19,10 +19,47 @@ repository.
 - **Bearer token required on every endpoint**, including `/health`. Tokens
   are compared with constant-time `MessageDigest.isEqual`. Tokens shorter
   than 16 characters are refused at startup.
+- **Scopes (Phase 1).** The token carries a scope set (spec §4.2); the
+  gateway authorizes the effect (`observe`, `world.read`,
+  `client.control`, …) and rejects with 403 `FORBIDDEN_SCOPE`. Scope
+  violations and the required scope are logged, never secret material.
 - **No TLS.** Loopback traffic is unencrypted by design; a token prevents
   other local users/processes from casually reading status data. Do not
   expose the port beyond loopback (no tunneling without understanding the
   consequences).
+
+## Token bootstrap
+
+When the API is enabled, the token is resolved from `MAPI_HTTP_TOKEN`, then
+`http.token`, then the token file (`http.tokenFile`, default
+`<gameDir>/mcapi/token`). A missing token file is **auto-generated**
+(256-bit random) and written atomically with owner-only permissions (POSIX
+`rw-------` on the file and `rwx------` on the containing directory; on
+filesystems without POSIX attributes, default platform protections apply).
+
+- The token value is **never logged** — neither in plain logs nor in the
+  discovery file, HTTP responses, or crash reports.
+- Newly generated tokens log a non-secret 12-hex-digit SHA-256 fingerprint
+  plus the file location for correlation.
+- The `mcapi/` directory is a runtime secret/data directory; commit patterns
+  (`.gitignore`: `*token*`) keep its contents out of version control.
+
+## Discovery file
+
+`<gameDir>/mcapi/discovery.json` advertises the running instance to local
+tools (schema version 1, atomic writes). It contains no secrets — instance
+id, process/session identifiers, PID, readiness, versions, and the loopback
+endpoints (HTTP + WebSocket events) only. Consumers must treat it as
+untrusted data and validate the endpoint before sending credentials. It is
+removed when the API stops.
+
+## WebSocket event transport
+
+The WebSocket listener runs on a second loopback-only port with the same
+Host/Origin posture. Browser-style clients authenticate with a **single-use
+30s ticket** minted over authenticated HTTP (`POST /api/v1/events/ticket`);
+tools/SDKs send the bearer header directly. Tickets are consumed on first
+use and never logged.
 
 ## Resource limits
 
@@ -42,9 +79,30 @@ repository.
 - **Out of scope:** remote attackers (cannot reach a loopback socket),
   malicious mods on the same server (they can call the Java API directly —
   the Java API exposes no secrets), and physical access.
-- The API is read-only by construction: no POST/PUT/DELETE handlers exist,
-  and no endpoint touches the filesystem, runs commands, mutates the world,
-  or exposes player identities, chat, paths, or environment variables.
+- **Mutation surface (Phase 0):** task orchestration and event streaming
+  only — no world mutation, no command execution, no file access. Game
+  state reads run on the owning thread with bounded waits; responses are
+  immutable snapshots.
+
+## Fine-grained switches (spec §4.5)
+
+Dangerous surfaces are individually switched off by default in addition to
+scope gating: `reflection.enabled` guards `/api/v1/unsafe/*` (403
+`DISABLED` when off). A request must pass **both** the scope check and the
+switch. Reflection/invoke runs with the full privileges of the game process
+— enable it only on developer machines; every call is audited as an event.
+
+## Data exposure posture (changed with the target architecture)
+
+The 0.1.0-era rule "player identities are never exposed" was relaxed in the
+target-architecture spec (roadmap §2.1 D7, owner-approved when the spec was
+adopted): `GET /api/v1/server/players` exposes profile **name, UUID,
+dimension, and position** of connected players. Rationale: these are
+required for safe agent tooling (distinguishing instances/players before
+acting). Chat, signs, books, logs, and mod-provided text remain untrusted
+observed data; per-player constraints and scopes arrive with the Phase 1
+scope model. The read-only `/api/v1/server/status` still exposes counts
+only.
 
 ## Thread-safety of game state
 
@@ -55,9 +113,10 @@ thread is never blocked by network work.
 
 ## Secrets handling in this repository
 
-- Tokens come from `MAPI_HTTP_TOKEN` (preferred) or `http.token` in
-  `mapi.properties`; both are gitignored patterns. `docs/examples/` contains
-  placeholder-only examples.
+- Tokens come from `MAPI_HTTP_TOKEN` (preferred), `http.token` in
+  the TOML config (`mapi.toml` / loader-managed `mapi-common.toml`), or the token file `<gameDir>/mcapi/token` (auto-written
+  when enabled and absent); all are gitignored patterns. `docs/examples/`
+  contains placeholder-only examples.
 - Never log token values (the code logs lengths/enablement only); never
   commit `.env`, tokens, `eula.txt`, run directories, logs, or worlds.
 - `scripts/server-smoke.sh` requires `MAPI_ACCEPT_EULA=true` explicitly;

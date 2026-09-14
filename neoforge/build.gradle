@@ -69,6 +69,36 @@ tasks.withType(JavaCompile).configureEach {
     options.release = 25
 }
 
+// ---------------------------------------------------------------------------
+// API-enabled dev runs (slice 0.7) — see fabric/build.gradle for the
+// contract. Applied when `-PmapiApi` is present so plain runs stay untouched:
+//
+//   ./gradlew :neoforge:runServerApi -PmapiApi -PmapiApiPort=26002 \
+//       -PmapiInstanceId=mx-neoforge-1 [-PmapiServerRunDir=...]
+// ---------------------------------------------------------------------------
+
+if (providers.gradleProperty('mapiApi').isPresent()) {
+    def apiPort = providers.gradleProperty('mapiApiPort').getOrElse('25586')
+    def instanceId = providers.gradleProperty('mapiInstanceId').getOrElse("mapi-${apiPort}")
+    tasks.withType(JavaExec).configureEach {
+        environment 'MAPI_HTTP_ENABLED', 'true'
+        environment 'MAPI_HTTP_PORT', apiPort
+        environment 'MAPI_INSTANCE_ID', instanceId
+    }
+}
+
+tasks.register('runServerApi') {
+    group = 'mapi'
+    description = "Runs the dev server with the local HTTP API enabled (set -PmapiApi; see build.gradle)."
+    dependsOn tasks.named('runServer')
+}
+
+tasks.register('runClientApi') {
+    group = 'mapi'
+    description = "Runs the dev client with the local HTTP API enabled (set -PmapiApi; see build.gradle)."
+    dependsOn tasks.named('runClient')
+}
+
 // Bundle the shared common classes/resources into the distributable jar.
 tasks.named('jar', Jar).configure {
     from(project(':common').sourceSets.main.output)

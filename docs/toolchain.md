@@ -72,6 +72,51 @@ never silently change the Minecraft target (26.2) — ask the owner first.
   `BlockableEventLoop#execute(Runnable)`.
 - 26.2 jars are unobfuscated (official names); `javap` works directly on the
   downloaded client jar.
+- Physical side detection (verified via `javap` against the cached jars):
+  Fabric — `FabricLoader#getEnvironmentType()` returning
+  `net.fabricmc.api.EnvType`; NeoForge —
+  `net.neoforged.fml.loading.FMLEnvironment#getDist()` (**method**, FML 11
+  removed the old public `dist` field) returning
+  `net.neoforged.api.distmarker.Dist` (`CLIENT`/`DEDICATED_SERVER`).
+- 26.2 server-read APIs (verified via `javap` against
+  `fabric-loom/26.2/minecraft-merged.jar`, 2026-09-13; used by slice 0.5):
+  `PlayerList#getPlayers()`; `ServerPlayer#getGameProfile()` → authlib 9
+  **record** (`name()`/`id()`); `Entity#position()` → `Vec3` (`x()/y()/z()`);
+  `Entity#level()`; `Level#dimension()` → `ResourceKey` with
+  **`identifier()`** (26.2 renamed `ResourceLocation` → `Identifier`,
+  `location()` → `identifier()`); `Identifier#parse(String)`;
+  `MinecraftServer#getLevel(ResourceKey)`; `Level#hasChunkAt(BlockPos)`;
+  `Level#getBlockState(BlockPos)`; `BlockState#getBlock()` +
+  `BuiltInRegistries.BLOCK#getKey(Block)`; `BlockState#getProperties()` +
+  `Property#getName()` / `Property#getName(T)`; time (26.2 clock model):
+  `LevelAccessor#getGameTime()`, `Level#getOverworldClockTime()`,
+  `Level#getDefaultClockTime()`; `MinecraftServer#getWorldData()#getVersion()`
+  (data version).
+- 26.2 client-read APIs (verified via `javap` against the merged jar,
+  2026-09-13; used by slice 0.6): `Minecraft#getInstance()`;
+  `Minecraft#getWindow()` → `com.mojang.blaze3d.platform.Window`
+  (`getWidth/getHeight/getGuiScaledWidth/getGuiScaledHeight/getGuiScale`);
+  current screen is **`Minecraft#gui#screen()`** (26.2 moved the screen off
+  `Minecraft` — there is no `screen` field/getter on `Minecraft` anymore);
+  `Screen#children()` → `List<? extends GuiEventListener>`;
+  `AbstractWidget#getX/getY/getWidth/getHeight/getMessage`;
+  `Component#getString()`; `Entity#level()`;   `net.neoforged.api.distmarker.OnlyIn` still exists in 26.2, but the
+  runtime **no longer strips `@OnlyIn` members** and logs an ERROR plus a
+  load warning when a mod uses it — MAPI deliberately does **not** use the
+  annotation; client isolation relies on the dist guard + package isolation
+  under `dev.example.mapi.client.*` (verified by a dedicated-server launch
+  run and the packaging tripwire).
+- 26.2 client input/screenshot APIs (verified via `javap`, 2026-09-13;
+  slice 0.6): key injection goes through the static
+  `KeyMapping#set(InputConstants$Key, boolean)` / `KeyMapping#click(...)`
+  with `KeyMapping#getDefaultKey()` and runtime-reported
+  `KeyMapping#getName()` — the old `KeyboardHandler#keyPress` /
+  `MouseHandler#mouseButtonPress` are gone (input moved to the
+  `net.minecraft.client.input` event system); mappings are reachable via
+  public `Options#keyUp/keyLeft/...` fields; screenshots via
+  `Screenshot#takeScreenshot(RenderTarget, Consumer<NativeImage>)` with
+  `GameRenderer#mainRenderTarget()` (NOT `Minecraft#getMainRenderTarget`)
+  and `NativeImage#writeToFile(Path)` + `close()`.
 
 Version bumps and target changes require explicit owner approval — see
 AGENTS.md §7.

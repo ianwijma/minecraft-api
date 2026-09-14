@@ -32,6 +32,7 @@ public final class MapiBootstrap {
     static final String DISPLAY_NAME;
 
     private static boolean initialized;
+    private static volatile MapiRuntime runtime;
 
     static {
         Properties meta = loadMetadata();
@@ -57,10 +58,38 @@ public final class MapiBootstrap {
             return;
         }
         initialized = true;
-        MapiRuntime runtime = new MapiRuntime(platform);
-        dev.example.mapi.api.MapiApi.bind(runtime);
+        MapiRuntime createdRuntime = new MapiRuntime(platform);
+        runtime = createdRuntime;
+        dev.example.mapi.api.MapiApi.bind(createdRuntime);
         LOG.info("MAPI {} initialized (platform={}, minecraft={})", MOD_VERSION, platform.type().id(),
                 platform.minecraftVersion());
+    }
+
+    /**
+     * @return the active runtime, or {@code null} before initialization;
+     *         internal accessor for loader client entrypoints
+     */
+    public static MapiRuntime runtime() {
+        return runtime;
+    }
+
+    /**
+     * Registers client-only operations (slice 0.6). Called once per process
+     * from loader client entrypoints on physical clients; dedicated servers
+     * never call it.
+     *
+     * @param ops     client operations implementation, never {@code null}
+     * @param scheduler schedules work onto the client thread (e.g.
+     *                {@code Minecraft::execute}), never {@code null}
+     */
+    public static void registerClientOps(dev.example.mapi.internal.client.MapiClientOps ops,
+            java.util.function.Consumer<Runnable> scheduler) {
+        Objects.requireNonNull(ops, "ops");
+        Objects.requireNonNull(scheduler, "scheduler");
+        MapiRuntime current = runtime;
+        if (current != null) {
+            current.registerClientOps(ops, scheduler);
+        }
     }
 
     private static Properties loadMetadata() {

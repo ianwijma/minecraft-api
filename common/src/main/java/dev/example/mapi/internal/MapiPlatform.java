@@ -41,6 +41,19 @@ public interface MapiPlatform {
     Path configDir();
 
     /**
+     * @return the physical side of this process, never {@code null}; a client
+     *         process is {@link PhysicalSide#CLIENT} even while it hosts an
+     *         integrated server
+     */
+    PhysicalSide physicalSide();
+
+    /**
+     * @return metadata for every loaded mod (loader containers), sorted by
+     *         id, never {@code null}; process-wide and thread-safe
+     */
+    java.util.List<RawModInfo> mods();
+
+    /**
      * @return the platform-provided logger, never {@code null}
      */
     Logger logger();
@@ -52,4 +65,15 @@ public interface MapiPlatform {
      * @param listener the listener, never {@code null}
      */
     void registerServerLifecycle(ServerLifecycleListener listener);
+
+    /**
+     * Whether HTTP startup should wait for a loader-managed config event
+     * (NeoForge) instead of binding immediately from the TOML file
+     * (Fabric/tests). Default: {@code false}.
+     *
+     * @return true when {@link #configDir()} config is loader-managed
+     */
+    default boolean defersHttpToConfigEvent() {
+        return false;
+    }
 }

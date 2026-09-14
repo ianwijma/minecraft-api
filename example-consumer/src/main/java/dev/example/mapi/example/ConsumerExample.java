@@ -2,9 +2,12 @@ package dev.example.mapi.example;
 
 import dev.example.mapi.api.Mapi;
 import dev.example.mapi.api.MapiApi;
+import dev.example.mapi.api.MapiHttpExtension;
 import dev.example.mapi.api.MapiService;
 import dev.example.mapi.api.ServerStatusSnapshot;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -68,6 +71,43 @@ public final class ConsumerExample {
             @Override
             public void onServerStart() {
                 // Invoked on the server thread; keep it fast.
+            }
+        });
+    }
+
+    /**
+     * Example HTTP extension (slice 2.4 SPI): exposes {@code ping} under
+     * {@code /api/v1/ext/example-ext/ping} and a self-describing schema at
+     * {@code /api/v1/ext/example-ext/$schema}. Handlers run on HTTP worker
+     * threads — schedule game-state work onto the owning thread yourself.
+     */
+    public static void registerExampleHttpExtension() {
+        MapiApi.require().services().register("example-ext", new MapiHttpExtension() {
+            @Override
+            public String id() {
+                return "example-ext";
+            }
+
+            @Override
+            public String requiredScope() {
+                // Exposes a read-only ping: observe matches the effect.
+                return "observe";
+            }
+
+            @Override
+            public java.util.Map<String, Object> schema() {
+                java.util.Map<String, Object> operations = new LinkedHashMap<>();
+                operations.put("ping", "returns pong with the caller's name parameter");
+                java.util.Map<String, Object> schema = new LinkedHashMap<>();
+                schema.put("operations", operations);
+                return schema;
+            }
+
+            @Override
+            public MapiHttpResponse handle(MapiHttpRequest request) {
+                String name = request.query().getOrDefault("name", "world");
+                return new MapiHttpResponse(200,
+                        java.util.Map.of("pong", name, "extension", id()));
             }
         });
     }

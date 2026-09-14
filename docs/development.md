@@ -31,13 +31,31 @@ compiler, and game runs all use it).
 | `./gradlew :neoforge:runClient` | `neoforge/run/client` |
 | `./gradlew :neoforge:runServer` | `neoforge/run/server` |
 
-Each run directory gets its own `config/` — that is where `mapi.properties`
-lives (see `docs/examples/mapi.properties.example`). The server run directory
+Each run directory gets its own `config/` — the TOML config is generated there
+on first start (Fabric: `mapi.toml`; NeoForge: FML-managed `mapi-common.toml`;
+see `docs/examples/mapi.toml.example`). The server run directory
 can be overridden with `-PmapiServerRunDir=<path>` (used by the smoke script).
 
 **These dev runs do not require the Minecraft EULA** for a plain client, but
 dedicated server runs will create `eula.txt` on first start; accepting it is
 an explicit operator decision (see below).
+
+### API-enabled runs (slice 0.7)
+
+`runServerApi` / `runClientApi` start the same dev runs with the local HTTP
+API switched on via environment (the listener is process-lifetime, so it
+comes up before any world session). Applied when `-PmapiApi` is present so
+plain runs stay untouched:
+
+```bash
+./gradlew :fabric:runServerApi -PmapiApi -PmapiApiPort=26001 -PmapiInstanceId=mx-fabric-1
+./gradlew :neoforge:runClientApi -PmapiApi -PmapiApiPort=26002 -PmapiInstanceId=mx-neo-client
+```
+
+The bearer token auto-generates into `<runDir>/mcapi/token` (fingerprint
+logged, value never printed), and discovery lands in
+`<runDir>/mcapi/discovery.json`. External tools should read the discovery
+file (see the `harness` module: `DiscoveryScanner` + `ReadinessWaiter`).
 
 ## Dedicated-server smoke test (EULA-gated)
 
@@ -69,8 +87,17 @@ Never commit `eula.txt` or anything inside run directories.
 2. Confirm in the log: `MAPI 0.1.0 initialized (platform=fabric, ...)`.
 3. Create a single-player world → confirm `MAPI: local HTTP API is disabled`
    (or, if enabled, the "listening" line).
-4. Load a world, quit to title, create another world — confirm the HTTP API
-   stops and restarts cleanly (`MAPI HTTP API stopped` between sessions).
+4. With the API enabled, load a world, quit to title, create another world —
+   confirm the listener stays up for the whole process and readiness flips
+   between `http` and `worldReady` (`/api/v1/ready`, discovery heartbeat).
+
+## Launch matrix (EULA-gated, slice 0.7)
+
+`MAPI_ACCEPT_EULA=true scripts/launch-matrix.sh` (or `./gradlew launchMatrix`)
+starts one API-enabled dev server per loader with distinct ports/instance
+ids, waits for `worldReady` via the discovery file, verifies the HTTP
+contract (identity fields, `api.started` event, task protocol) on both, and
+shuts them down. Run directories live under `build/matrix/`.
 
 ## Tests
 

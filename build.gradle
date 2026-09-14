@@ -90,8 +90,8 @@ tasks.register('buildAll', Task) {
 
 tasks.register('testAll', Task) {
     group = 'verification'
-    description = 'Runs all unit and HTTP contract tests (common module) plus the consumer example tests.'
-    dependsOn ':common:test', ':example-consumer:test'
+    description = 'Runs all unit and HTTP contract tests (common module) plus the harness, MCP adapter, JVM SDK, and consumer example tests.'
+    dependsOn ':common:test', ':harness:test', ':mcp-adapter:test', ':sdk:java:test', ':example-consumer:test'
 }
 
 tasks.register('formatCheck', Task) {
@@ -124,10 +124,30 @@ tasks.register('verify', Task) {
     dependsOn tasks.named('formatCheck'), tasks.named('testAll'), tasks.named('verifyDistributions'), tasks.named('validateManifest')
 }
 
+tasks.register('sdkPythonTest', Exec) {
+    group = 'verification'
+    description = 'Runs the Python SDK unit tests (requires python3; not part of verify).'
+    workingDir 'sdk/python'
+    commandLine 'python3', '-m', 'unittest', 'discover', '-s', 'tests'
+}
+
+tasks.register('sdkTypeScriptTest', Exec) {
+    group = 'verification'
+    description = 'Runs the TypeScript SDK tests via node type stripping (requires node >= 22.6; not part of verify).'
+    workingDir 'sdk/typescript'
+    commandLine 'node', '--experimental-strip-types', '--test', 'test/client.test.ts'
+}
+
 tasks.register('doctor', Exec) {
     group = 'help'
     description = 'Diagnoses the local development environment (JDK, wrapper, network).'
     commandLine 'bash', 'scripts/doctor.sh'
+}
+
+tasks.register('launchMatrix', Exec) {
+    group = 'verification'
+    description = 'Launches one API-enabled dev server per loader and verifies discovery + HTTP contracts (requires MAPI_ACCEPT_EULA=true; see scripts/launch-matrix.sh).'
+    commandLine 'bash', 'scripts/launch-matrix.sh'
 }
 
 // ---------------------------------------------------------------------------
@@ -196,7 +216,7 @@ tasks.register('llmContext') {
 
         def skipDirs = ['.git', '.gradle', 'build', 'logs', 'crash-reports', 'saves', 'screenshots',
                         '.idea', '.vscode', 'run-client', 'run-server'] as Set
-        def includeExts = ['java', 'gradle', 'properties', 'toml', 'md', 'json', 'yaml', 'yml', 'sh', 'cfg'] as Set
+        def includeExts = ['java', 'gradle', 'properties', 'toml', 'md', 'json', 'yaml', 'yml', 'sh', 'cfg', 'txt'] as Set
 
         List<Path> files = []
         Files.walkFileTree(rootDir.toPath(), new SimpleFileVisitor<Path>() {
@@ -289,6 +309,27 @@ tasks.register('verifyDistributions') {
 
         def problems = []
 
+        // Classload tripwire (spec §1.2): shared mod classes must never
+        // reference client-only Minecraft classes, so a dedicated server
+        // cannot crash on classloading. Classes under dev/example/mapi/client/
+        // are the documented exception: they are only loaded on physical
+        // clients (Fabric client source set / NeoForge @OnlyIn + dist guard).
+        // Static constant-pool scan; the launch test on a dedicated server
+        // remains the authoritative check.
+        def clientMarker = 'net/minecraft/client/'.bytes
+        def checkNoClientReferences = { java.util.zip.ZipFile zf, String label ->
+            zf.entries().toList()
+                .findAll { !it.directory && it.name.startsWith('dev/example/mapi/') && it.name.endsWith('.class') }
+                .findAll { !it.name.startsWith('dev/example/mapi/client/') }
+                .each { entry ->
+                    def bytes = zf.getInputStream(entry).readAllBytes()
+                    if (containsSequence(bytes, clientMarker)) {
+                        problems << "${label}: class ${entry.name} references net/minecraft/client " +
+                                "(client-only classes must live under dev/example/mapi/client/)"
+                    }
+                }
+        }
+
         def checkJar = { java.util.zip.ZipFile zf, String label ->
             def names = zf.entries().toList().collect { it.name }
             sharedEntries.each { n ->
@@ -301,6 +342,7 @@ tasks.register('verifyDistributions') {
         def fabricNames
         new java.util.zip.ZipFile(fabricJarFile).withCloseable { zf ->
             fabricNames = checkJar(zf, 'fabric')
+            checkNoClientReferences(zf, 'fabric')
             def fmjEntry = zf.getEntry('fabric.mod.json')
             if (fmjEntry == null) { problems << 'fabric: fabric.mod.json missing' }
             else {
@@ -320,6 +362,7 @@ tasks.register('verifyDistributions') {
         // ---- NeoForge jar ----
         new java.util.zip.ZipFile(neoJarFile).withCloseable { zf ->
             def neoNames = checkJar(zf, 'neoforge')
+            checkNoClientReferences(zf, 'neoforge')
             def tomlEntry = zf.getEntry('META-INF/neoforge.mods.toml')
             if (tomlEntry == null) { problems << 'neoforge: META-INF/neoforge.mods.toml missing' }
             else {
@@ -336,4 +379,16 @@ tasks.register('verifyDistributions') {
         if (problems) throw new GradleException('verifyDistributions failed:\n  - ' + problems.join('\n  - '))
         println "verifyDistributions: OK (fabric=${fabricJarFile.name}, neoforge=${neoJarFile.name})"
     }
+}
+
+static boolean containsSequence(byte[] data, byte[] sequence) {
+    boolean found = false
+    for (int i = 0; i <= data.length - sequence.length && !found; i++) {
+        boolean matches = true
+        for (int j = 0; j < sequence.length && matches; j++) {
+            if (data[i + j] != sequence[j]) matches = false
+        }
+        if (matches) found = true
+    }
+    return found
 }

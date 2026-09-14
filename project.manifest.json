@@ -6,7 +6,10 @@
   "language": "java",
   "version": "0.1.0",
   "minecraftTarget": "26.2",
-  "loaders": ["fabric", "neoforge"],
+  "loaders": [
+    "fabric",
+    "neoforge"
+  ],
   "packageGroup": "dev.example.mapi",
   "modules": [
     {
@@ -15,16 +18,51 @@
       "description": "Loader-neutral public API (dev.example.mapi.api), internal runtime, local HTTP server, unit and HTTP contract tests."
     },
     {
+      "path": "harness",
+      "kind": "shared-library",
+      "description": "JDK-only tooling for external harnesses: discovery file scanning/validation, readiness waiting, staleness rules. No Minecraft code."
+    },
+    {
+      "path": "mcp-adapter",
+      "kind": "tool",
+      "description": "Model Context Protocol server (stdio JSON-RPC) exposing the local API as tools: observe, capabilities, schema, world, player, lifecycle, task.wait/cancel, artifact.get."
+    },
+    {
+      "path": "sdk/python",
+      "kind": "sdk",
+      "description": "Stdlib-only Python client: token-file auth, discovery parsing, task polling with idempotency, event cursors with gap detection. Tests via ./gradlew sdkPythonTest."
+    },
+    {
+      "path": "sdk/java",
+      "kind": "sdk",
+      "description": "JVM SDK (JDK HTTP client): discovery/token resolution, reads, task flow with idempotency and stale-session preconditions, event cursors."
+    },
+    {
+      "path": "sdk/typescript",
+      "kind": "sdk",
+      "description": "Zero-dependency TypeScript client (Node 22+ fetch): discovery/token resolution, reads, task flow with idempotency, event async generator with gap reporting. Tests via ./gradlew sdkTypeScriptTest."
+    },
+    {
       "path": "fabric",
       "kind": "loader-adapter",
       "description": "Fabric entrypoint, platform adapter, fabric.mod.json, dev runs.",
-      "runTasks": [":fabric:runClient", ":fabric:runServer"]
+      "runTasks": [
+        ":fabric:runClient",
+        ":fabric:runServer",
+        ":fabric:runClientApi",
+        ":fabric:runServerApi"
+      ]
     },
     {
       "path": "neoforge",
       "kind": "loader-adapter",
       "description": "NeoForge entrypoint, platform adapter, mods.toml template, dev runs.",
-      "runTasks": [":neoforge:runClient", ":neoforge:runServer"]
+      "runTasks": [
+        ":neoforge:runClient",
+        ":neoforge:runServer",
+        ":neoforge:runClientApi",
+        ":neoforge:runServerApi"
+      ]
     },
     {
       "path": "example-consumer",
@@ -36,17 +74,82 @@
     "entrypoint": "AGENTS.md",
     "index": "docs/README.md",
     "files": [
-      { "path": "docs/toolchain.md", "topic": "verified versions and sources" },
-      { "path": "docs/architecture.md", "topic": "modules and boundaries" },
-      { "path": "docs/development.md", "topic": "build, run, test commands" },
-      { "path": "docs/api.md", "topic": "public Java API contract" },
-      { "path": "docs/http-api.md", "topic": "local HTTP endpoints and schemas" },
-      { "path": "docs/security.md", "topic": "HTTP security model" },
-      { "path": "docs/llm-workflow.md", "topic": "coding-agent workflow" },
-      { "path": "docs/troubleshooting.md", "topic": "known failure modes" },
-      { "path": "docs/openapi.yaml", "topic": "OpenAPI description of the HTTP API" },
-      { "path": "README.md", "topic": "human-facing overview and quick start" },
-      { "path": "CONTRIBUTING.md", "topic": "contribution rules" }
+      {
+        "path": "SUPPORT.md",
+        "topic": "supported versions and version policy"
+      },
+      {
+        "path": "docs/toolchain.md",
+        "topic": "verified versions and sources"
+      },
+      {
+        "path": "docs/architecture.md",
+        "topic": "modules and boundaries"
+      },
+      {
+        "path": "docs/development.md",
+        "topic": "build, run, test commands"
+      },
+      {
+        "path": "docs/api.md",
+        "topic": "public Java API contract"
+      },
+      {
+        "path": "docs/http-api.md",
+        "topic": "local HTTP endpoints and schemas"
+      },
+      {
+        "path": "docs/security.md",
+        "topic": "HTTP security model"
+      },
+      {
+        "path": "docs/llm-workflow.md",
+        "topic": "coding-agent workflow"
+      },
+      {
+        "path": "docs/troubleshooting.md",
+        "topic": "known failure modes"
+      },
+      {
+        "path": "docs/roadmap.md",
+        "topic": "target architecture review, reconciliation, and delivery plan"
+      },
+      {
+        "path": "docs/CAPABILITIES.md",
+        "topic": "capability model: op, scope, tier, coverage"
+      },
+      {
+        "path": "docs/SEMANTICS.md",
+        "topic": "completion levels, threading, preconditions, leases, time"
+      },
+      {
+        "path": "docs/EVENTS.md",
+        "topic": "event catalog and gap/resume semantics"
+      },
+      {
+        "path": "docs/DATA.md",
+        "topic": "typed NBT JSON, id conventions, error model"
+      },
+      {
+        "path": "docs/TESTING.md",
+        "topic": "test inventory and NOT RUN status"
+      },
+      {
+        "path": "docs/RECIPES.md",
+        "topic": "task-oriented usage recipes"
+      },
+      {
+        "path": "docs/openapi.yaml",
+        "topic": "OpenAPI description of the HTTP API"
+      },
+      {
+        "path": "README.md",
+        "topic": "human-facing overview and quick start"
+      },
+      {
+        "path": "CONTRIBUTING.md",
+        "topic": "contribution rules"
+      }
     ]
   },
   "commands": {
@@ -60,11 +163,13 @@
       "apiDocs": "apiDocs",
       "publishLocal": "publishLocal",
       "llmContext": "llmContext",
-      "validateManifest": "validateManifest"
+      "validateManifest": "validateManifest",
+      "launchMatrix": "launchMatrix"
     },
     "scripts": {
       "doctor": "scripts/doctor.sh",
       "serverSmoke": "scripts/server-smoke.sh",
+      "launchMatrix": "scripts/launch-matrix.sh",
       "verifyPublishedApi": "scripts/verify-published-api.sh",
       "httpClientExample": "scripts/mapi-client.py"
     }
@@ -77,6 +182,12 @@
     "llmContext": "build/llm/CONTEXT.md"
   },
   "secrets": {
-    "neverCommit": ["MAPI_HTTP_TOKEN", "http.token", "eula.txt", "run directories"]
+    "neverCommit": [
+      "MAPI_HTTP_TOKEN",
+      "http.token",
+      "eula.txt",
+      "run directories",
+      "mapi.toml with tokens"
+    ]
   }
 }

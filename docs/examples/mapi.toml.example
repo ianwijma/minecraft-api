@@ -1,0 +1,55 @@
+# Example MAPI configuration. MAPI creates this file automatically with
+# defaults on first start (Fabric: <configDir>/mapi.toml; NeoForge: FML
+# generates <configDir>/mapi-common.toml from the same keys). Copy only to
+# pre-seed values.
+#
+# NEVER put a real token into version control. Environment variables
+# override this file; MAPI_HTTP_TOKEN is the preferred way to supply the
+# token.
+
+[http]
+# Enable the local HTTP API (loopback only, bearer token required).
+enabled = true
+
+# Loopback port (default: 25586)
+port = 25586
+
+# Requests per client per minute (default: 60)
+rateLimitPerMinute = 60
+
+# Instance identifier (default: mapi-<port>); sanitized to [a-z0-9-], max 32.
+# instanceId = "mapi"
+
+# Bearer token, at least 16 characters. Prefer the MAPI_HTTP_TOKEN env var or
+# the auto-generated token file (below); this key is for private machines
+# only. Generate with:
+#   python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+# token = "REPLACE-WITH-LONG-RANDOM-TOKEN"
+
+# Token file (default: mcapi/token, relative to the game dir). Created
+# automatically with owner-only permissions when nothing else supplies a
+# token. The token value is never logged.
+# tokenFile = "mcapi/token"
+
+# Try up to N consecutive ports above http.port when binding (0-64).
+# portFallback = 0
+
+# Fail startup when no port can be bound (harness/CI runs).
+# failFast = false
+
+# Comma-separated scopes for the token (empty = all). See docs/CAPABILITIES.md.
+# scopes = ""
+
+# Command permission ceiling (0..4; default 2 = gamemaster).
+# commandPermissionLevel = 2
+
+# Discovery file refresh interval in seconds (5-3600; default 30).
+# discoveryHeartbeatSeconds = 30
+
+[reflection]
+# EXPERIMENTAL: enable /api/v1/unsafe/* (runs with game privileges, no sandbox).
+enabled = false
+
+[files]
+# EXPERIMENTAL: enable the sandboxed /api/v1/files surface.
+enabled = false

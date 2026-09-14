@@ -1,0 +1,53 @@
+# minecraft-api (MAPI)
+
+> MAPI: a loader-neutral Java API for other mods plus an optional, local,
+> secured HTTP API for external tools (LLM agents, dashboards, harnesses).
+
+- **Minecraft 26.2**, Java 25, Fabric + NeoForge from one shared codebase.
+- The local HTTP API is **disabled by default**, binds loopback only, and
+  requires a bearer token (auto-generated into `<gameDir>/mcapi/token`).
+- Full surface: `docs/http-api.md` (schemas in `docs/openapi.yaml`); task
+  recipes in `docs/RECIPES.md`; capability model in `docs/CAPABILITIES.md`.
+
+## What ships
+
+| Area | What it does |
+| --- | --- |
+| Session identity | `processSessionId` / `worldSessionId` / `physicalSide` on every identity payload; discovery file + heartbeat |
+| Tasks | `POST /api/v1/tasks` → 202 + `Location`; states, progress, partial effects, cancellation, wall-time deadlines; `Idempotency-Key` replay |
+| Events | per-session monotonic `seq`, polling + WebSocket stream, explicit GAP semantics, single-use browser tickets |
+| Server reads | status, players (paginated/field-selected), block, block entity (typed NBT JSON), container storage, world time |
+| Commands | console execution with a permission ceiling and audit events |
+| Leases | `client.input/ui/camera`, `server.tick`, `world.bulkEdit` — expiring, renewable, reject/queue/preempt |
+| Client evidence | status, best-effort screen tree, input-mode key actions, PNG screenshots with `frameId` |
+| Inspection | registry/tag/mod listings, threads, memory GC, logs, crash reports, per-op capabilities |
+| Extension SPI | mods expose operations under `/api/v1/ext/{id}/…` via the public Java API |
+| Unsafe surface | reflection/invoke behind `unsafe.execute` + `reflection.enabled` (documented: no sandbox) |
+| Files | sandboxed game-dir access with denylist, behind `files.*` scopes + `files.enabled` |
+
+## Agent tooling
+
+- **SDKs**: `sdk/python` (stdlib-only), `sdk/java`, `sdk/typescript`
+  (Node 22+, zero deps) — token-file auth, discovery parsing, task polling
+  with idempotency, event cursors with gap reporting.
+- **MCP adapter** (`mcp-adapter`): Model Context Protocol server over stdio —
+  `mcp-adapter --game-dir <dir>` exposes observe/capabilities/schema/world/
+  player/commands/ui/lifecycle/task.wait/task.cancel/artifact.get tools.
+- **Harness library** (`harness`): discovery validation, staleness rules
+  (heartbeat age + PID identity, never PID alone), readiness waiting.
+
+## Start here (agents)
+
+1. `AGENTS.md` — authoritative rules, commands, recipes.
+2. `./gradlew llmContext` → `build/llm/CONTEXT.md` (bounded repo snapshot).
+3. `docs/llm-workflow.md` for the read → propose → implement → verify loop.
+
+## Verification
+
+```bash
+./gradlew verify    # format, 147+ tests, jar validation, manifest
+```
+
+Game-run checks (dedicated-server smoke, launch matrix, client
+verification) are EULA/operator-gated — see `docs/TESTING.md` for the
+executed vs NOT RUN inventory.

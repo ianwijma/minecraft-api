@@ -2,6 +2,7 @@ package dev.example.mapi.internal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -13,6 +14,7 @@ import dev.example.mapi.api.MapiServices;
 import dev.example.mapi.api.PlatformType;
 import dev.example.mapi.api.ServerStatusSnapshot;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
@@ -96,6 +98,32 @@ public class MapiRuntimeTest {
         assertTrue(runtime.serverStatus().isEmpty());
         long elapsedMs = (System.nanoTime() - begin) / 1_000_000;
         assertTrue(elapsedMs >= 400, "bounded wait should be respected, was " + elapsedMs + " ms");
+        platform.listener.onServerStopping();
+        platform.listener.onServerStopped();
+    }
+
+    @Test
+    void processSessionIdIsStableAndWorldSessionChangesPerSession() {
+        TestPlatform platform = new TestPlatform(LOG);
+        MapiRuntime runtime = new MapiRuntime(platform);
+        assertFalse(runtime.processSessionId().isBlank());
+        assertEquals(runtime.processSessionId(), runtime.processSessionId());
+        assertTrue(runtime.worldSessionId().isEmpty(), "no world session before server start");
+        assertEquals("http", runtime.readiness());
+        assertTrue(runtime.availableLogicalSides().isEmpty());
+
+        platform.listener.onServerStarting(TestServerHandle.inline());
+        String first = runtime.worldSessionId().orElseThrow();
+        assertEquals("worldReady", runtime.readiness());
+        assertEquals(List.of("server"), runtime.availableLogicalSides());
+
+        platform.listener.onServerStopping();
+        platform.listener.onServerStopped();
+        assertTrue(runtime.worldSessionId().isEmpty());
+
+        platform.listener.onServerStarting(TestServerHandle.inline());
+        String second = runtime.worldSessionId().orElseThrow();
+        assertNotEquals(first, second, "a replaced world session must get a fresh id");
         platform.listener.onServerStopping();
         platform.listener.onServerStopped();
     }
@@ -184,6 +212,16 @@ public class MapiRuntimeTest {
         }
 
         @Override
+        public dev.example.mapi.internal.PhysicalSide physicalSide() {
+            return dev.example.mapi.internal.PhysicalSide.DEDICATED_SERVER;
+        }
+
+        @Override
+        public java.util.List<dev.example.mapi.internal.RawModInfo> mods() {
+            return List.of(new dev.example.mapi.internal.RawModInfo("mapi", "Minecraft API", "0.1.0"));
+        }
+
+        @Override
         public Logger logger() {
             return logger;
         }
@@ -197,27 +235,60 @@ public class MapiRuntimeTest {
     /**
      * Server handle whose {@link #executeOnServerThread(Runnable)} either runs
      * tasks inline or never runs them (simulating a busy server thread).
+     * Read suppliers return fixed fakes.
      */
     public static final class TestServerHandle implements ServerHandle {
         private final long startedAtEpochMs;
         private final Supplier<RawServerInfo> info;
         private final boolean runTasks;
+        private final Supplier<java.util.List<dev.example.mapi.internal.RawPlayerSnapshot>> players;
+        private final dev.example.mapi.internal.RawBlockRead block;
+        private final dev.example.mapi.internal.RawWorldTime time;
+        private final int dataVersion;
+        private final java.util.function.BiFunction<String, Integer, dev.example.mapi.internal.RawCommandResult>
+                commandExecutor;
 
         public static TestServerHandle inline() {
             return new TestServerHandle(1_000L, () -> new RawServerInfo(1_000L, 3, 20, 42, 1.0d, "A Test World"),
-                    true);
+                    true,
+                    java.util.List.of(
+                            new dev.example.mapi.internal.RawPlayerSnapshot("Asha",
+                                    java.util.UUID.fromString("00000000-0000-0000-0000-000000000001"),
+                                    "minecraft:overworld", 1.5, -64.0, 2.5),
+                            new dev.example.mapi.internal.RawPlayerSnapshot("Bram",
+                                    java.util.UUID.fromString("00000000-0000-0000-0000-000000000002"),
+                                    "minecraft:the_nether", 10.0, 32.0, -3.0)),
+                    new dev.example.mapi.internal.RawBlockRead("minecraft:stone", java.util.Map.of(),
+                            "minecraft:overworld", 0, -64, 0),
+                    new dev.example.mapi.internal.RawWorldTime(12345L, 6000L, 6000L), 4189,
+                    (command, level) -> new dev.example.mapi.internal.RawCommandResult(1, true,
+                            List.of("Executed " + command + " at level " + level)));
         }
 
         public static TestServerHandle blocked() {
             return new TestServerHandle(1_000L, () -> {
                 throw new AssertionError("must not be invoked when blocked");
-            }, false);
+            }, false, java.util.List.of(), null,
+                    new dev.example.mapi.internal.RawWorldTime(0, 0, 0), 0,
+                    (command, level) -> {
+                        throw new AssertionError("must not be invoked when blocked");
+                    });
         }
 
-        private TestServerHandle(long startedAtEpochMs, Supplier<RawServerInfo> info, boolean runTasks) {
+        private TestServerHandle(long startedAtEpochMs, Supplier<RawServerInfo> info, boolean runTasks,
+                java.util.List<dev.example.mapi.internal.RawPlayerSnapshot> players,
+                dev.example.mapi.internal.RawBlockRead block,
+                dev.example.mapi.internal.RawWorldTime time, int dataVersion,
+                java.util.function.BiFunction<String, Integer, dev.example.mapi.internal.RawCommandResult>
+                        commandExecutor) {
             this.startedAtEpochMs = startedAtEpochMs;
             this.info = info;
             this.runTasks = runTasks;
+            this.players = () -> players;
+            this.block = block;
+            this.time = time;
+            this.dataVersion = dataVersion;
+            this.commandExecutor = commandExecutor;
         }
 
         @Override
@@ -235,6 +306,114 @@ public class MapiRuntimeTest {
         @Override
         public Supplier<RawServerInfo> infoSupplier() {
             return info;
+        }
+
+        @Override
+        public Supplier<java.util.List<dev.example.mapi.internal.RawPlayerSnapshot>> playersSupplier() {
+            return players;
+        }
+
+        @Override
+        public Supplier<dev.example.mapi.internal.RawBlockRead> blockSupplier(String dimension, int x, int y,
+                int z) {
+            if (dimension != null && dimension.equals("minecraft:nowhere")) {
+                throw new dev.example.mapi.internal.UnknownDimensionException("Unknown dimension: " + dimension);
+            }
+            return () -> block;
+        }
+
+        @Override
+        public Supplier<dev.example.mapi.internal.RawWorldTime> timeSupplier(String dimension) {
+            if (dimension != null && dimension.equals("minecraft:nowhere")) {
+                throw new dev.example.mapi.internal.UnknownDimensionException("Unknown dimension: " + dimension);
+            }
+            return () -> time;
+        }
+
+        @Override
+        public Supplier<Integer> dataVersionSupplier() {
+            return () -> dataVersion;
+        }
+
+        @Override
+        public Supplier<dev.example.mapi.internal.RawCommandResult> commandSupplier(String command,
+                int permissionLevel) {
+            return () -> commandExecutor.apply(command, permissionLevel);
+        }
+
+        @Override
+        public Supplier<dev.example.mapi.internal.ServerHandle.RegistryIdPage> registryIdsSupplier(
+                String type, int limit, int offset) {
+            if (!type.equals("block")) {
+                throw new dev.example.mapi.internal.UnknownRegistryTypeException("Unknown registry type: " + type);
+            }
+            java.util.List<String> ids = java.util.List.of("minecraft:air", "minecraft:dirt",
+                    "minecraft:stone");
+            return () -> new dev.example.mapi.internal.ServerHandle.RegistryIdPage(
+                    ids.subList(Math.min(offset, ids.size()), Math.min(offset + limit, ids.size())), ids.size());
+        }
+
+        @Override
+        public Supplier<java.util.List<String>> tagIdsSupplier(String type) {
+            if (!type.equals("block")) {
+                throw new dev.example.mapi.internal.UnknownRegistryTypeException("Unknown registry type: " + type);
+            }
+            return () -> java.util.List.of("minecraft:logs", "minecraft:planks");
+        }
+
+        @Override
+        public Supplier<java.util.List<String>> tagMembersSupplier(String type, String tagId) {
+            if (!type.equals("block")) {
+                throw new dev.example.mapi.internal.UnknownRegistryTypeException("Unknown registry type: " + type);
+            }
+            return () -> tagId.equals("minecraft:planks")
+                    ? java.util.List.of("minecraft:oak_planks", "minecraft:spruce_planks")
+                    : java.util.List.of();
+        }
+
+        @Override
+        public Supplier<dev.example.mapi.internal.RawBlockEntityRead> blockEntitySupplier(String dimension,
+                int x, int y, int z) {
+            if (dimension.equals("minecraft:nowhere")) {
+                throw new dev.example.mapi.internal.UnknownDimensionException("Unknown dimension: " + dimension);
+            }
+            if (x == 999) {
+                return () -> dev.example.mapi.internal.RawBlockEntityRead.unloaded();
+            }
+            if (x == 998) {
+                return () -> dev.example.mapi.internal.RawBlockEntityRead.absent();
+            }
+            java.util.Map<String, Object> nbt = new java.util.LinkedHashMap<>();
+            nbt.put("Items", java.util.Map.of("list", java.util.List.of()));
+            nbt.put("Lock", "secret-code");
+            nbt.put("CustomName", "{\"text\":\"Storage\"}");
+            return () -> new dev.example.mapi.internal.RawBlockEntityRead(true,
+                    new dev.example.mapi.internal.RawBlockEntity("minecraft:chest", dimension, x, y, z, nbt));
+        }
+
+        @Override
+        public Supplier<dev.example.mapi.internal.RawStorageRead> storageSupplier(String dimension,
+                int x, int y, int z) {
+            if (dimension.equals("minecraft:nowhere")) {
+                throw new dev.example.mapi.internal.UnknownDimensionException("Unknown dimension: " + dimension);
+            }
+            if (x == 999) {
+                return () -> dev.example.mapi.internal.RawStorageRead.unloaded();
+            }
+            if (x == 998) {
+                return () -> dev.example.mapi.internal.RawStorageRead.notContainer("minecraft:furnace");
+            }
+            if (x == 997) {
+                return () -> dev.example.mapi.internal.RawStorageRead.notContainer(null);
+            }
+            return () -> new dev.example.mapi.internal.RawStorageRead(true, "minecraft:chest",
+                    new dev.example.mapi.internal.RawStorageSnapshot("minecraft:chest",
+                            java.util.List.of(
+                                    new dev.example.mapi.internal.RawStorageSnapshot.Slot(0,
+                                            "minecraft:diamond", 3),
+                                    new dev.example.mapi.internal.RawStorageSnapshot.Slot(2,
+                                            "minecraft:stick", 64)),
+                            27));
         }
     }
 }

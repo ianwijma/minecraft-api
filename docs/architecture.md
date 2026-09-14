@@ -37,44 +37,96 @@ classes, or example code.
 ## Data flow
 
 ```
+process init (mod construction)
+        │
+        ▼
+MapiRuntime ── starts when enabled ──► HttpApiServer  (process lifetime)
+        │                                    │  workers (bounded, queue 32)
+        ├─► MapiServicesImpl (registry)      ├─► GET reads  ─► trySnapshot/tryReadOnServerThread
+        ├─► TaskManager (202 protocol)  ─────┤
+        ├─► EventLog (seq, ring buffer)      ├─► /events poll + WS on its own loopback port
+        └─► DiscoveryFile (heartbeat)        └─► owning-thread execution only
+             ▲
 loader lifecycle event (Fabric/NeoForge)
         │  (loader module adapter)
         ▼
 ServerLifecycleListener.onServerStarting(ServerHandle)
-        │
+        │  session identity flips: worldSessionId, readiness=worldReady
         ▼
-MapiRuntime ── owns ──► MapiServicesImpl (thread-safe registry)
-        │
-        ├─► binds dev.example.mapi.api.MapiApi (public facade)
-        └─► HttpApiServer (only if config enables it)
-                 │  workers (2 daemon threads, bounded queue)
-                 ▼
-            runtime.trySnapshot()
-                 │  FutureTask submitted via ServerHandle.executeOnServerThread
-                 ▼
-            server thread reads RawServerInfo ──► ServerStatusSnapshot (immutable)
+server thread reads RawServerInfo/RawPlayerSnapshot/RawBlockRead/RawWorldTime
+        └─► immutable DTOs cross back; serialization stays off-thread
 ```
 
 Rules baked into this flow:
 
-- The tick thread is never blocked by HTTP work; snapshots use a bounded
-  500 ms wait (`MapiRuntime.SNAPSHOT_WAIT_MS`).
-- The HTTP worker never touches live game objects directly; it only submits
-  the snapshot task and waits with a bound.
-- HTTP starts on server start and stops on server stop (integrated servers
-  included), so repeated sessions and port conflicts are handled without
-  crashing the game.
+- The tick thread is never blocked by HTTP work; every read uses a bounded
+  500 ms wait (`MapiRuntime.SNAPSHOT_WAIT_MS`) and immutable DTOs.
+- The HTTP worker never touches live game objects directly.
+- HTTP starts at process init (when enabled) and survives repeated world
+  sessions; the WebSocket event stream runs on its own loopback port
+  because the JDK HTTP stack cannot host protocol upgrades.
+- Tasks run on a small daemon pool and schedule game work onto the owning
+  thread; world-session end fails running tasks with `LIFECYCLE_CHANGED`.
+- Events get per-process-session monotonic sequence numbers from EventLog;
+  the same log serves polling (`?after=`) and WebSocket replay.
+
+## Session model
+
+The runtime stamps every payload with identity so external tools can detect
+restarts and world changes:
+
+- `processSessionId` — random UUID per `MapiRuntime` (per launch).
+- `worldSessionId` — random UUID per server session (dedicated or
+  integrated); absent while no world session is active. Repeated integrated
+  sessions each get a fresh id.
+- `physicalSide` — `client` or `dedicatedServer`, detected via the loader
+  (`EnvType` on Fabric, `Dist` on NeoForge) through the `MapiPlatform` seam.
+- `availableLogicalSides` — logical sides currently serviceable
+  (`server` while a server session runs).
+- `readiness` — `http` or `worldReady` (`clientJoined` reserved).
+
+The optional discovery file (`<gameDir>/mcapi/discovery.json`, written by
+`internal.discovery.DiscoveryFile`) exposes this identity plus the endpoint
+to local tools; it never contains secrets.
 
 ## Client-only code
 
-There is none. Both entrypoints are `environment: "*"`/`side=BOTH`. If
-client-only code is ever added, it must live in a separate source set or
-module that dedicated servers never load, per the loaders' documented
-mechanisms (`loom.splitEnvironmentSourceSets()` on Fabric,
-`net.neoforged.api.distmarker.Dist` guards on NeoForge).
+Client-only classes live **only** under `dev.example.mapi.client.*` and are
+referenced exclusively from client-side code:
+
+- **Fabric**: the `client` source set (`loom.splitEnvironmentSourceSets()`),
+  entered via the `client` entrypoint in `fabric.mod.json`
+  (`dev.example.mapi.client.fabric.MapiFabricClient`).
+- **NeoForge**: main-source-set classes annotated `@OnlyIn(Dist.CLIENT)`
+  behind a dist guard in the mod constructor
+  (`dev.example.mapi.client.neoforge.NeoForgeClientOps`).
 
 ## Extension points for growth
 
 - New loader: add a module implementing `MapiPlatform`, keep `common` intact.
 - New endpoint: `HttpApiServer.route()` + tests + `docs/openapi.yaml`.
 - New public API: `api` interfaces + `MapiRuntime` + `docs/api.md`.
+
+## Add-endpoint checklist (spec §11)
+
+Every new HTTP route must complete all steps in the same change set
+(`AGENTS.md` §6; the `ContractSyncTest` tripwire enforces the doc steps):
+
+1. **Effect first** (§4.2): decide which effect the route has and which
+   scope authorizes it; add the mapping in `HttpApiServer.requiredScope()`
+   (or a per-extension scope for the SPI). Authorize the effect, not the
+   route.
+2. **Implement** the route in `HttpApiServer` (GET for reads; POST/DELETE
+   for mutations). Game state only on the owning thread via
+   `tryReadOnServerThread`/`tryReadOnClientThread`; immutable DTOs out.
+3. **Contract tests**: positive + negative cases in `HttpApiServerTest`
+   (auth 401, scope 403 `FORBIDDEN_SCOPE`, stale-session 409, validation
+   400, wrong-state 409) — see `docs/TESTING.md`.
+4. **Register the route** in `internal.http.ContractSyncTest` (both route
+   lists).
+5. **Document**: add the path to `docs/openapi.yaml` (subset rules apply)
+   and a section to `docs/http-api.md`; extend `docs/CAPABILITIES.md` and
+   `docs/DATA.md` if the payload introduces conventions.
+6. **Emit events** for mutations (`api-originated`) per `docs/EVENTS.md`.
+7. Run `./gradlew verify` and update `CHANGELOG.md` with a compatibility
+   note (additive vs breaking).

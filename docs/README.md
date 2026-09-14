@@ -3,6 +3,9 @@
 | File | Purpose |
 | --- | --- |
 | [`AGENTS.md`](../AGENTS.md) | Authoritative coding-agent guide: rules, commands, recipes |
+| [`../llms.txt`](../llms.txt) | LLM entry point: surface overview, tooling map |
+| [`../CHANGELOG.md`](../CHANGELOG.md) | Notable changes with contract-compatibility notes |
+| [`SUPPORT.md`](../SUPPORT.md) | Supported Minecraft/Java/toolchain versions and version policy |
 | [`README.md`](../README.md) | Human overview: prerequisites, quick start, artifacts |
 | [`CONTRIBUTING.md`](../CONTRIBUTING.md) | Contribution rules and required checks |
 | [`LICENSE.pending.md`](../LICENSE.pending.md) | License decision required before publishing |
@@ -15,6 +18,13 @@
 | [`security.md`](security.md) | HTTP security model and secrets handling |
 | [`llm-workflow.md`](llm-workflow.md) | Coding-agent workflow + context generation |
 | [`troubleshooting.md`](troubleshooting.md) | Failure modes and fixes |
+| [`roadmap.md`](roadmap.md) | Target architecture review, reconciliation, and delivery plan |
+| [`CAPABILITIES.md`](CAPABILITIES.md) | Capability model: op × scope × tier × coverage |
+| [`SEMANTICS.md`](SEMANTICS.md) | Completion levels, threading, preconditions, leases, time |
+| [`EVENTS.md`](EVENTS.md) | Event catalog, sources, gap/resume semantics |
+| [`DATA.md`](DATA.md) | Typed NBT JSON, id conventions, error model |
+| [`TESTING.md`](TESTING.md) | Test inventory and NOT RUN status |
+| [`RECIPES.md`](RECIPES.md) | Task-oriented usage recipes |
 | [`openapi.yaml`](openapi.yaml) | OpenAPI 3.1 description of the HTTP API |
 | [`../project.manifest.json`](../project.manifest.json) | Machine-readable module/command/doc map (validated by `./gradlew validateManifest`) |
 | [`examples/mapi.properties.example`](examples/mapi.properties.example) | Placeholder-only config example |
