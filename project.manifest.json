@@ -141,6 +141,14 @@
       {
         "path": "CONTRIBUTING.md",
         "topic": "contribution rules"
+      },
+      {
+        "path": "docs/examples/mapi-common.toml.example",
+        "topic": "NeoForge config example (loader-native TOML)"
+      },
+      {
+        "path": "docs/examples/mapi.json.example",
+        "topic": "Fabric config example (JSON, auto-generated)"
       }
     ]
   },

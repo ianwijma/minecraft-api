@@ -18,9 +18,8 @@ Machine-readable description: [`openapi.yaml`](openapi.yaml).
 
 ## Configuration
 
-Config file: `<configDir>/mapi.properties` (per instance; in dev runs that is
-`<runDir>/config/mapi.properties`). Environment variables override the file.
-See `docs/examples/mapi.properties.example`.
+Config file: loader-native and auto-generated (see the table below); in dev
+runs that is `<runDir>/config/`. Environment variables override the file.
 
 | File key | Env var | Default | Meaning |
 | --- | --- | --- | --- |

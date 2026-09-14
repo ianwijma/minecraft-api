@@ -69,6 +69,12 @@ final class FabricPlatform implements MapiPlatform {
     }
 
     @Override
+    public dev.example.mapi.internal.config.MapiConfig loadConfig(java.nio.file.Path configDir,
+            java.util.Map<String, String> env, org.slf4j.Logger logger) {
+        return FabricConfig.load(configDir, env, logger);
+    }
+
+    @Override
     public dev.example.mapi.internal.server.ServerBridge serverBridge() {
         return bridge;
     }

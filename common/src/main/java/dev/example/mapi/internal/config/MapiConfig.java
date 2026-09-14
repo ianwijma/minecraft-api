@@ -109,6 +109,49 @@ public record MapiConfig(
         boolean lanEnabled = readBool(file, env, "server.lan.enabled", "MAPI_SERVER_LAN_ENABLED",
                 false, logger);
 
+        return fromValues(enabled, port, token, rateLimit, scopes, allowlist, lanEnabled,
+                env, logger);
+    }
+
+    /**
+     * Validates raw resolved values (already merged from the loader-native
+     * config source with environment overrides applied) and builds the
+     * configuration. This is the single validation entry point shared by
+     * every loader config format; environment variables win over file
+     * values.
+     *
+     * @param enabled    whether the HTTP API is enabled
+     * @param port       loopback port
+     * @param token      bearer token (may be {@code null} when disabled)
+     * @param rateLimit  requests per client per minute
+     * @param scopes     granted scopes (empty = full set)
+     * @param allowlist  direct-connection allowlist (empty = deny all)
+     * @param lanEnabled whether LAN publication is permitted
+     * @param env        process environment (env vars win over file values)
+     * @param logger     logger for warnings; secrets are never logged
+     * @return a validated configuration
+     * @throws MapiConfigException when values are invalid
+     */
+    public static MapiConfig fromValues(
+            boolean enabled, int port, String token, int rateLimit,
+            java.util.Set<dev.example.mapi.internal.operation.Scope> scopes,
+            java.util.List<String> allowlist, boolean lanEnabled,
+            Map<String, String> env, Logger logger) {
+        if (env.containsKey("MAPI_HTTP_ENABLED")) {
+            enabled = readBooleanText(env.get("MAPI_HTTP_ENABLED"), "MAPI_HTTP_ENABLED");
+        }
+        String rawPort = env.get("MAPI_HTTP_PORT");
+        if (rawPort != null && !rawPort.isBlank()) {
+            port = parseIntStrict(rawPort, "MAPI_HTTP_PORT");
+        }
+        String rawRate = env.get("MAPI_HTTP_RATE_LIMIT_PER_MINUTE");
+        if (rawRate != null && !rawRate.isBlank()) {
+            rateLimit = parseIntStrict(rawRate, "MAPI_HTTP_RATE_LIMIT_PER_MINUTE");
+        }
+        String envToken = env.get("MAPI_HTTP_TOKEN");
+        if (envToken != null && !envToken.isBlank()) {
+            token = envToken;
+        }
         if (port < 1 || port > 65535) {
             throw new MapiConfigException("http.port must be between 1 and 65535 (got " + port + ")");
         }
@@ -118,8 +161,8 @@ public record MapiConfig(
         if (enabled) {
             if (token == null || token.isBlank()) {
                 throw new MapiConfigException("MAPI HTTP API is enabled but no bearer token is configured. "
-                        + "Set the MAPI_HTTP_TOKEN environment variable (preferred) or http.token in "
-                        + configDir.resolve(CONFIG_FILE_NAME) + ". The HTTP API refuses to start without one.");
+                        + "Set the MAPI_HTTP_TOKEN environment variable (preferred) or http.token in the "
+                        + "loader-native config file. The HTTP API refuses to start without one.");
             }
             if (token.trim().length() < MIN_TOKEN_LENGTH) {
                 throw new MapiConfigException("MAPI HTTP API bearer token is shorter than " + MIN_TOKEN_LENGTH
@@ -129,6 +172,22 @@ public record MapiConfig(
         }
         return new MapiConfig(enabled, port, token == null ? null : token.trim(), rateLimit, scopes,
                 allowlist, lanEnabled);
+    }
+
+    private static int parseIntStrict(String raw, String name) {
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            throw new MapiConfigException(name + " must be an integer (got a non-integer value)");
+        }
+    }
+
+    private static boolean readBooleanText(String raw, String name) {
+        String value = raw.trim();
+        if (value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false")) {
+            return Boolean.parseBoolean(value);
+        }
+        throw new MapiConfigException(name + " must be 'true' or 'false' (got a non-boolean value)");
     }
 
     private static java.util.Set<dev.example.mapi.internal.operation.Scope> readScopes(

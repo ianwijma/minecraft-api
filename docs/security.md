@@ -88,7 +88,8 @@ thread is never blocked by network work.
 ## Secrets handling in this repository
 
 - Tokens come from `MAPI_HTTP_TOKEN` (preferred) or `http.token` in
-  `mapi.properties`; both are gitignored patterns. `docs/examples/` contains
+  the loader-native config file (NeoForge `mapi-common.toml`, Fabric
+  `mapi.json`); both are gitignored patterns. `docs/examples/` contains
   placeholder-only examples.
 - Never log token values (the code logs lengths/enablement only); never
   commit `.env`, tokens, `eula.txt`, run directories, logs, or worlds.

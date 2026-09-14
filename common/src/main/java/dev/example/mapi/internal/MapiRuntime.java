@@ -414,7 +414,7 @@ public final class MapiRuntime implements Mapi {
     private void startHttp(ServerHandle handle) {
         dev.example.mapi.internal.config.MapiConfig config;
         try {
-            config = dev.example.mapi.internal.config.MapiConfig.load(platform.configDir(), System.getenv(),
+            config = platform.loadConfig(platform.configDir(), System.getenv(),
                     platform.logger());
         } catch (dev.example.mapi.internal.config.MapiConfigException e) {
             platform.logger().error("MAPI: HTTP API not started: {}", e.getMessage());

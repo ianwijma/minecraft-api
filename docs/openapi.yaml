@@ -515,7 +515,7 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      description: Token from MAPI_HTTP_TOKEN (preferred) or mapi.properties http.token.
+      description: Token from MAPI_HTTP_TOKEN (preferred) or the loader-native config file.
   responses:
     Unauthorized:
       description: Missing or invalid bearer token

@@ -1,0 +1,14 @@
+# MAPI NeoForge config (auto-generated at config/mapi-common.toml on first
+# run; edit the real file, not this example). Environment variables
+# (MAPI_HTTP_*) override these values. Secrets are never logged.
+
+[http]
+    enabled = false
+    port = 25586
+    token = ""
+    rateLimitPerMinute = 60
+    scopes = []
+[client.connect]
+    allowlist = []
+[server.lan]
+    enabled = false

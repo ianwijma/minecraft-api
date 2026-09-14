@@ -1,0 +1,9 @@
+{
+  "http.enabled": false,
+  "http.port": 25586,
+  "http.token": "",
+  "http.rateLimitPerMinute": 60,
+  "http.scopes": [],
+  "client.connect.allowlist": [],
+  "server.lan.enabled": false
+}

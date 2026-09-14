@@ -54,6 +54,24 @@ public interface MapiPlatform {
     void registerServerLifecycle(ServerLifecycleListener listener);
 
     /**
+     * Loads the resolved configuration from the loader-native config source
+     * (NeoForge: auto-generated {@code config/mapi-common.toml} via
+     * ModConfigSpec; Fabric: auto-generated {@code config/mapi.json}). The
+     * default delegates to the loader-neutral properties path (used by test
+     * platforms); environment variables override file values in every case
+     * (spec: token handling in docs/security.md).
+     *
+     * @param configDir the instance configuration directory
+     * @param env       process environment
+     * @param logger    platform logger
+     * @return a validated configuration
+     */
+    default dev.example.mapi.internal.config.MapiConfig loadConfig(java.nio.file.Path configDir,
+            java.util.Map<String, String> env, Logger logger) {
+        return dev.example.mapi.internal.config.MapiConfig.load(configDir, env, logger);
+    }
+
+    /**
      * @return the server-side bridge capabilities for this loader; the
      *     default reports no capabilities (nothing beyond the base runtime)
      */

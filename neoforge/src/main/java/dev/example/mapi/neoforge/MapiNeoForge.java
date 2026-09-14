@@ -27,6 +27,10 @@ public final class MapiNeoForge {
      *                     configuration integration)
      */
     public MapiNeoForge(IEventBus modBus, ModContainer modContainer) {
+        // Loader-native config: NeoForge generates config/mapi-common.toml
+        // with defaults + comments on first run (never hand-created).
+        modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON,
+                NeoForgeConfig.SPEC);
         MapiBootstrap.initialize(new NeoForgePlatform());
         // Dist-guarded client registration (docs/architecture.md): the
         // listener body never runs on a dedicated server, so the client-only
