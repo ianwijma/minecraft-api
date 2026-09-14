@@ -385,6 +385,100 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "403": { $ref: "#/components/responses/InsufficientScope" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client:
+    get:
+      operationId: getClientInfo
+      summary: >
+        Client bridge identity and capabilities. CAPABILITY_UNAVAILABLE
+        semantics apply per feature on dedicated servers (no client bridge).
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClientInfoResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/window:
+    get:
+      operationId: getWindowState
+      summary: Window state with framebuffer/logical distinction (spec §9.1)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WindowStateResponse" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/screenshots:
+    get:
+      operationId: captureScreenshot
+      summary: Screenshot capture with frame/scale metadata (spec §20)
+      responses:
+        "200":
+          description: OK (PNG as base64)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ScreenshotResponse" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/actions/hold-key:
+    post:
+      operationId: holdKey
+      summary: >
+        Hold a key for N client ticks (raw-input only, spec §3.4/§4.2).
+        Returns an action receipt; unsupported modes fail with
+        EXECUTION_MODE_UNSUPPORTED (no silent fallback). Key-up is always
+        dispatched before a deadline failure surfaces (release-all).
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HoldKeyRequest" }
+      responses:
+        "200":
+          description: Action receipt
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422":
+          description: Unsupported execution mode
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/logs:
+    get:
+      operationId: readLogs
+      summary: Bounded log capture with cursor reads and explicit gaps (spec §17.1)
+      parameters:
+        - { name: cursor, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 1000, default: 200 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/process/shutdown:
+    post:
+      operationId: requestShutdown
+      summary: >
+        Request graceful local shutdown (administrative, spec §1.1/§14:
+        operations:unrestricted). CAPABILITY_UNAVAILABLE until the loader
+        adapter implements it.
+      responses:
+        "200":
+          description: Shutdown accepted
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403": { $ref: "#/components/responses/InsufficientScope" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/jobs/{id}:
     get:
       operationId: getJob
@@ -465,6 +559,11 @@ components:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
     WorldNotLoaded:
       description: No active world session (spec §6)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    CapabilityUnavailable:
+      description: The loader bridge does not provide this capability (spec §15.3)
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -687,6 +786,49 @@ components:
       required: [command]
       properties:
         command: { type: string, maxLength: 4096 }
+    ClientInfoResponse:
+      type: object
+      required: [protocolVersion, bridgeId, capabilities, input, screenshots, window]
+      properties:
+        protocolVersion: { type: integer, const: 1 }
+        bridgeId: { type: string }
+        capabilities: { type: array, items: { type: string } }
+        input: { type: boolean }
+        screenshots: { type: boolean }
+        window: { type: boolean }
+        inputCoverage: { type: object, additionalProperties: true }
+    WindowStateResponse:
+      type: object
+      required: [protocolVersion, width, height, framebufferWidth, framebufferHeight, guiScale, fullscreen, revision]
+      properties:
+        protocolVersion: { type: integer, const: 1 }
+        width: { type: integer }
+        height: { type: integer }
+        framebufferWidth: { type: integer, description: never assumed equal to logical width }
+        framebufferHeight: { type: integer }
+        guiScale: { type: integer }
+        fullscreen: { type: boolean }
+        revision: { type: integer }
+    ScreenshotResponse:
+      type: object
+      required: [protocolVersion, width, height, frame, guiScale, capturedAtEpochMs, pngBase64]
+      properties:
+        protocolVersion: { type: integer, const: 1 }
+        width: { type: integer }
+        height: { type: integer }
+        frame: { type: integer }
+        guiScale: { type: integer }
+        screenId: { type: string }
+        capturedAtEpochMs: { type: integer }
+        pngBase64: { type: string }
+    HoldKeyRequest:
+      type: object
+      required: [keyCode, ticks]
+      properties:
+        keyCode: { type: integer }
+        ticks: { type: integer, minimum: 1, maximum: 3600 }
+        executionMode: { type: string, default: raw-input }
+        deadlineEpochMs: { type: integer }
     ErrorResponse:
       allOf:
         - $ref: "#/components/schemas/ProtocolVersioned"

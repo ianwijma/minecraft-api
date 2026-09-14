@@ -64,6 +64,7 @@ public final class MapiRunner {
                 case "wait-world" -> waitWorld(options, env);
                 case "run" -> runPlan(options, env);
                 case "provision-server" -> provisionServer(options, env);
+                case "replay" -> replay(options, env);
                 default -> usage();
             };
         } catch (IllegalArgumentException e) {
@@ -76,7 +77,7 @@ public final class MapiRunner {
     }
 
     private static int usage() {
-        System.out.println("{\"usage\":\"mapi-runner <version|status|wait-world|run|provision-server>"
+        System.out.println("{\"usage\":\"mapi-runner <version|status|wait-world|run|replay|provision-server>"
                 + " [--base url] [--token ENV_NAME] ...\"}");
         return 2;
     }
@@ -129,6 +130,39 @@ public final class MapiRunner {
         PlanRunner.Report report = new PlanRunner(client).run(planJson);
         System.out.println(MiniJsonLiteral.reportJson(report));
         return report.ok() ? 0 : 1;
+    }
+
+    private static int replay(Map<String, String> options, Map<String, String> env)
+            throws Exception {
+        MapiClient client = client(options, env);
+        String recordingFile = options.get("recording");
+        if (recordingFile == null) {
+            throw new IllegalArgumentException("--recording <file> is required");
+        }
+        Recorder.ReplayReport report = Recorder.replay(client,
+                java.nio.file.Path.of(recordingFile));
+        System.out.println(jsonOf(report));
+        return report.ok() ? 0 : 1;
+    }
+
+    private static String jsonOf(Recorder.ReplayReport report) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\"ok\":").append(report.ok());
+        sb.append(",\"steps\":").append(report.steps().size());
+        sb.append(",\"divergences\":[");
+        for (int i = 0; i < report.divergences().size(); i++) {
+            var divergence = report.divergences().get(i);
+            if (i > 0) {
+                sb.append(',');
+            }
+            sb.append("{\"index\":").append(divergence.index())
+                    .append(",\"name\":\"").append(jsonEscape(divergence.name())).append('"')
+                    .append(",\"kind\":\"").append(divergence.kind()).append('"')
+                    .append(",\"expected\":\"").append(jsonEscape(divergence.expected())).append('"')
+                    .append(",\"actual\":\"").append(jsonEscape(divergence.actual())).append("\"}");
+        }
+        sb.append("]}");
+        return sb.toString();
     }
 
     private static int provisionServer(Map<String, String> options, Map<String, String> env) {
