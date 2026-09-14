@@ -11,6 +11,8 @@ set -euo pipefail
 
 FABRIC_PORT="${MAPI_MATRIX_FABRIC_PORT:-26001}"
 NEOFORGE_PORT="${MAPI_MATRIX_NEOFORGE_PORT:-26002}"
+FABRIC_GAME_PORT="${MAPI_MATRIX_FABRIC_GAME_PORT:-25561}"
+NEOFORGE_GAME_PORT="${MAPI_MATRIX_NEOFORGE_GAME_PORT:-25562}"
 TIMEOUT_SECONDS="${MAPI_MATRIX_TIMEOUT:-600}"
 RUNROOT="build/matrix"
 
@@ -24,11 +26,12 @@ rm -rf "${RUNROOT}"
 mkdir -p "${RUNROOT}"
 
 start_instance() {
-  local loader="$1" port="$2" instance="$3"
+  local loader="$1" port="$2" instance="$3" game_port="$4"
   local run_dir="$(pwd)/${RUNROOT}/${loader}/run"
   mkdir -p "${run_dir}"
   printf 'eula=true\n' > "${run_dir}/eula.txt"
-  echo "matrix: starting :${loader}:runServerApi (port ${port}, instance ${instance})"
+  printf 'server-port=%s\nmotd=MAPI matrix (%s)\n' "${game_port}" "${loader}" > "${run_dir}/server.properties"
+  echo "matrix: starting :${loader}:runServerApi (api ${port}, game ${game_port}, instance ${instance})"
   ./gradlew ":${loader}:runServerApi" -PmapiApi -PmapiApiPort="${port}" \
     -PmapiInstanceId="${instance}" -PmapiServerRunDir="${run_dir}" \
     --console=plain --no-daemon >"${RUNROOT}/${loader}-console.log" 2>&1 &
@@ -36,9 +39,9 @@ start_instance() {
 }
 
 wait_ready() {
-  local run_dir="$1" label="$2" waited=0
+  local run_dir="$1" label="$2" waited=0 readiness=""
   while [ "${waited}" -lt "${TIMEOUT_SECONDS}" ]; do
-    if python3 - "$run_dir/mcapi/discovery.json" <<'PY' 2>/dev/null; then
+    readiness="$(python3 - "$run_dir/mcapi/discovery.json" <<'PY' 2>/dev/null || true
 import json, sys
 try:
     with open(sys.argv[1]) as f:
@@ -47,6 +50,9 @@ try:
 except Exception:
     print("")
 PY
+)"
+    if [ "${readiness}" = "worldReady" ]; then
+      echo "worldReady"
       return 0
     fi
     sleep 5
@@ -80,8 +86,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-PIDS+=("$(start_instance fabric "${FABRIC_PORT}" "mx-fabric-1")")
-PIDS+=("$(start_instance neoforge "${NEOFORGE_PORT}" "mx-neoforge-1")")
+PIDS+=("$(start_instance fabric "${FABRIC_PORT}" "mx-fabric-1" "${FABRIC_GAME_PORT}")")
+PIDS+=("$(start_instance neoforge "${NEOFORGE_PORT}" "mx-neoforge-1" "${NEOFORGE_GAME_PORT}")")
 
 FABRIC_READY=$(wait_ready "${RUNROOT}/fabric/run" fabric || true)
 NEOFORGE_READY=$(wait_ready "${RUNROOT}/neoforge/run" neoforge || true)

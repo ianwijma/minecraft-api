@@ -21,15 +21,17 @@ import net.minecraft.client.gui.components.events.AbstractContainerEventHandler;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.player.LocalPlayer;
-import net.neoforged.api.distmarker.OnlyIn;
 
 /**
  * NeoForge implementation of the client operations seam. Loaded only on
- * physical clients ({@code @OnlyIn(Dist.CLIENT)} plus the dist-guarded call
- * from the mod constructor); all reads run on the client thread via
- * {@code Minecraft#execute}. APIs verified against the 26.2 jar.
+ * physical clients: the dist guard in the mod constructor is the isolation
+ * contract (NeoForge 26.2 no longer strips {@code @OnlyIn} members and warns
+ * when the annotation is present, so it is deliberately not used here; lazy
+ * classloading keeps this class unloaded on dedicated servers, verified by
+ * the dedicated-server launch run and the packaging tripwire). All reads run
+ * on the client thread via {@code Minecraft#execute}. APIs verified against
+ * the 26.2 jar.
  */
-@OnlyIn(net.neoforged.api.distmarker.Dist.CLIENT)
 public final class NeoForgeClientOps implements MapiClientOps {
 
     private NeoForgeClientOps() {

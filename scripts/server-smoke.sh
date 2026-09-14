@@ -27,8 +27,9 @@ if [ "${MAPI_ACCEPT_EULA:-}" != "true" ]; then
   exit 3
 fi
 
-RUN_DIR="$(pwd)/${RUNROOT}/${LOADER}/run"
-rm -rf "${RUNROOT}"
+LOADER_DIR="$(pwd)/${RUNROOT}/${LOADER}"
+RUN_DIR="${LOADER_DIR}/run"
+rm -rf "${LOADER_DIR}"
 mkdir -p "${RUN_DIR}"
 
 # Absolute run dir for this loader: both Loom and ModDevGradle resolve
@@ -52,7 +53,7 @@ MAPI_HTTP_ENABLED="${MAPI_HTTP_ENABLED:-false}" \
 MAPI_HTTP_TOKEN="${MAPI_HTTP_TOKEN:-}" \
 timeout --signal=TERM --kill-after=30 "${TIMEOUT_SECONDS}" \
   ./gradlew ":${LOADER}:runServer" ${GRADLE_PROPS} ${GRADLE_ARGS:-} \
-  --console=plain --no-daemon >"${RUNROOT}/gradle-console.log" 2>&1 &
+  --console=plain --no-daemon >"${LOADER_DIR}-gradle-console.log" 2>&1 &
 GRADLE_PID=$!
 set -e
 
@@ -123,5 +124,5 @@ if [ "${FOUND_DONE}" = "1" ] && [ "${FOUND_MAPI}" = "1" ]; then
   fi
 fi
 echo "smoke: FAIL — log excerpt:" >&2
-tail -40 "${LOG_FILE}" 2>/dev/null || tail -60 "${RUNROOT}/gradle-console.log" 2>/dev/null || true
+tail -40 "${LOG_FILE}" 2>/dev/null || tail -60 "${LOADER_DIR}-gradle-console.log" 2>/dev/null || true
 exit 1

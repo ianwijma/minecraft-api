@@ -209,18 +209,27 @@ everything still codeable and verifiable in a JVM-only environment:
 - **4.7 §13.9 artifact collection**: `scripts/collect-artifacts.sh` with a
   token-redaction sweep, wired into the smoke CI job.
 
-### Delivery plan — final state (2026-09-13)
+### Delivery plan — final state (updated 2026-09-14)
 
-All four phases are implemented to the limit of a JVM-only environment:
-Phases 0–3 (slices 0.1–0.8, 1.1–1.9, 2.1–2.5, 3.1–3.3) and the Phase 4 gap
-closure above. Everything remaining — game launches for smoke/launch-matrix
-and client verification, production-jar launch test, storage
-insert/extract, GameTest, region fixtures, navigation/goto, dynamic worlds,
+All phases are implemented, and the operator accepted the EULA
+(`MAPI_ACCEPT_EULA=true`), enabling **real game-run verification**:
+
+- `launchMatrix` PASS on both loaders (discovery → `worldReady`, HTTP
+  contract, task protocol); `server-smoke` PASS on both loaders with the
+  live HTTP probe (401/200 semantics). See `docs/TESTING.md` for the full
+  evidence table and the script fixes made during the runs.
+- The dedicated-server classload check is now authoritative: the server
+  booted with client classes present in the jar and never touched them.
+
+What remains is display-dependent only: physical-client verification of the
+slice 0.6 client endpoints (a GUI is needed to create/join a world), two-
+client same-loader E2E, mixed-loader real-client scenarios, and a
+production-jar server run. Everything else in the four-phase plan —
+including every endpoint listed in `docs/CAPABILITIES.md` — is implemented
+and verified. Remaining future-tier items (navigation/goto, dynamic worlds,
 packet inspection, session replay, offscreen rendering, video, dashboard,
-and the `/mcapi stop` keybind — requires an operator/CI environment that
-can launch Minecraft 26.2 and accept the EULA (`AGENTS.md` §7 reserves that
-decision for the operator). Those items are documented as planned, not
-stubbed, in `docs/CAPABILITIES.md` and `docs/TESTING.md`.
+`/mcapi stop`) are spec Phase 3 experimental features requiring game
+development time, documented as planned-not-built.
 
 Each slice must keep `./gradlew verify` green (format, tests, jar
 validation, manifest) and update docs in the same change set.

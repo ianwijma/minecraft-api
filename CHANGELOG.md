@@ -81,9 +81,17 @@ across the Phase 0–5 delivery slices (see `docs/roadmap.md`).
   capability tiers; the current phase still excludes command *mutation*
   beyond console execution, world mutation, chat, and source editing.
 
+### Verified (2026-09-14)
+
+The operator accepted the EULA and the game-run checks were executed:
+`launchMatrix` PASS on both loaders (discovery → `worldReady`, HTTP
+contract, task protocol) and `server-smoke` PASS on both loaders with the
+live HTTP probe. The dedicated-server classload check is authoritative.
+See `docs/TESTING.md`.
+
 ### Known gaps (planned, not built — see `docs/roadmap.md` §6)
 
 Profiler start/stop, `/eval`, storage insert/extract, GameTest, region
 fixtures, navigation/goto, dynamic worlds, packet inspection, session
 replay, offscreen rendering, video, dashboard, `/mcapi stop` keybind, and
-game-run verification (EULA/operator-gated).
+physical-client (display) verification of the client endpoints.

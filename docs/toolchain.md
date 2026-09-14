@@ -100,10 +100,12 @@ never silently change the Minecraft target (26.2) — ask the owner first.
   `Minecraft` — there is no `screen` field/getter on `Minecraft` anymore);
   `Screen#children()` → `List<? extends GuiEventListener>`;
   `AbstractWidget#getX/getY/getWidth/getHeight/getMessage`;
-  `Component#getString()`; `Entity#level()`; `NeoForge`'s
-  `net.neoforged.api.distmarker.OnlyIn` still exists in 26.2
-  (`@OnlyIn(Dist.CLIENT)` + dist guard + lazy classloading is the client
-  isolation contract for `dev.example.mapi.client.*` classes).
+  `Component#getString()`; `Entity#level()`;   `net.neoforged.api.distmarker.OnlyIn` still exists in 26.2, but the
+  runtime **no longer strips `@OnlyIn` members** and logs an ERROR plus a
+  load warning when a mod uses it — MAPI deliberately does **not** use the
+  annotation; client isolation relies on the dist guard + package isolation
+  under `dev.example.mapi.client.*` (verified by a dedicated-server launch
+  run and the packaging tripwire).
 - 26.2 client input/screenshot APIs (verified via `javap`, 2026-09-13;
   slice 0.6): key injection goes through the static
   `KeyMapping#set(InputConstants$Key, boolean)` / `KeyMapping#click(...)`
