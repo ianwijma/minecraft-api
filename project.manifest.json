@@ -92,7 +92,7 @@
       },
       {
         "path": "docs/runner-boundary.md",
-        "topic": "mod/SDK/runner responsibility split (draft)"
+        "topic": "mod/SDK/runner responsibility split (runner implemented)"
       },
       {
         "path": "docs/non-goals.md",

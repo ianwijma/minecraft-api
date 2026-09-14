@@ -24,7 +24,19 @@
    dispatch, unsupported native polling paths), including the GLFW direct
    polling boundary statement (spec §3.5).
 
-## Current state
+## Current state (substrate implemented, chunk 3.0-3.3)
 
-Not yet implemented. The existing HTTP API is a read-only status surface
-(`docs/http-api.md`); no action operations exist.
+- Execution modes are declared per operation (`OperationDescriptor`),
+  enforced by `OperationGuard`, and reported in receipts — requested mode is
+  kept verbatim on pre-dispatch rejection; `EXECUTION_MODE_UNSUPPORTED`
+  fires with no silent fallback (contract-tested).
+- `ActionReceipt` (§3.4) is implemented with the three outcome layers
+  distinct (structurally: actual mode must equal requested mode; CONFIRMED
+  requires evidence; PARTIAL/CANCELLED require a note).
+- `InputScheduler` implements the §4.2 hold-N-client-ticks boundary
+  contract with wall-clock deadlines and release-all before failure.
+- The input backend contract with §3.5 coverage disclosure exists
+  (`ClientBridge.InputBackend`); the real per-loader backend behind client
+  split source sets is pending (chunks 3.4+).
+- `POST /api/v1/client/actions/hold-key` exposes the first action; window
+  and screenshot read endpoints exist behind the same capability gate.

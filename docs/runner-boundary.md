@@ -22,7 +22,21 @@
 6. Out-of-process communication: the runner uses only the public HTTP API —
    no `common` internals, no in-process access (spec §1; ADR-0002 rule 3).
 
-## Current state
+## Current state (implemented)
 
-No runner exists yet. `scripts/server-smoke.sh` is the only out-of-process
-tooling today.
+- **Mod side (this repository, `common/` + loader modules):** world
+  lifecycle, tick control, bounded queries, boundary-aligned snapshots,
+  command dispatch, log capture, shutdown seam, client substrate
+  (input scheduling + receipts) — all behind the HTTP contract with scopes,
+  leases, and problem codes.
+- **Runner (`runner/` module):** versioned CLI (`version`, `status`,
+  `wait-world`, `run`, `replay`, `provision-server`), declarative JSON plans
+  (fixture orchestration), JSONL recording + replay with divergence
+  detection, EULA-gated provisioning, machine-readable results and exit
+  codes. Depends only on the HTTP contract — never on `common` internals
+  (ADR-0002 rule 3).
+- **Not yet implemented (tracked in `docs/execution-plan.md`):** test
+  profiles/preflight (5.3), participant mapping UI (5.4), visual baselines
+  (5.7), reproducibility bundles (5.8), path planning (5.9), backup/restore
+  (5.10), real client backends behind split source sets (3.4-3.13), SDK
+  generation pipelines (7.2-7.5).
