@@ -1,5 +1,6 @@
 package dev.example.mapi.internal.http;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -138,5 +139,31 @@ class ContractSyncTest {
 
     private void assertEqualsRouteCount(Map<String, List<String>> byPath) {
         assertTrue(new TreeSet<>(byPath.keySet()).size() >= 25, "route surface unexpectedly small");
+    }
+
+    /**
+     * OpenAPI 3.1 pinned subset (spec §10): banned constructs must not
+     * appear, and every internal {@code $ref} must resolve to a documented
+     * schema. Guards the SDK-generation pipeline contract.
+     */
+    @Test
+    void openapiStaysInPinnedSubsetWithResolvableRefs() throws Exception {
+        String openapi = readDocs("openapi.yaml");
+        for (String banned : new String[] {"$dynamicRef", "$dynamicAnchor", "$anchor", "$patternProperties",
+                "oneOfOfOneOf"}) {
+            assertFalse(openapi.contains(banned), "banned OpenAPI construct: " + banned);
+        }
+        Matcher refMatcher = Pattern.compile("\\$ref: \"#/components/schemas/([A-Za-z0-9_]+)\"")
+                .matcher(openapi);
+        List<String> missing = new ArrayList<>();
+        while (refMatcher.find()) {
+            String schema = refMatcher.group(1);
+            if (!Pattern.compile("^    " + Pattern.quote(schema) + ":$", Pattern.MULTILINE)
+                    .matcher(openapi).find()) {
+                missing.add(schema);
+            }
+        }
+        assertTrue(missing.isEmpty(), "$ref targets missing from components/schemas: " + missing);
+        assertTrue(openapi.contains("openapi: 3.1"), "spec requires OpenAPI 3.1");
     }
 }
