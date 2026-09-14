@@ -352,6 +352,9 @@ public final class HttpApiServer {
             case API_PREFIX + "operations" -> respond(exchange, 200, JsonWriter.write(operations.toMap()));
             case API_PREFIX + "server/status" -> sendServerStatus(exchange);
             case API_PREFIX + "server/world" -> sendWorldInfo(exchange);
+            case API_PREFIX + "client" -> sendClientInfo(exchange);
+            case API_PREFIX + "client/window" -> sendWindowInfo(exchange);
+            case API_PREFIX + "client/screenshots" -> sendScreenshot(exchange);
             case API_PREFIX + "server/ticks" -> sendTickState(exchange);
             case API_PREFIX + "server/queries/players" -> sendPlayerQuery(exchange);
             case API_PREFIX + "server/queries/entities" -> sendEntityQuery(exchange);
@@ -385,6 +388,7 @@ public final class HttpApiServer {
             case API_PREFIX + "server/snapshots" -> handleSnapshotCapture(exchange, body, grants);
             case API_PREFIX + "server/snapshot-diffs" -> handleSnapshotDiff(exchange, body, grants);
             case API_PREFIX + "server/commands" -> handleCommand(exchange, body, grants);
+            case API_PREFIX + "client/actions/hold-key" -> handleHoldKey(exchange, body, grants);
             default -> {
                 exchange.getResponseHeaders().set("Allow", "GET");
                 error(exchange, ProblemCode.METHOD_NOT_ALLOWED,
@@ -569,6 +573,97 @@ public final class HttpApiServer {
                 .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
                         "command dispatch is not available on this loader bridge"));
         respond(exchange, 200, JsonWriter.write(service.dispatch(stringField(body, "command"))));
+    }
+
+    // ------------------------------------------------------------------
+    // Client handlers (spec §3, §9, §20)
+    // ------------------------------------------------------------------
+
+    private void sendClientInfo(HttpExchange exchange) throws IOException {
+        var bridge = runtime.clientBridge();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("bridgeId", bridge.bridgeId());
+        out.put("capabilities", bridge.supportedCapabilities().stream().sorted().toList());
+        out.put("input", bridge.input().isPresent());
+        out.put("screenshots", bridge.screenshots().isPresent());
+        out.put("window", bridge.window().isPresent());
+        bridge.input().ifPresent(input -> out.put("inputCoverage", java.util.Map.of(
+                "callbackDispatch", input.coverage().callbackDispatch(),
+                "keybindingState", input.coverage().keybindingState(),
+                "helperPolling", input.coverage().helperPolling(),
+                "screenDispatch", input.coverage().screenDispatch(),
+                "unsupportedNativePolling", input.coverage().unsupportedNativePolling())));
+        respond(exchange, 200, JsonWriter.write(out));
+    }
+
+    private void sendWindowInfo(HttpExchange exchange) throws IOException {
+        var window = runtime.clientBridge().window()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "window control is not available on this process"));
+        var state = runtime.callOnClientThread(window::state);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("width", state.width());
+        out.put("height", state.height());
+        out.put("framebufferWidth", state.framebufferWidth());
+        out.put("framebufferHeight", state.framebufferHeight());
+        out.put("guiScale", state.guiScale());
+        out.put("fullscreen", state.fullscreen());
+        out.put("revision", state.revision());
+        respond(exchange, 200, JsonWriter.write(out));
+    }
+
+    private void sendScreenshot(HttpExchange exchange) throws IOException {
+        var screenshots = runtime.clientBridge().screenshots()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "screenshots are not available on this process"));
+        var shot = runtime.callOnClientThread(screenshots::capture);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("width", shot.width());
+        out.put("height", shot.height());
+        out.put("frame", shot.frame());
+        out.put("guiScale", shot.guiScale());
+        if (shot.screenId() != null) {
+            out.put("screenId", shot.screenId());
+        }
+        out.put("capturedAtEpochMs", shot.capturedAtEpochMs());
+        out.put("pngBase64", java.util.Base64.getEncoder().encodeToString(shot.png()));
+        respond(exchange, 200, JsonWriter.write(out));
+    }
+
+    private void handleHoldKey(HttpExchange exchange, Map<String, Object> body,
+            java.util.Set<Scope> grants) throws IOException {
+        var service = runtime.clientActions()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "client actions are not available on this process"));
+        if (!(body.get("keyCode") instanceof Number keyCode)
+                || !(body.get("ticks") instanceof Number ticks)) {
+            throw new ProblemException(ProblemCode.BAD_REQUEST,
+                    "keyCode and ticks are required");
+        }
+        ExecutionMode mode = ExecutionMode.RAW_INPUT;
+        if (body.get("executionMode") instanceof String requested) {
+            mode = java.util.Arrays.stream(ExecutionMode.values())
+                    .filter(value -> value.wireName().equals(requested))
+                    .findFirst()
+                    .orElseThrow(() -> new ProblemException(ProblemCode.BAD_REQUEST,
+                            "unknown executionMode: " + requested));
+        }
+        long deadline = longField(body, "deadlineEpochMs", System.currentTimeMillis() + 10_000);
+        try {
+            var receipt = service.holdKey(new dev.example.mapi.internal.client.ActionDispatchService.ActionRequest(
+                    "hold-key", mode, keyCode.intValue(), ticks.intValue(), deadline), grants);
+            respond(exchange, 200, JsonWriter.write(receipt));
+        } catch (IOException e) {
+            throw e;
+        } catch (Exception e) {
+            if (e instanceof ProblemException problem) {
+                throw problem;
+            }
+            throw new ProblemException(ProblemCode.INTERNAL, "hold-key failed: " + e);
+        }
     }
 
     // ------------------------------------------------------------------

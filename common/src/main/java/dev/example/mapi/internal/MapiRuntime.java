@@ -40,6 +40,7 @@ public final class MapiRuntime implements Mapi {
     private volatile dev.example.mapi.internal.query.WorldQueryService worldQueries;
     private volatile dev.example.mapi.internal.command.CommandDispatchService commands;
     private volatile dev.example.mapi.internal.snapshot.SnapshotCaptureService snapshotCapture;
+    private final dev.example.mapi.internal.client.ActionDispatchService clientActions;
 
     private final MapiPlatform platform;
     private final MapiServicesImpl services = new MapiServicesImpl();
@@ -59,6 +60,8 @@ public final class MapiRuntime implements Mapi {
     private final dev.example.mapi.internal.world.WorldLifecycleCoordinator worldLifecycle =
             new dev.example.mapi.internal.world.WorldLifecycleCoordinator(
                     jobManager, snapshots, leaseManager, eventBus);
+    private final dev.example.mapi.internal.operation.OperationRegistry clientOperations =
+            new dev.example.mapi.internal.operation.OperationRegistry();
 
     private volatile ServerHandle serverHandle;
     private volatile HttpApiServer httpServer;
@@ -71,6 +74,11 @@ public final class MapiRuntime implements Mapi {
      */
     public MapiRuntime(MapiPlatform platform) {
         this.platform = Objects.requireNonNull(platform, "platform");
+        var clientBridge = platform.clientBridge();
+        this.clientActions = clientBridge == dev.example.mapi.internal.client.ClientBridge.NONE
+                ? null
+                : new dev.example.mapi.internal.client.ActionDispatchService(
+                        clientBridge, clientOperations, new dev.example.mapi.internal.operation.OperationGuard());
         platform.registerServerLifecycle(new ServerLifecycleListener() {
             @Override
             public void onServerStarting(ServerHandle handle) {
@@ -238,6 +246,45 @@ public final class MapiRuntime implements Mapi {
     /** @return the snapshot capture service while the bridge supports queries, empty otherwise */
     public java.util.Optional<dev.example.mapi.internal.snapshot.SnapshotCaptureService> snapshotCapture() {
         return java.util.Optional.ofNullable(snapshotCapture);
+    }
+
+    /** @return the client action service while a client bridge is present, empty otherwise */
+    public java.util.Optional<dev.example.mapi.internal.client.ActionDispatchService> clientActions() {
+        return java.util.Optional.ofNullable(clientActions);
+    }
+
+    /** @return the client bridge, or the NONE bridge on dedicated servers */
+    public dev.example.mapi.internal.client.ClientBridge clientBridge() {
+        return platform.clientBridge();
+    }
+
+    /** @return the client operation registry (client action metadata) */
+    public dev.example.mapi.internal.operation.OperationRegistry clientOperations() {
+        return clientOperations;
+    }
+
+    /**
+     * Runs a supplier on the client thread via the bridge, translating
+     * failures into problem exceptions.
+     *
+     * @param task supplier to run
+     * @param <T>  result type
+     * @return the result
+     */
+    public <T> T callOnClientThread(java.util.function.Supplier<T> task) {
+        try {
+            return platform.clientBridge().onClientThread(task);
+        } catch (dev.example.mapi.internal.problem.ProblemException e) {
+            throw e;
+        } catch (Exception e) {
+            Throwable cause = e.getCause() == null ? e : e.getCause();
+            if (cause instanceof dev.example.mapi.internal.problem.ProblemException problem) {
+                throw problem;
+            }
+            throw new dev.example.mapi.internal.problem.ProblemException(
+                    dev.example.mapi.internal.problem.ProblemCode.INTERNAL,
+                    "client-thread work failed: " + cause);
+        }
     }
 
     /**

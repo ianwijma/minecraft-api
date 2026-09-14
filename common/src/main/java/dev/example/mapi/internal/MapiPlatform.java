@@ -60,4 +60,14 @@ public interface MapiPlatform {
     default dev.example.mapi.internal.server.ServerBridge serverBridge() {
         return dev.example.mapi.internal.server.ServerBridge.NONE;
     }
+
+    /**
+     * @return the client-side bridge while a game client is present and the
+     *     loader implements client capabilities; the default is
+     *     {@link dev.example.mapi.internal.client.ClientBridge#NONE} so
+     *     dedicated servers never expose client endpoints
+     */
+    default dev.example.mapi.internal.client.ClientBridge clientBridge() {
+        return dev.example.mapi.internal.client.ClientBridge.NONE;
+    }
 }
