@@ -20,6 +20,7 @@ final class FabricPlatform implements MapiPlatform {
     private static final Logger LOG = LoggerFactory.getLogger("mapi");
 
     private final FabricServerBridge bridge = new FabricServerBridge();
+    private volatile MinecraftServer currentServer;
 
     @Override
     public PlatformType type() {
@@ -54,12 +55,14 @@ final class FabricPlatform implements MapiPlatform {
     @Override
     public void registerServerLifecycle(ServerLifecycleListener listener) {
         ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+            currentServer = server;
             bridge.onServerStarting(server);
             listener.onServerStarting(FabricServerHandle.starting(server));
         });
         ServerLifecycleEvents.SERVER_STARTED.register(server -> listener.onServerStarted());
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> listener.onServerStopping());
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+            currentServer = null;
             bridge.onServerStopped();
             listener.onServerStopped();
         });
@@ -68,6 +71,16 @@ final class FabricPlatform implements MapiPlatform {
     @Override
     public dev.example.mapi.internal.server.ServerBridge serverBridge() {
         return bridge;
+    }
+
+    @Override
+    public boolean requestProcessShutdown() {
+        MinecraftServer server = currentServer;
+        if (server == null) {
+            return false;
+        }
+        server.execute(() -> server.halt(false));
+        return true;
     }
 
     /**

@@ -67,6 +67,8 @@ public final class MapiRunner {
                 case "replay" -> replay(options, env);
                 case "preflight" -> preflight(options);
                 case "bundle" -> bundle(options, env);
+                case "backup" -> backup(options, env);
+                case "restore" -> restore(options, env);
                 default -> usage();
             };
         } catch (IllegalArgumentException e) {
@@ -79,7 +81,7 @@ public final class MapiRunner {
     }
 
     private static int usage() {
-        System.out.println("{\"usage\":\"mapi-runner <version|status|wait-world|run|replay|preflight|bundle|provision-server>"
+        System.out.println("{\"usage\":\"mapi-runner <version|status|wait-world|run|replay|preflight|bundle|backup|restore|provision-server>"
                 + " [--base url] [--token ENV_NAME] ...\"}");
         return 2;
     }
@@ -193,6 +195,35 @@ public final class MapiRunner {
                 options.containsKey("profile") ? java.nio.file.Path.of(options.get("profile")) : null);
         System.out.println(MiniJsonWriter.write(manifest));
         return 0;
+    }
+
+    private static int backup(Map<String, String> options, Map<String, String> env)
+            throws Exception {
+        MapiClient client = client(options, env);
+        String world = options.get("world");
+        String out = options.get("out");
+        if (world == null || out == null) {
+            throw new IllegalArgumentException("--world <dir> and --out <dir> are required");
+        }
+        int shutdownS = Integer.parseInt(options.getOrDefault("shutdown-wait", "120"));
+        var result = new WorldBackup(client).backup(java.nio.file.Path.of(world),
+                java.nio.file.Path.of(out), shutdownS);
+        System.out.println(MiniJsonWriter.write(result.toMap()));
+        return result.ok() ? 0 : 1;
+    }
+
+    private static int restore(Map<String, String> options, Map<String, String> env)
+            throws Exception {
+        MapiClient client = client(options, env);
+        String world = options.get("world");
+        String from = options.get("backup");
+        if (world == null || from == null) {
+            throw new IllegalArgumentException("--world <dir> and --backup <dir> are required");
+        }
+        var result = new WorldBackup(client).restore(java.nio.file.Path.of(from),
+                java.nio.file.Path.of(world));
+        System.out.println(MiniJsonWriter.write(result.toMap()));
+        return result.ok() ? 0 : 1;
     }
 
     private static int provisionServer(Map<String, String> options, Map<String, String> env) {

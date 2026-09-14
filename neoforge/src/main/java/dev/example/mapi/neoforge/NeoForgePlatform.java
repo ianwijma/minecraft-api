@@ -25,6 +25,7 @@ final class NeoForgePlatform implements MapiPlatform {
     private static final Logger LOG = LoggerFactory.getLogger("mapi");
 
     private final NeoForgeServerBridge bridge = new NeoForgeServerBridge();
+    private volatile MinecraftServer currentServer;
 
     @Override
     public PlatformType type() {
@@ -63,12 +64,14 @@ final class NeoForgePlatform implements MapiPlatform {
     @Override
     public void registerServerLifecycle(ServerLifecycleListener listener) {
         NeoForge.EVENT_BUS.addListener((ServerStartingEvent event) -> {
+            currentServer = event.getServer();
             bridge.onServerStarting(event.getServer());
             listener.onServerStarting(NeoForgeServerHandle.starting(event.getServer()));
         });
         NeoForge.EVENT_BUS.addListener((ServerStartedEvent event) -> listener.onServerStarted());
         NeoForge.EVENT_BUS.addListener((ServerStoppingEvent event) -> listener.onServerStopping());
         NeoForge.EVENT_BUS.addListener((ServerStoppedEvent event) -> {
+            currentServer = null;
             bridge.onServerStopped();
             listener.onServerStopped();
         });
@@ -77,6 +80,16 @@ final class NeoForgePlatform implements MapiPlatform {
     @Override
     public dev.example.mapi.internal.server.ServerBridge serverBridge() {
         return bridge;
+    }
+
+    @Override
+    public boolean requestProcessShutdown() {
+        MinecraftServer server = currentServer;
+        if (server == null) {
+            return false;
+        }
+        server.execute(() -> server.halt(false));
+        return true;
     }
 
     /**
