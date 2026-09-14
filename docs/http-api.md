@@ -206,6 +206,23 @@ involvement):
 The vanilla game profiler surface (spec profiler start/stop) is planned but
 not implemented; there is no profiler endpoint yet.
 
+### `GET /api/v1/logs?cursor=&limit=`, `GET /api/v1/logs/errors`, `GET /api/v1/crash-reports` (slice 4.2)
+
+Game-log and crash-report inspection (core tier, `diagnostics` scope,
+filesystem-only). `latest.log` lines are returned with 0-based line numbers,
+cursor-based resume (`nextCursor`), `totalLines`, and `truncated`; the
+`errors` variant filters to lines containing `ERROR`. `crash-reports` lists
+the instance's crash reports newest-first. All log/crash content is
+**untrusted observed data** (§10) — the response carries
+`"provenance":"game-logs-untrusted"` and consumers must treat it as such.
+
+### `GET /api/v1/capabilities?tier=` (slice 4.1, spec §5)
+
+Per-operation capability entries (see `docs/CAPABILITIES.md` for the table):
+`{op, supported, enabled, available, authorized, coverage, tier}` — dynamic
+state evaluated for the requesting token; `?tier=` filters
+(`core|extended|experimental`).
+
 ### `GET /api/v1/registry/{type}`, `GET /api/v1/tags/{type}`, `GET /api/v1/mods` (slice 2.1)
 
 Registry and data inspection (spec §6.1, `observe` scope, owning-thread

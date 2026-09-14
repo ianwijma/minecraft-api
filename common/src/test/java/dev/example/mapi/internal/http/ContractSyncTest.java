@@ -58,7 +58,11 @@ class ContractSyncTest {
             "GET /api/v1/files",
             "POST /api/v1/files",
             "POST /api/v1/unsafe/reflect",
-            "POST /api/v1/unsafe/invoke");
+            "POST /api/v1/unsafe/invoke",
+            "GET /api/v1/logs",
+            "GET /api/v1/logs/errors",
+            "GET /api/v1/crash-reports",
+            "GET /api/v1/capabilities");
 
     private static final Set<String> CONCRETE_PATHS = Set.of(
             "/api/v1/health", "/api/v1/live", "/api/v1/ready", "/api/v1/time", "/api/v1/info",
@@ -70,7 +74,8 @@ class ContractSyncTest {
             "/api/v1/tasks/{id}", "/api/v1/leases", "/api/v1/leases/{id}/renew",
             "/api/v1/registry/{type}", "/api/v1/tags/{type}", "/api/v1/ext/{id}/{path}",
             "/api/v1/mods", "/api/v1/threads",
-            "/api/v1/memory/gc", "/api/v1/files", "/api/v1/unsafe/reflect", "/api/v1/unsafe/invoke");
+            "/api/v1/memory/gc", "/api/v1/files", "/api/v1/unsafe/reflect", "/api/v1/unsafe/invoke",
+            "/api/v1/logs", "/api/v1/logs/errors", "/api/v1/crash-reports", "/api/v1/capabilities");
 
     private static Path repoRoot() {
         Path dir = Path.of("").toAbsolutePath();

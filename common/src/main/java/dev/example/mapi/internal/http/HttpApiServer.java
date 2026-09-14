@@ -284,6 +284,10 @@ public final class HttpApiServer {
         if (path.equals(API_PREFIX + "threads") || path.equals(API_PREFIX + "memory/gc")) {
             return dev.example.mapi.internal.auth.Scope.DIAGNOSTICS;
         }
+        if (path.equals(API_PREFIX + "logs") || path.equals(API_PREFIX + "logs/errors")
+                || path.equals(API_PREFIX + "crash-reports")) {
+            return dev.example.mapi.internal.auth.Scope.DIAGNOSTICS;
+        }
         if (path.startsWith(API_PREFIX + "unsafe/")) {
             return dev.example.mapi.internal.auth.Scope.UNSAFE_EXECUTE;
         }
@@ -335,6 +339,9 @@ public final class HttpApiServer {
             case API_PREFIX + "client/screen/tree" -> sendScreenTree(exchange, requestId);
             case API_PREFIX + "mods" -> sendMods(exchange, requestId);
             case API_PREFIX + "threads" -> sendThreads(exchange, requestId);
+            case API_PREFIX + "logs" -> sendLogs(exchange, requestId, false);
+            case API_PREFIX + "logs/errors" -> sendLogs(exchange, requestId, true);
+            case API_PREFIX + "crash-reports" -> sendCrashReports(exchange, requestId);
             default -> {
                 if (path.startsWith(API_PREFIX + "registry/")) {
                     sendRegistry(exchange, requestId, path.substring((API_PREFIX + "registry/").length()));
@@ -990,6 +997,79 @@ public final class HttpApiServer {
             logger.warn("MAPI: extension '{}' failed handling {} {}", extensionId, method, subPath, e);
             error(exchange, requestId, 500, "INTERNAL", "Extension handler failed");
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Logs / crash reports (spec §6.1 core, slice 4.2) — filesystem only,
+    // cursor-based pagination; content is UNTRUSTED observed data (§10).
+    // ------------------------------------------------------------------
+
+    private static final int MAX_LOG_LINES = 200;
+
+    private void sendLogs(HttpExchange exchange, String requestId, boolean errorsOnly)
+            throws IOException {
+        Map<String, List<String>> query = splitQuery(exchange.getRequestURI().getRawQuery());
+        int cursor = intParam(query, "cursor", 0, exchange, requestId);
+        if (cursor < 0) {
+            return;
+        }
+        int limit = intParam(query, "limit", 100, exchange, requestId);
+        if (limit < 0) {
+            return;
+        }
+        limit = Math.clamp(limit, 1, MAX_LOG_LINES);
+        List<String> lines = Files.isRegularFile(logsPath("latest.log"))
+                ? Files.readAllLines(logsPath("latest.log"), StandardCharsets.UTF_8)
+                : List.of();
+        List<Map<String, Object>> entries = new java.util.ArrayList<>();
+        int nextCursor = lines.size();
+        for (int i = Math.min(cursor, lines.size()); i < lines.size() && entries.size() < limit; i++) {
+            if (errorsOnly && !lines.get(i).contains("ERROR")) {
+                continue;
+            }
+            Map<String, Object> line = new LinkedHashMap<>();
+            line.put("n", i);
+            line.put("text", lines.get(i));
+            entries.add(line);
+            nextCursor = i + 1;
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("provenance", "game-logs-untrusted");
+        body.put("lines", entries);
+        body.put("nextCursor", nextCursor);
+        body.put("totalLines", lines.size());
+        body.put("truncated", nextCursor < lines.size());
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private java.nio.file.Path logsPath(String name) {
+        return runtime.gameDir().resolve("logs").resolve(name);
+    }
+
+    private void sendCrashReports(HttpExchange exchange, String requestId) throws IOException {
+        List<Map<String, Object>> reports = new java.util.ArrayList<>();
+        java.nio.file.Path dir = runtime.gameDir().resolve("crash-reports");
+        if (Files.isDirectory(dir)) {
+            try (var stream = Files.list(dir)) {
+                for (Path entry : stream.filter(Files::isRegularFile).sorted(
+                        java.util.Comparator.comparing((Path p) -> p.getFileName().toString()).reversed())
+                        .toList()) {
+                    Map<String, Object> item = new LinkedHashMap<>();
+                    item.put("name", entry.getFileName().toString());
+                    item.put("size", Files.size(entry));
+                    reports.add(item);
+                }
+            } catch (IOException e) {
+                error(exchange, requestId, 500, "INTERNAL", "Listing failed: " + e.getMessage());
+                return;
+            }
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("reports", reports);
+        body.put("total", reports.size());
+        respond(exchange, requestId, 200, JsonWriter.write(body));
     }
 
     // ------------------------------------------------------------------

@@ -769,6 +769,64 @@ class HttpApiServerTest {
     }
 
     // ------------------------------------------------------------------
+    // Logs / crash reports (slice 4.2)
+    // ------------------------------------------------------------------
+
+    @Test
+    void logsEndpointsPaginateAndFilter() throws Exception {
+        int freePort = freePort();
+        gameDirOverride = Files.createTempDirectory("mapi-logs-test");
+        Files.createDirectories(gameDirOverride.resolve("logs"));
+        Files.writeString(gameDirOverride.resolve("logs").resolve("latest.log"), String.join("\n",
+                "[12:00:01] [main/INFO]: Starting minecraft server",
+                "[12:00:02] [main/ERROR]: Failed to load bonus pack",
+                "[12:00:03] [Server thread/INFO]: Done (2.1s)! For help, type help",
+                "[12:00:04] [main/WARN]: something odd",
+                "[12:00:05] [main/ERROR]: disk nearly full"), StandardCharsets.UTF_8);
+        Files.createDirectories(gameDirOverride.resolve("crash-reports"));
+        Files.writeString(gameDirOverride.resolve("crash-reports")
+                .resolve("crash-2026-09-13_12.00.00-server.txt"), "boom", StandardCharsets.UTF_8);
+
+        platform = new TestPlatform(LOG) {
+            @Override
+            public Path configDir() {
+                return Path.of("config");
+            }
+
+            @Override
+            public Path gameDir() {
+                return gameDirOverride;
+            }
+        };
+        runtime = new MapiRuntime(platform);
+        server = new HttpApiServer(new MapiConfig(true, freePort, TOKEN, 60), runtime, LOG);
+        assertTrue(server.start());
+        port = freePort;
+
+        HttpResponse<String> all = get("/api/v1/logs?limit=2", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, all.statusCode(), all.body());
+        assertTrue(all.body().contains("\"provenance\":\"game-logs-untrusted\""), all.body());
+        assertTrue(all.body().contains("\"n\":0"), all.body());
+        assertTrue(all.body().contains("\"nextCursor\":2"), all.body());
+        assertTrue(all.body().contains("\"truncated\":true"), all.body());
+
+        HttpResponse<String> rest = get("/api/v1/logs?cursor=2&limit=100",
+                "Authorization", "Bearer " + TOKEN);
+        assertTrue(rest.body().contains("\"nextCursor\":5"), rest.body());
+        assertTrue(rest.body().contains("\"truncated\":false"), rest.body());
+
+        HttpResponse<String> errors = get("/api/v1/logs/errors", "Authorization", "Bearer " + TOKEN);
+        assertTrue(errors.body().contains("Failed to load bonus"), errors.body());
+        assertTrue(errors.body().contains("disk nearly full"), errors.body());
+        assertFalse(errors.body().contains("Done ("), errors.body());
+
+        HttpResponse<String> crashes = get("/api/v1/crash-reports", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, crashes.statusCode(), crashes.body());
+        assertTrue(crashes.body().contains("crash-2026-09-13_12.00.00-server.txt"), crashes.body());
+        assertTrue(crashes.body().contains("\"total\":1"), crashes.body());
+    }
+
+    // ------------------------------------------------------------------
     // Capabilities (slice 4.1, spec §5)
     // ------------------------------------------------------------------
 
