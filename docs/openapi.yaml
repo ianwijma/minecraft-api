@@ -72,6 +72,333 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "429": { $ref: "#/components/responses/RateLimited" }
+  /api/v1/operations:
+    get:
+      operationId: listOperations
+      summary: Operation metadata registry (spec §14)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OperationsResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/world:
+    get:
+      operationId: getWorldInfo
+      summary: World-session phase, capabilities, and named clocks
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WorldInfoResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/ticks:
+    get:
+      operationId: getTickState
+      summary: Tick-control state (available:false when unsupported, spec §5)
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TickStateResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/ticks/lease:
+    post:
+      operationId: acquireTickLease
+      summary: Acquire the exclusive tick-control lease
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeaseRequest" }
+      responses:
+        "200":
+          description: Lease acquired
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeaseResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/InsufficientScope" }
+  /api/v1/server/ticks/freeze:
+    post:
+      operationId: freezeTicks
+      summary: Freeze the tick loop (lease-required, spec §5)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeaseIdRequest" }
+      responses:
+        "200":
+          description: State after the operation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TickState" }
+        "409": { $ref: "#/components/responses/LeaseRequired" }
+        "403": { $ref: "#/components/responses/InsufficientScope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/ticks/unfreeze:
+    post:
+      operationId: unfreezeTicks
+      summary: Unfreeze the tick loop (lease-required)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeaseIdRequest" }
+      responses:
+        "200":
+          description: State after the operation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TickState" }
+        "409": { $ref: "#/components/responses/LeaseRequired" }
+        "403": { $ref: "#/components/responses/InsufficientScope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/ticks/rate:
+    post:
+      operationId: setTickRate
+      summary: Set the tick rate within configured bounds (lease-required)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TickRateRequest" }
+      responses:
+        "200":
+          description: Applied rate and bounds
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TickRateResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/LeaseRequired" }
+        "403": { $ref: "#/components/responses/InsufficientScope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/ticks/step:
+    post:
+      operationId: stepTicks
+      summary: Step a bounded number of simulation ticks (202 + job)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TickStepRequest" }
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobAccepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/LeaseRequired" }
+        "403": { $ref: "#/components/responses/InsufficientScope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/ticks/step-and-observe:
+    post:
+      operationId: stepAndObserve
+      summary: Step ticks and capture a snapshot at the completion boundary (202 + job)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TickStepRequest" }
+      responses:
+        "202":
+          description: Job accepted
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobAccepted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/LeaseRequired" }
+        "403": { $ref: "#/components/responses/InsufficientScope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/ticks/sprint:
+    post:
+      operationId: sprintTicks
+      summary: Request a bounded sprint (asynchronous in vanilla; poll tick state)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/TickStepRequest" }
+      responses:
+        "200":
+          description: Sprint request recorded
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/LeaseRequired" }
+        "403": { $ref: "#/components/responses/InsufficientScope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/ticks/stop:
+    post:
+      operationId: stopTickWork
+      summary: Stop stepping/sprinting (lease-required)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeaseIdRequest" }
+      responses:
+        "200":
+          description: Stop result and state
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "409": { $ref: "#/components/responses/LeaseRequired" }
+        "403": { $ref: "#/components/responses/InsufficientScope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/queries/players:
+    get:
+      operationId: queryPlayers
+      summary: Online players with non-empty inventory slots (bounded)
+      parameters:
+        - { name: max, in: query, schema: { type: integer, minimum: 1, default: 20 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlayerQueryResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/WorldNotLoaded" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/queries/entities:
+    get:
+      operationId: queryEntities
+      summary: Loaded entities within a bounded region
+      parameters:
+        - { name: dimension, in: query, schema: { type: string, default: "minecraft:overworld" } }
+        - { name: x, in: query, schema: { type: number } }
+        - { name: y, in: query, schema: { type: number } }
+        - { name: z, in: query, schema: { type: number } }
+        - { name: radius, in: query, schema: { type: integer, default: 32 } }
+        - { name: max, in: query, schema: { type: integer, default: 50 } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/WorldNotLoaded" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/queries/block:
+    get:
+      operationId: queryBlock
+      summary: Block id and block-entity data at a position (typed NBT when present)
+      parameters:
+        - { name: dimension, in: query, schema: { type: string, default: "minecraft:overworld" } }
+        - { name: x, in: query, schema: { type: integer } }
+        - { name: y, in: query, schema: { type: integer } }
+        - { name: z, in: query, schema: { type: integer } }
+      responses:
+        "200":
+          description: OK (block or air)
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/WorldNotLoaded" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/queries/registries:
+    get:
+      operationId: listRegistries
+      summary: Registry summaries
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "409": { $ref: "#/components/responses/WorldNotLoaded" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/queries/registry:
+    get:
+      operationId: queryRegistryEntries
+      summary: Sorted entry ids of one registry (bounded)
+      parameters:
+        - { name: registryId, in: query, required: true, schema: { type: string } }
+        - { name: max, in: query, schema: { type: integer, default: 100 } }
+      responses:
+        "200":
+          description: OK (empty entries for unknown registry ids)
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/WorldNotLoaded" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/snapshots:
+    post:
+      operationId: captureSnapshot
+      summary: Capture and retain a bounded observation at the current boundary (spec §12)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SnapshotCaptureRequest" }
+      responses:
+        "200":
+          description: Snapshot retained
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SnapshotCaptured" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/WorldNotLoaded" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/snapshot-diffs:
+    post:
+      operationId: diffSnapshots
+      summary: Bounded path-level diff between two retained snapshots
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SnapshotDiffRequest" }
+      responses:
+        "200":
+          description: Diff result
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410":
+          description: Snapshot expired
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/commands:
+    post:
+      operationId: dispatchCommand
+      summary: >
+        Dispatch a server command in the console context. Administrative
+        access: requires the operations:unrestricted grant (spec §14).
+        Dispatch completion is distinct from asynchronous effects.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CommandRequest" }
+      responses:
+        "200":
+          description: Dispatch outcome
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/InsufficientScope" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/jobs/{id}:
+    get:
+      operationId: getJob
+      summary: Job view (state, milestones, failure, result)
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobView" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/server/status:
     get:
       operationId: getServerStatus
@@ -118,6 +445,26 @@ components:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
     BadRequest:
       description: Malformed or invalid request parameters
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NotFound:
+      description: Unknown resource
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    InsufficientScope:
+      description: Caller lacks a required scope/grant (spec §14)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    LeaseRequired:
+      description: Exclusive control lease not held (spec §5)
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    WorldNotLoaded:
+      description: No active world session (spec §6)
       content:
         application/json:
           schema: { $ref: "#/components/schemas/ErrorResponse" }
@@ -173,6 +520,173 @@ components:
             tickCount: { type: integer, format: int64, minimum: 0 }
             averageTickTimeMs: { type: number, format: double, minimum: 0 }
             motd: { type: string, description: plain-text MOTD, empty when unavailable }
+
+    OperationsResponse:
+      type: object
+      required: [operations]
+      properties:
+        operations:
+          type: array
+          items: { $ref: "#/components/schemas/OperationMetadata" }
+    OperationMetadata:
+      type: object
+      required: [id, summary, requiredScopes, destructive, sideEffectClass, requiresLease, supportedExecutionModes]
+      properties:
+        id: { type: string }
+        summary: { type: string }
+        requiredScopes: { type: array, items: { type: string } }
+        destructive: { type: boolean }
+        sideEffectClass: { type: string, enum: [read-only, local, game, unrestricted] }
+        requiresLease: { type: boolean }
+        supportedExecutionModes: { type: array, items: { type: string } }
+    WorldInfoResponse:
+      type: object
+      required: [protocolVersion, phase, bridgeId, capabilities, tickControl, worldQueries, commands, clocks]
+      properties:
+        protocolVersion: { type: integer, const: 1 }
+        phase: { type: string, enum: [NONE, LOADING, ACTIVE, UNLOADING] }
+        worldSessionId: { type: string }
+        bridgeId: { type: string }
+        capabilities: { type: array, items: { type: string } }
+        tickControl: { type: boolean }
+        worldQueries: { type: boolean }
+        commands: { type: boolean }
+        clocks: { type: object, additionalProperties: true }
+    TickState:
+      type: object
+      required: [frozen, sprinting, tickRate, tickCount]
+      properties:
+        frozen: { type: boolean }
+        sprinting: { type: boolean }
+        tickRate: { type: number }
+        tickCount: { type: integer }
+    TickStateResponse:
+      allOf:
+        - $ref: "#/components/schemas/ProtocolVersioned"
+        - type: object
+          required: [available]
+          properties:
+            available: { type: boolean }
+            frozen: { type: boolean }
+            sprinting: { type: boolean }
+            tickRate: { type: number }
+            tickCount: { type: integer }
+            rateBounds: { type: object, additionalProperties: true }
+            leaseId: { type: string }
+    LeaseRequest:
+      type: object
+      properties:
+        ttlSeconds: { type: integer, minimum: 1, maximum: 3600, default: 300 }
+    LeaseIdRequest:
+      type: object
+      required: [leaseId]
+      properties:
+        leaseId: { type: string }
+    LeaseResponse:
+      type: object
+      required: [leaseId, topic, expiresAtEpochMs]
+      properties:
+        leaseId: { type: string }
+        topic: { type: string }
+        expiresAtEpochMs: { type: integer }
+    TickRateRequest:
+      allOf:
+        - $ref: "#/components/schemas/LeaseIdRequest"
+        - type: object
+          required: [rate]
+          properties:
+            rate: { type: number }
+    TickRateResponse:
+      type: object
+      required: [appliedTickRate, rateBounds]
+      properties:
+        appliedTickRate: { type: number }
+        rateBounds: { type: object, additionalProperties: true }
+    TickStepRequest:
+      allOf:
+        - $ref: "#/components/schemas/LeaseIdRequest"
+        - type: object
+          required: [ticks]
+          properties:
+            ticks: { type: integer, minimum: 1, maximum: 10000 }
+            label: { type: string }
+            executionMode: { type: string, default: privileged }
+    JobAccepted:
+      type: object
+      required: [jobId, state]
+      properties:
+        jobId: { type: string }
+        state: { type: string }
+        worldSessionId: { type: string }
+    JobView:
+      type: object
+      required: [id, kind, state, cancellationRequested, submittedAtEpochMs]
+      properties:
+        id: { type: string }
+        kind: { type: string }
+        worldSessionId: { type: string }
+        state: { type: string, enum: [PENDING, RUNNING, SUCCEEDED, FAILED, CANCELLED] }
+        cancellationRequested: { type: boolean }
+        submittedAtEpochMs: { type: integer }
+        startedAtEpochMs: { type: integer }
+        endedAtEpochMs: { type: integer }
+        deadlineAtEpochMs: { type: integer }
+        failureCode: { type: string }
+        failureMessage: { type: string }
+        result: {}
+        milestones: { type: array, items: { type: object, additionalProperties: true } }
+    PlayerQueryResponse:
+      type: object
+      required: [players]
+      properties:
+        players:
+          type: array
+          items:
+            type: object
+            required: [uuid, name, dimension, x, y, z, inventory]
+            properties:
+              uuid: { type: string }
+              name: { type: string }
+              dimension: { type: string }
+              x: { type: number }
+              y: { type: number }
+              z: { type: number }
+              inventory:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    slot: { type: integer }
+                    itemId: { type: string }
+                    count: { type: integer }
+    SnapshotCaptureRequest:
+      type: object
+      required: [label]
+      properties:
+        label: { type: string }
+        maxPlayers: { type: integer, minimum: 0, maximum: 100, default: 10 }
+        maxEntities: { type: integer, minimum: 0, maximum: 512, default: 50 }
+    SnapshotCaptured:
+      type: object
+      required: [snapshotId, boundary]
+      properties:
+        snapshotId: { type: string }
+        worldSessionId: { type: string }
+        boundary: { type: integer }
+        capturedAtEpochMs: { type: integer }
+    SnapshotDiffRequest:
+      type: object
+      required: [firstId, secondId]
+      properties:
+        firstId: { type: string }
+        secondId: { type: string }
+        includePaths: { type: array, items: { type: string } }
+        maxChanges: { type: integer, default: 1000 }
+    CommandRequest:
+      type: object
+      required: [command]
+      properties:
+        command: { type: string, maxLength: 4096 }
     ErrorResponse:
       allOf:
         - $ref: "#/components/schemas/ProtocolVersioned"
