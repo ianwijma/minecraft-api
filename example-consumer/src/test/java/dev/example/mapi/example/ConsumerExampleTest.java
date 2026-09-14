@@ -25,6 +25,7 @@ class ConsumerExampleTest {
         assertEquals("MAPI not initialized", ConsumerExample.statusLine());
         assertThrows(IllegalStateException.class, MapiApi::require);
         assertThrows(IllegalStateException.class, ConsumerExample::registerExampleService);
+        assertThrows(IllegalStateException.class, ConsumerExample::registerExampleHttpExtension);
     }
 
     @Test

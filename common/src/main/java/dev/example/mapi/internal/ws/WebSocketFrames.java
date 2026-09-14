@@ -46,7 +46,7 @@ public final class WebSocketFrames {
 
         private static final long serialVersionUID = 1L;
 
-        /** @return the close code sent by the peer */
+        /** The close code sent by the peer. */
         public final int code;
 
         CloseSignal(int code) {
@@ -114,7 +114,7 @@ public final class WebSocketFrames {
 
         private static final long serialVersionUID = 1L;
 
-        /** @return the close code to answer with */
+        /** The close code to answer with. */
         public final int closeCode;
 
         ProtocolException(int closeCode, String message) {

@@ -46,12 +46,15 @@ public final class LeaseManager {
         }
     }
 
-    /** Raised when the conflict policy is {@code reject} and a lease is held. */
+    /**
+     * Raised when the conflict policy is {@code reject} and a lease is held;
+     * {@link #held} carries the currently held lease.
+     */
     public static final class LeaseHeldException extends RuntimeException {
 
         private static final long serialVersionUID = 1L;
 
-        /** @return the currently held lease */
+        /** The currently held lease. */
         public final Snapshot held;
 
         LeaseHeldException(Snapshot held) {

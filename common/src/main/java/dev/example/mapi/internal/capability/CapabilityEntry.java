@@ -14,7 +14,7 @@ import java.util.function.Predicate;
  * @param scope     scope required for the effect (§4.2)
  * @param tier      core | extended | experimental
  * @param coverage  full | partial | adapter-backed | best-effort
- * @param enableGuard optional switch predicate ({@code null} = always on)
+ * @param enabled   optional switch predicate ({@code null} = always on)
  * @param available predicate over runtime state ({@code null} = always)
  */
 public record CapabilityEntry(
