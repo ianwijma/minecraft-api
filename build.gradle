@@ -91,7 +91,7 @@ tasks.register('buildAll', Task) {
 tasks.register('testAll', Task) {
     group = 'verification'
     description = 'Runs all unit and HTTP contract tests (common module) plus the consumer example tests.'
-    dependsOn ':common:test', ':example-consumer:test'
+    dependsOn ':common:test', ':runner:test', ':example-consumer:test'
 }
 
 tasks.register('formatCheck', Task) {
