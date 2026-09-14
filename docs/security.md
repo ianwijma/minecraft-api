@@ -84,6 +84,14 @@ use and never logged.
   state reads run on the owning thread with bounded waits; responses are
   immutable snapshots.
 
+## Fine-grained switches (spec §4.5)
+
+Dangerous surfaces are individually switched off by default in addition to
+scope gating: `reflection.enabled` guards `/api/v1/unsafe/*` (403
+`DISABLED` when off). A request must pass **both** the scope check and the
+switch. Reflection/invoke runs with the full privileges of the game process
+— enable it only on developer machines; every call is audited as an event.
+
 ## Data exposure posture (changed with the target architecture)
 
 The 0.1.0-era rule "player identities are never exposed" was relaxed in the

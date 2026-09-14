@@ -280,6 +280,9 @@ public final class HttpApiServer {
         if (path.equals(API_PREFIX + "threads") || path.equals(API_PREFIX + "memory/gc")) {
             return dev.example.mapi.internal.auth.Scope.DIAGNOSTICS;
         }
+        if (path.startsWith(API_PREFIX + "unsafe/")) {
+            return dev.example.mapi.internal.auth.Scope.UNSAFE_EXECUTE;
+        }
         return dev.example.mapi.internal.auth.Scope.OBSERVE;
     }
 
@@ -370,6 +373,14 @@ public final class HttpApiServer {
         }
         if (path.equals(API_PREFIX + "memory/gc")) {
             runGc(exchange, requestId);
+            return;
+        }
+        if (path.equals(API_PREFIX + "unsafe/reflect")) {
+            unsafeReflect(exchange, requestId, body);
+            return;
+        }
+        if (path.equals(API_PREFIX + "unsafe/invoke")) {
+            unsafeInvoke(exchange, requestId, body);
             return;
         }
         if (path.equals(API_PREFIX + "leases")) {
@@ -938,6 +949,129 @@ public final class HttpApiServer {
             logger.warn("MAPI: extension '{}' failed handling {} {}", extensionId, method, subPath, e);
             error(exchange, requestId, 500, "INTERNAL", "Extension handler failed");
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Unsafe surface (spec §4.3/§4.5, slice 3.1) — trusted developer
+    // execution; runs with the privileges of the Minecraft process. No
+    // sandbox is claimed. Gated on the unsafe.execute scope AND the
+    // reflection.enabled switch; every call is audited.
+    // ------------------------------------------------------------------
+
+    private boolean reflectionAvailable(HttpExchange exchange, String requestId) throws IOException {
+        if (!config.reflectionEnabled()) {
+            error(exchange, requestId, 403, "DISABLED",
+                    "The reflection surface is disabled (reflection.enabled=false; spec §4.5). "
+                            + "It runs with the privileges of the game process.");
+            return false;
+        }
+        return true;
+    }
+
+    private void unsafeReflect(HttpExchange exchange, String requestId, byte[] body) throws IOException {
+        if (!reflectionAvailable(exchange, requestId)) {
+            return;
+        }
+        Object parsed;
+        try {
+            parsed = JsonParser.parse(new String(body, StandardCharsets.UTF_8));
+        } catch (ParseException e) {
+            error(exchange, requestId, 400, "INVALID_JSON", e.getMessage());
+            return;
+        }
+        String className = parsed instanceof Map<?, ?> request && request.get("class") instanceof String name
+                ? name.trim()
+                : null;
+        if (className == null || className.isBlank()) {
+            error(exchange, requestId, 400, "INVALID_PAYLOAD", "Field 'class' (string) is required");
+            return;
+        }
+        try {
+            Map<String, Object> description = dev.example.mapi.internal.unsafe.ReflectionOps.describe(className);
+            Map<String, Object> responseBody = new LinkedHashMap<>(description);
+            responseBody.put("protocolVersion", PROTOCOL_VERSION);
+            runtime.eventLog().publish("unsafe.reflect", "api-originated", Map.of("class", className));
+            respond(exchange, requestId, 200, JsonWriter.write(responseBody));
+        } catch (ClassNotFoundException e) {
+            error(exchange, requestId, 404, "NOT_FOUND", "Class not found: " + className);
+        } catch (RuntimeException e) {
+            logger.warn("MAPI: unsafe/reflect failed for {}", className, e);
+            error(exchange, requestId, 500, "INTERNAL", "Introspection failed");
+        }
+    }
+
+    private void unsafeInvoke(HttpExchange exchange, String requestId, byte[] body) throws IOException {
+        if (!reflectionAvailable(exchange, requestId)) {
+            return;
+        }
+        Object parsed;
+        try {
+            parsed = JsonParser.parse(new String(body, StandardCharsets.UTF_8));
+        } catch (ParseException e) {
+            error(exchange, requestId, 400, "INVALID_JSON", e.getMessage());
+            return;
+        }
+        String className = null;
+        String methodName = null;
+        if (parsed instanceof Map<?, ?> request) {
+            className = request.get("class") instanceof String name ? name.trim() : null;
+            methodName = request.get("method") instanceof String name ? name.trim() : null;
+        }
+        if (className == null || className.isBlank() || methodName == null || methodName.isBlank()) {
+            error(exchange, requestId, 400, "INVALID_PAYLOAD",
+                    "Fields 'class' and 'method' (strings) are required");
+            return;
+        }
+        String finalClassName = className;
+        String finalMethodName = methodName;
+        Map<String, Object> invocation;
+        if (runtime.serverRunning()) {
+            var result = runtime.tryReadOnServerThread(() -> {
+                try {
+                    return dev.example.mapi.internal.unsafe.ReflectionOps
+                            .invokeStatic(finalClassName, finalMethodName);
+                } catch (ReflectiveOperationException e) {
+                    throw new IllegalStateException(e.getMessage(), e);
+                }
+            });
+            if (result.failure() != null) {
+                Throwable cause = result.failure().getCause() != null
+                        ? result.failure().getCause()
+                        : result.failure();
+                if (cause instanceof ClassNotFoundException) {
+                    error(exchange, requestId, 404, "NOT_FOUND", "Class not found: " + finalClassName);
+                    return;
+                }
+                if (cause instanceof ReflectiveOperationException || cause instanceof IllegalArgumentException) {
+                    error(exchange, requestId, 400, "INVALID_PAYLOAD",
+                            "Invocation failed: " + cause.getMessage());
+                    return;
+                }
+                logger.warn("MAPI: unsafe/invoke failed for {}.{}", finalClassName, finalMethodName, cause);
+                error(exchange, requestId, 500, "INTERNAL", "Invocation failed: " + cause);
+                return;
+            }
+            invocation = result.value();
+        } else {
+            // No owning-thread session (e.g. client before world load): static
+            // no-arg invocation runs on the HTTP worker with an audit trail.
+            try {
+                invocation = dev.example.mapi.internal.unsafe.ReflectionOps
+                        .invokeStatic(finalClassName, finalMethodName);
+            } catch (ClassNotFoundException e) {
+                error(exchange, requestId, 404, "NOT_FOUND", "Class not found: " + finalClassName);
+                return;
+            } catch (ReflectiveOperationException | IllegalArgumentException e) {
+                error(exchange, requestId, 400, "INVALID_PAYLOAD",
+                        "Invocation failed: " + e.getMessage());
+                return;
+            }
+        }
+        Map<String, Object> responseBody = new LinkedHashMap<>(invocation);
+        responseBody.put("protocolVersion", PROTOCOL_VERSION);
+        runtime.eventLog().publish("unsafe.invoke", "api-originated", Map.of(
+                "class", finalClassName, "method", finalMethodName));
+        respond(exchange, requestId, 200, JsonWriter.write(responseBody));
     }
 
     // ------------------------------------------------------------------

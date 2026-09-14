@@ -560,7 +560,7 @@ class HttpApiServerTest {
         return new MapiConfig(true, port, TOKEN, 60, "mapi-" + port, null, 0, false,
                 MapiConfig.DEFAULT_DISCOVERY_HEARTBEAT_SECONDS,
                 java.util.Collections.unmodifiableSet(new java.util.LinkedHashSet<>(scopes)),
-                MapiConfig.DEFAULT_COMMAND_PERMISSION_LEVEL);
+                MapiConfig.DEFAULT_COMMAND_PERMISSION_LEVEL, false);
     }
 
     @Test
@@ -840,6 +840,61 @@ class HttpApiServerTest {
                 "Authorization", "Bearer " + TOKEN);
         assertEquals(404, unknownDim.statusCode(), unknownDim.body());
         assertTrue(unknownDim.body().contains("DIMENSION_NOT_FOUND"), unknownDim.body());
+    }
+
+    // ------------------------------------------------------------------
+    // Unsafe reflection surface (slice 3.1)
+    // ------------------------------------------------------------------
+
+    @Test
+    void unsafeReflectionGatingAndBehavior() throws Exception {
+        startServer(scopedConfig(java.util.List.of(
+                dev.example.mapi.internal.auth.Scope.OBSERVE,
+                dev.example.mapi.internal.auth.Scope.UNSAFE_EXECUTE)));
+        // Disabled by default (reflection.enabled=false, spec §4.5).
+        HttpResponse<String> disabled = post("/api/v1/unsafe/reflect",
+                "{\"class\":\"java.lang.String\"}", "Authorization", "Bearer " + TOKEN);
+        assertEquals(403, disabled.statusCode(), disabled.body());
+        assertTrue(disabled.body().contains("DISABLED"), disabled.body());
+        // The scope check fires before the disabled check.
+        startServer(scopedConfig(java.util.List.of(dev.example.mapi.internal.auth.Scope.OBSERVE)));
+        HttpResponse<String> forbidden = post("/api/v1/unsafe/invoke",
+                "{\"class\":\"java.lang.System\",\"method\":\"lineSeparator\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(403, forbidden.statusCode(), forbidden.body());
+        assertTrue(forbidden.body().contains("\"required\":\"unsafe.execute\""), forbidden.body());
+    }
+
+    @Test
+    void unsafeReflectionDescribeAndInvoke() throws Exception {
+        int freePort = freePort();
+        startServer(new MapiConfig(true, freePort, TOKEN, 60, "mapi-" + freePort, null, 0, false,
+                MapiConfig.DEFAULT_DISCOVERY_HEARTBEAT_SECONDS,
+                java.util.Set.of(dev.example.mapi.internal.auth.Scope.OBSERVE,
+                        dev.example.mapi.internal.auth.Scope.UNSAFE_EXECUTE),
+                MapiConfig.DEFAULT_COMMAND_PERMISSION_LEVEL, true));
+
+        HttpResponse<String> describe = post("/api/v1/unsafe/reflect",
+                "{\"class\":\"java.lang.String\"}", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, describe.statusCode(), describe.body());
+        assertTrue(describe.body().contains("\"className\":\"java.lang.String\""), describe.body());
+        assertTrue(describe.body().contains("\"methods\":["), describe.body());
+
+        HttpResponse<String> invoke = post("/api/v1/unsafe/invoke",
+                "{\"class\":\"java.lang.System\",\"method\":\"lineSeparator\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, invoke.statusCode(), invoke.body());
+        assertTrue(invoke.body().contains("\"resultType\":\"java.lang.String\""), invoke.body());
+
+        HttpResponse<String> unknownClass = post("/api/v1/unsafe/reflect",
+                "{\"class\":\"no.such.Class\"}", "Authorization", "Bearer " + TOKEN);
+        assertEquals(404, unknownClass.statusCode(), unknownClass.body());
+
+        HttpResponse<String> badInvoke = post("/api/v1/unsafe/invoke",
+                "{\"class\":\"java.lang.System\",\"method\":\"noSuchMethod\"}",
+                "Authorization", "Bearer " + TOKEN);
+        assertEquals(400, badInvoke.statusCode(), badInvoke.body());
+        assertTrue(badInvoke.body().contains("INVALID_PAYLOAD"), badInvoke.body());
     }
 
     // ------------------------------------------------------------------

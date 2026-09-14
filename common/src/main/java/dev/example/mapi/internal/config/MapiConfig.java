@@ -45,6 +45,8 @@ import org.slf4j.Logger;
  *       <td>Comma-separated scope set bound to the token (spec §4.2)</td></tr>
  *   <tr><td>http.commandPermissionLevel</td><td>MAPI_HTTP_COMMAND_PERMISSION_LEVEL</td><td>2</td>
  *       <td>Command permission ceiling (0..4) for command execution</td></tr>
+ *   <tr><td>reflection.enabled</td><td>MAPI_REFLECTION_ENABLED</td><td>false</td>
+ *       <td>Enable the unsafe reflection/invoke surface (spec §4.5)</td></tr>
  * </table>
  *
  * <p>Token resolution order when HTTP is enabled: {@code MAPI_HTTP_TOKEN},
@@ -64,7 +66,8 @@ public record MapiConfig(
         boolean failFast,
         int discoveryHeartbeatSeconds,
         Set<String> scopes,
-        int commandPermissionLevel) {
+        int commandPermissionLevel,
+        boolean reflectionEnabled) {
 
     /** Default HTTP port. */
     public static final int DEFAULT_PORT = 25586;
@@ -104,7 +107,7 @@ public record MapiConfig(
     public MapiConfig(boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute) {
         this(httpEnabled, httpPort, httpToken, rateLimitPerMinute, "mapi-" + httpPort, null, 0, false,
                 DEFAULT_DISCOVERY_HEARTBEAT_SECONDS, dev.example.mapi.internal.auth.Scope.ALL,
-                DEFAULT_COMMAND_PERMISSION_LEVEL);
+                DEFAULT_COMMAND_PERMISSION_LEVEL, false);
     }
 
     /**
@@ -142,6 +145,8 @@ public record MapiConfig(
         }
         int commandLevel = readInt(file, env, "http.commandPermissionLevel",
                 "MAPI_HTTP_COMMAND_PERMISSION_LEVEL", DEFAULT_COMMAND_PERMISSION_LEVEL);
+        boolean reflectionEnabled = readBool(file, env, "reflection.enabled", "MAPI_REFLECTION_ENABLED",
+                false, logger);
 
         if (port < 1 || port > 65535) {
             throw new MapiConfigException("http.port must be between 1 and 65535 (got " + port + ")");
@@ -172,7 +177,7 @@ public record MapiConfig(
         }
 
         return new MapiConfig(enabled, port, token == null ? null : token.trim(), rateLimit, instanceId,
-                tokenFilePath, portFallback, failFast, heartbeat, scopes, commandLevel);
+                tokenFilePath, portFallback, failFast, heartbeat, scopes, commandLevel, reflectionEnabled);
     }
 
     @Override
@@ -189,6 +194,7 @@ public record MapiConfig(
                 + ", discoveryHeartbeatSeconds=" + discoveryHeartbeatSeconds
                 + ", scopes=" + scopes
                 + ", commandPermissionLevel=" + commandPermissionLevel
+                + ", reflectionEnabled=" + reflectionEnabled
                 + "]";
     }
 
@@ -346,7 +352,7 @@ public record MapiConfig(
     private static final java.util.Set<String> KNOWN_KEYS = java.util.Set.of(
             "http.enabled", "http.port", "http.token", "http.tokenFile", "http.rateLimitPerMinute",
             "http.instanceId", "http.portFallback", "http.failFast", "http.discoveryHeartbeatSeconds",
-            "http.scopes", "http.commandPermissionLevel");
+            "http.scopes", "http.commandPermissionLevel", "reflection.enabled");
 
     private static String effective(Properties file, Map<String, String> env, String fileKey, String envKey) {
         String fromEnv = env.get(envKey);

@@ -159,6 +159,22 @@ wait → **503**:
 {"error":{"code":"SERVER_BUSY","message":"Server thread busy; status snapshot timed out. Retry shortly."},"protocolVersion":1}
 ```
 
+### `POST /api/v1/unsafe/reflect`, `POST /api/v1/unsafe/invoke` (slice 3.1, experimental)
+
+Trusted developer execution (spec §4.3): **runs with the privileges of the
+Minecraft process — no sandbox is claimed.** Requires the `unsafe.execute`
+scope **and** the `reflection.enabled` switch (default false; spec §4.5) —
+otherwise **403** `DISABLED`. Every call is audited as an
+`unsafe.reflect`/`unsafe.invoke` event.
+
+- `/unsafe/reflect` `{class}` — declared methods/fields/constructors of a
+  class (capped at 500 members); unknown class → **404**.
+- `/unsafe/invoke` `{class, method}` — static no-arg invocation; the result
+  is serialized (strings/numbers/booleans, lists/maps to depth 8, anything
+  else via `toString`). Runs on the owning (server) thread when a server
+  session is active, otherwise on the HTTP worker. Failures → **400**
+  `INVALID_PAYLOAD` with the reason.
+
 ### `GET /api/v1/threads`, `POST /api/v1/memory/gc` (slice 2.2)
 
 Structured diagnostics (`diagnostics` scope, pure JDK — no game-thread
