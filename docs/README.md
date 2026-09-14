@@ -17,6 +17,12 @@
 | [`llm-workflow.md`](llm-workflow.md) | Coding-agent workflow + context generation |
 | [`troubleshooting.md`](troubleshooting.md) | Failure modes and fixes |
 | [`roadmap.md`](roadmap.md) | Target architecture review, reconciliation, and delivery plan |
+| [`CAPABILITIES.md`](CAPABILITIES.md) | Capability model: op × scope × tier × coverage |
+| [`SEMANTICS.md`](SEMANTICS.md) | Completion levels, threading, preconditions, leases, time |
+| [`EVENTS.md`](EVENTS.md) | Event catalog, sources, gap/resume semantics |
+| [`DATA.md`](DATA.md) | Typed NBT JSON, id conventions, error model |
+| [`TESTING.md`](TESTING.md) | Test inventory and NOT RUN status |
+| [`RECIPES.md`](RECIPES.md) | Task-oriented usage recipes |
 | [`openapi.yaml`](openapi.yaml) | OpenAPI 3.1 description of the HTTP API |
 | [`../project.manifest.json`](../project.manifest.json) | Machine-readable module/command/doc map (validated by `./gradlew validateManifest`) |
 | [`examples/mapi.properties.example`](examples/mapi.properties.example) | Placeholder-only config example |

@@ -71,6 +71,12 @@
       { "path": "docs/llm-workflow.md", "topic": "coding-agent workflow" },
       { "path": "docs/troubleshooting.md", "topic": "known failure modes" },
       { "path": "docs/roadmap.md", "topic": "target architecture review, reconciliation, and delivery plan" },
+      { "path": "docs/CAPABILITIES.md", "topic": "capability model: op, scope, tier, coverage" },
+      { "path": "docs/SEMANTICS.md", "topic": "completion levels, threading, preconditions, leases, time" },
+      { "path": "docs/EVENTS.md", "topic": "event catalog and gap/resume semantics" },
+      { "path": "docs/DATA.md", "topic": "typed NBT JSON, id conventions, error model" },
+      { "path": "docs/TESTING.md", "topic": "test inventory and NOT RUN status" },
+      { "path": "docs/RECIPES.md", "topic": "task-oriented usage recipes" },
       { "path": "docs/openapi.yaml", "topic": "OpenAPI description of the HTTP API" },
       { "path": "README.md", "topic": "human-facing overview and quick start" },
       { "path": "CONTRIBUTING.md", "topic": "contribution rules" }
