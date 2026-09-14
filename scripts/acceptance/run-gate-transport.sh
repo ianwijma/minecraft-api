@@ -48,4 +48,4 @@ OUT=$(printf '{"gate":"transport","requests":%d,"p50Us":%d,"p95Us":%d,"p99Us":%d
 echo "$OUT"
 mkdir -p build/acceptance
 echo "$OUT" >> build/acceptance/transport.jsonl
-[ "$PASS" = "1" ]
+[ "$PASS" = "true" ]
