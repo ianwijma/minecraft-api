@@ -26,7 +26,7 @@ it (see the table). Rules that apply to all gates:
 | Lifecycle leaks | `run-gate.sh leaks` (8.2) | 100 load/unload cycles; assert zero leaked held inputs, leases, tickets via lifecycle introspection added by chunks 2.2/3.12 |
 | Parallel isolation | `run-gate.sh parallel` (8.2) | two server groups × two clients; repeated suite; cross-instance interference check |
 | Smoke duration | `run-gate.sh smoke` (8.2) | timed `scripts/server-smoke.sh <loader>` excluding build; ≤ 15 min on reference worker |
-| API transport p95 | `run-gate.sh transport` (8.1) | loopback metadata requests under declared load; report p50/p95/p99; gate p95 < 100 ms |
+| API transport p95 | `scripts/acceptance/run-gate-transport.sh` (8.1, **executable draft**) | measures p50/p95/p99 of /api/v1/info against a live instance; gate p95 < 100 ms. Reference-environment pinning pending: numbers before pinning are indicative |
 | Boundary dispatch | `run-gate.sh boundaries` (8.1) | receipt boundary data (chunk 3.x); eligible actions dispatched within two qualifying boundaries |
 | Disabled-mode overhead | `run-gate.sh overhead` (8.1) | tick/frame benchmark with mod absent vs installed-disabled; no listener/jobs; within noise budget |
 | Enabled idle overhead | `run-gate.sh overhead` (8.1) | same benchmark, mod enabled idle; ≤ 5% regression |
