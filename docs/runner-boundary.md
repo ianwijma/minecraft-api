@@ -35,8 +35,11 @@
   detection, EULA-gated provisioning, machine-readable results and exit
   codes. Depends only on the HTTP contract — never on `common` internals
   (ADR-0002 rule 3).
+- **Runtime-verified 2026-09-15** (NeoForge 26.2.0.87, live client):
+  process-scoped API at the main menu, client bridge capabilities, real
+  screenshot capture (TitleScreen, 371 KB PNG via GPU two-phase readback),
+  auth-off mode with browser access, graceful shutdown endpoint.
 - **Not yet implemented (tracked in `docs/execution-plan.md`):** test
-  profiles/preflight (5.3), participant mapping UI (5.4), visual baselines
-  (5.7), reproducibility bundles (5.8), path planning (5.9), backup/restore
-  (5.10), real client backends behind split source sets (3.4-3.13), SDK
-  generation pipelines (7.2-7.5).
+  profiles/preflight (5.3), participant mapping UI (5.4), path planning
+  (5.9), in-world movement/UI execution evidence (3.4-3.13 — routes land,
+  live in-world runs pending), Java SDK pipeline (7.2).

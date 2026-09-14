@@ -35,8 +35,10 @@
   requires evidence; PARTIAL/CANCELLED require a note).
 - `InputScheduler` implements the §4.2 hold-N-client-ticks boundary
   contract with wall-clock deadlines and release-all before failure.
-- The input backend contract with §3.5 coverage disclosure exists
-  (`ClientBridge.InputBackend`); the real per-loader backend behind client
-  split source sets is pending (chunks 3.4+).
+- The input backend contract with §3.5 coverage disclosure is implemented
+  per loader (keybinding-state dispatch + camera deltas via the player
+  input path, sensitivity NOT re-applied — documented at the contract).
+  Runtime-verified 2026-09-15 on NeoForge: screenshot of the live title
+  screen captured through the full stack.
 - `POST /api/v1/client/actions/hold-key` exposes the first action; window
   and screenshot read endpoints exist behind the same capability gate.
