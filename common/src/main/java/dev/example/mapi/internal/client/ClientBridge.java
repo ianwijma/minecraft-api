@@ -43,6 +43,11 @@ public interface ClientBridge {
         }
 
         @Override
+        public Optional<LanBackend> lan() {
+            return Optional.empty();
+        }
+
+        @Override
         public <T> T onClientThread(java.util.function.Supplier<T> task) {
             throw new dev.example.mapi.internal.problem.ProblemException(
                     dev.example.mapi.internal.problem.ProblemCode.CAPABILITY_UNAVAILABLE,
@@ -68,6 +73,9 @@ public interface ClientBridge {
 
     /** @return the window backend, empty when unsupported */
     Optional<WindowBackend> window();
+
+    /** @return the LAN backend, empty on dedicated servers or when unsupported */
+    Optional<LanBackend> lan();
 
     /**
      * Runs a task on the client thread with a bounded wait.
@@ -124,6 +132,25 @@ public interface ClientBridge {
 
         /** @return the current client-tick boundary counter (spec §4.1) */
         long clientTick();
+
+        /**
+         * Resolves the key code currently bound to a movement mapping (for
+         * example {@code "key.up"}). Raw-input movement holds this key
+         * through the normal keybinding path.
+         *
+         * @param mappingId config mapping id, never blank
+         * @return the bound key code
+         * @throws UnsupportedOperationException when the mapping id is
+         *     unknown or the bound key type is unsupported (declared via
+         *     coverage, never silently substituted, spec §3.3)
+         */
+        int keyCodeForMapping(String mappingId);
+
+        /**
+         * @return {@code [x, y, z]} of the local player when in a world,
+         *     empty otherwise (menu screens)
+         */
+        Optional<double[]> playerPosition();
     }
 
     /** Screenshot backend with frame/scale metadata (spec §20 client). */
@@ -143,6 +170,30 @@ public interface ClientBridge {
         record Screenshot(byte[] png, int width, int height, long frame,
                 int guiScale, String screenId, long capturedAtEpochMs) {
         }
+    }
+
+    /** LAN publication backend (spec §9.3; integrated server only). */
+    interface LanBackend {
+
+        /** @return true while the integrated server is published to LAN */
+        boolean isPublished();
+
+        /**
+         * Publishes to LAN.
+         *
+         * @param port   LAN port, 1..65535 (0 = game-assigned)
+         * @param gamemode game type name ({@code survival}, {@code creative},
+         *                 {@code adventure}, {@code spectator}) or empty for
+         *                 the world default
+         * @param cheats allow cheats on the published game
+         * @return true when publishing succeeded
+         * @throws UnsupportedOperationException when the version cannot
+         *     publish (reported, never silent)
+         */
+        boolean publish(int port, String gamemode, boolean cheats);
+
+        /** @return true when unpublishing succeeded */
+        boolean unpublish();
     }
 
     /** Window state with framebuffer/logical distinction (spec §9.1). */

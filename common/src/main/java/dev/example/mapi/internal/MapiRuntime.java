@@ -41,6 +41,7 @@ public final class MapiRuntime implements Mapi {
     private volatile dev.example.mapi.internal.command.CommandDispatchService commands;
     private volatile dev.example.mapi.internal.snapshot.SnapshotCaptureService snapshotCapture;
     private final dev.example.mapi.internal.client.ActionDispatchService clientActions;
+    private final dev.example.mapi.internal.client.MovementService movement;
     private final dev.example.mapi.internal.logging.LogCaptureService logCapture;
 
     private final MapiPlatform platform;
@@ -67,6 +68,7 @@ public final class MapiRuntime implements Mapi {
     private volatile boolean clientPresent;
     private volatile ServerHandle serverHandle;
     private volatile HttpApiServer httpServer;
+    private volatile dev.example.mapi.internal.config.MapiConfig config;
 
     /**
      * Creates the runtime. Public because loader modules and tests live in
@@ -82,6 +84,13 @@ public final class MapiRuntime implements Mapi {
                 ? null
                 : new dev.example.mapi.internal.client.ActionDispatchService(
                         clientBridge, clientOperations, new dev.example.mapi.internal.operation.OperationGuard());
+        this.movement = clientBridge == dev.example.mapi.internal.client.ClientBridge.NONE
+                ? null
+                : new dev.example.mapi.internal.client.MovementService(
+                        clientBridge, clientOperations, new dev.example.mapi.internal.operation.OperationGuard(),
+                        () -> clientBridge.input().map(
+                                dev.example.mapi.internal.client.ClientBridge.InputBackend::clientTick)
+                                .orElse(0L));
         platform.registerClientLifecycle(new ClientLifecycleListener() {
             @Override
             public void onClientStarted() {
@@ -247,6 +256,17 @@ public final class MapiRuntime implements Mapi {
         return worldLifecycle;
     }
 
+    /** @return the resolved configuration while the listener runs (throws before start) */
+    public dev.example.mapi.internal.config.MapiConfig config() {
+        dev.example.mapi.internal.config.MapiConfig resolved = config;
+        if (resolved == null) {
+            throw new dev.example.mapi.internal.problem.ProblemException(
+                    dev.example.mapi.internal.problem.ProblemCode.CAPABILITY_UNAVAILABLE,
+                    "the HTTP API has not started; no configuration is loaded");
+        }
+        return resolved;
+    }
+
     /** @return the named-clock registry; internal accessor */
     public dev.example.mapi.internal.clock.ClockRegistry clocks() {
         return clocks;
@@ -280,6 +300,11 @@ public final class MapiRuntime implements Mapi {
     /** @return the client action service while a client bridge is present, empty otherwise */
     public java.util.Optional<dev.example.mapi.internal.client.ActionDispatchService> clientActions() {
         return java.util.Optional.ofNullable(clientActions);
+    }
+
+    /** @return the movement service while a client bridge is present, empty otherwise */
+    public java.util.Optional<dev.example.mapi.internal.client.MovementService> movement() {
+        return java.util.Optional.ofNullable(movement);
     }
 
     /** @return the client bridge, or the NONE bridge on dedicated servers */
@@ -436,22 +461,23 @@ public final class MapiRuntime implements Mapi {
         if (httpServer != null) {
             return;
         }
-        dev.example.mapi.internal.config.MapiConfig config;
+        dev.example.mapi.internal.config.MapiConfig loaded;
         try {
-            config = platform.loadConfig(platform.configDir(), System.getenv(),
+            loaded = platform.loadConfig(platform.configDir(), System.getenv(),
                     platform.logger());
         } catch (dev.example.mapi.internal.config.MapiConfigException e) {
             platform.logger().error("MAPI: HTTP API not started: {}", e.getMessage());
             return;
         }
-        if (!config.httpEnabled()) {
-            platform.logger().info("MAPI: local HTTP API is disabled (enable with http.enabled=true in "
-                    + "{}/mapi.properties)", platform.configDir());
+        if (!loaded.httpEnabled()) {
+            platform.logger().info("MAPI: local HTTP API is disabled (enable with http.enabled=true "
+                    + "in the loader-native config file)", platform.configDir());
             return;
         }
-        logCapture.setSecrets(java.util.List.of(config.httpToken() == null ? "" : config.httpToken()));
+        this.config = loaded;
+        logCapture.setSecrets(java.util.List.of(loaded.httpToken() == null ? "" : loaded.httpToken()));
         platform.attachLogCapture(logCapture);
-        HttpApiServer httpServer = new HttpApiServer(config, this, platform.logger());
+        HttpApiServer httpServer = new HttpApiServer(loaded, this, platform.logger());
         if (httpServer.start()) {
             this.httpServer = httpServer;
         }

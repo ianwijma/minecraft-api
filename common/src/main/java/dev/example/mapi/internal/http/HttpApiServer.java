@@ -97,6 +97,7 @@ public final class HttpApiServer {
 
     private void registerOperations() {
         Set<ExecutionMode> privileged = Set.of(ExecutionMode.PRIVILEGED);
+        Set<ExecutionMode> rawInput = Set.of(ExecutionMode.RAW_INPUT);
         operations.register(new OperationDescriptor("server.ticks.lease",
                 "Acquire the exclusive tick-control lease",
                 Set.of(Scope.SERVER_TICK_CONTROL), false, SideEffectClass.LOCAL, false, privileged));
@@ -412,6 +413,7 @@ public final class HttpApiServer {
         postRoutes.put(API_PREFIX + "server/snapshot-diffs", this::handleSnapshotDiff);
         postRoutes.put(API_PREFIX + "server/commands", this::handleCommand);
         postRoutes.put(API_PREFIX + "client/actions/hold-key", this::handleHoldKey);
+        postRoutes.put(API_PREFIX + "client/movement/waypoints", this::handleWaypoints);
         postRoutes.put(API_PREFIX + "client/window/set-windowed",
                 (exchange, body, grants) -> handleWindowSet(exchange, body, grants, "windowed"));
         postRoutes.put(API_PREFIX + "client/window/set-fullscreen",
@@ -419,6 +421,8 @@ public final class HttpApiServer {
         postRoutes.put(API_PREFIX + "client/window/set-gui-scale",
                 (exchange, body, grants) -> handleWindowSet(exchange, body, grants, "gui-scale"));
         postRoutes.put(API_PREFIX + "process/shutdown", this::handleShutdown);
+        postRoutes.put(API_PREFIX + "server/lan", this::handleLanPublish);
+        postRoutes.put(API_PREFIX + "server/lan/stop", this::handleLanStop);
     }
 
     private void routeGet(HttpExchange exchange, String token, String path) throws IOException {
@@ -624,6 +628,93 @@ public final class HttpApiServer {
                 .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
                         "command dispatch is not available on this loader bridge"));
         respond(exchange, 200, JsonWriter.write(service.dispatch(stringField(body, "command"))));
+    }
+
+    private void handleWaypoints(HttpExchange exchange, Map<String, Object> body,
+            java.util.Set<Scope> grants) throws IOException {
+        var service = runtime.movement()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "movement is not available on this process"));
+        if (!(body.get("waypoints") instanceof java.util.List<?> rawWaypoints)) {
+            throw new ProblemException(ProblemCode.BAD_REQUEST, "waypoints list is required");
+        }
+        if (rawWaypoints.isEmpty() || rawWaypoints.size() > 64) {
+            throw new ProblemException(ProblemCode.BAD_REQUEST, "waypoints must be 1..64");
+        }
+        var waypoints = new java.util.ArrayList<dev.example.mapi.internal.client.MovementService.Waypoint>();
+        for (Object raw : rawWaypoints) {
+            if (!(raw instanceof Map<?, ?> waypoint)) {
+                throw new ProblemException(ProblemCode.BAD_REQUEST, "each waypoint must be an object");
+            }
+            try {
+                double yaw = waypoint.get("yaw") instanceof Number yawNumber
+                        ? yawNumber.doubleValue() : 0d;
+                double pitch = waypoint.get("pitch") instanceof Number pitchNumber
+                        ? pitchNumber.doubleValue() : 0d;
+                int ticks = waypoint.get("ticks") instanceof Number ticksNumber
+                        ? ticksNumber.intValue() : 20;
+                waypoints.add(new dev.example.mapi.internal.client.MovementService.Waypoint(
+                        yaw, pitch, ticks));
+            } catch (IllegalArgumentException e) {
+                throw new ProblemException(ProblemCode.BAD_REQUEST, e.getMessage());
+            }
+        }
+
+        long deadline = longField(body, "deadlineEpochMs", System.currentTimeMillis() + 30_000);
+        try {
+            var receipt = service.executeWaypoints(waypoints, grants, deadline);
+            respond(exchange, 200, JsonWriter.write(receipt));
+        } catch (IOException e) {
+            throw e;
+        } catch (Exception e) {
+            if (e instanceof ProblemException problem) {
+                throw problem;
+            }
+            throw new ProblemException(ProblemCode.INTERNAL, "waypoints failed: " + e);
+        }
+    }
+
+    private void handleLanPublish(HttpExchange exchange, Map<String, Object> body,
+            java.util.Set<Scope> grants) throws IOException {
+        checkAccess("server.lan.publish", grants, body);
+        var backend = runtime.clientBridge().lan()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "LAN publication is not available on this process (integrated server only)"));
+        if (!runtime.config().serverLanEnabled()) {
+            throw new ProblemException(ProblemCode.INSUFFICIENT_SCOPE,
+                    "LAN publication is disabled by server.lan.enabled=false (spec §9.3)");
+        }
+        runtime.worldLifecycle().requireActive(java.util.Optional.empty());
+        int port = (int) longField(body, "port", 0);
+        if (port < 0 || port > 65535) {
+            throw new ProblemException(ProblemCode.BAD_REQUEST, "port must be 0..65535 (0 = game-assigned)");
+        }
+        String gamemode = stringField(body, "gamemode");
+        boolean cheats = body.get("cheats") instanceof Boolean requested && requested;
+        boolean published = runtime.callOnClientThread(() ->
+                backend.publish(port, gamemode == null ? "" : gamemode, cheats));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("published", published);
+        out.put("note", "the game port is now exposed on LAN independently of API authentication");
+        respond(exchange, published ? 200 : 503, JsonWriter.write(out));
+    }
+
+    private void handleLanStop(HttpExchange exchange, Map<String, Object> body,
+            java.util.Set<Scope> grants) throws IOException {
+        checkAccess("server.lan.publish", grants, body);
+        var backend = runtime.clientBridge().lan()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "LAN publication is not available on this process (integrated server only)"));
+        if (!runtime.config().serverLanEnabled()) {
+            throw new ProblemException(ProblemCode.INSUFFICIENT_SCOPE,
+                    "LAN publication is disabled by server.lan.enabled=false (spec §9.3)");
+        }
+        boolean unpublished = runtime.callOnClientThread(backend::unpublish);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("unpublished", unpublished);
+        respond(exchange, 200, JsonWriter.write(out));
     }
 
     private void handleShutdown(HttpExchange exchange, Map<String, Object> body,

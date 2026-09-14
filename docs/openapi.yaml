@@ -515,6 +515,66 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "503": { $ref: "#/components/responses/CapabilityUnavailable" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/movement/waypoints:
+    post:
+      operationId: moveWaypoints
+      summary: >
+        Execute straight-line waypoints (raw-input; required mod, spec §16).
+        No teleport fallback. Receipt reports per-leg boundaries; effects
+        verified separately via world queries.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/WaypointsRequest" }
+      responses:
+        "200":
+          description: Movement receipt
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "422":
+          description: Unsupported execution mode
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/lan:
+    post:
+      operationId: publishLan
+      summary: >
+        Publish the integrated server to LAN (spec §9.3; network exposure,
+        distinct server:publish scope). Disabled unless server.lan.enabled.
+        The game port is exposed independently of API authentication.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LanPublishRequest" }
+      responses:
+        "200":
+          description: Published
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/InsufficientScope" }
+        "409": { $ref: "#/components/responses/WorldNotLoaded" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/server/lan/stop:
+    post:
+      operationId: unpublishLan
+      summary: Unpublish LAN (spec §9.3; 26.2 supports unpublish without world unload)
+      responses:
+        "200":
+          description: Unpublish result
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "403": { $ref: "#/components/responses/InsufficientScope" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/logs:
     get:
       operationId: readLogs
@@ -896,6 +956,28 @@ components:
         ticks: { type: integer, minimum: 1, maximum: 3600 }
         executionMode: { type: string, default: raw-input }
         deadlineEpochMs: { type: integer }
+    WaypointsRequest:
+      type: object
+      required: [waypoints]
+      properties:
+        waypoints:
+          type: array
+          minItems: 1
+          maxItems: 64
+          items:
+            type: object
+            properties:
+              yaw: { type: number, default: 0 }
+              pitch: { type: number, default: 0, minimum: -90, maximum: 90 }
+              ticks: { type: integer, minimum: 1, maximum: 3600, default: 20 }
+        executionMode: { type: string, default: raw-input }
+        deadlineEpochMs: { type: integer }
+    LanPublishRequest:
+      type: object
+      properties:
+        port: { type: integer, minimum: 0, maximum: 65535, default: 0, description: 0 = game-assigned }
+        gamemode: { type: string, enum: [survival, creative, adventure, spectator] }
+        cheats: { type: boolean, default: false }
     ErrorResponse:
       allOf:
         - $ref: "#/components/schemas/ProtocolVersioned"

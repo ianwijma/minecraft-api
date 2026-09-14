@@ -89,6 +89,40 @@ final class FabricInputBackend implements ClientBridge.InputBackend {
         return clientTick.get();
     }
 
+    @Override
+    public int keyCodeForMapping(String mappingId) {
+        var options = net.minecraft.client.Minecraft.getInstance().options;
+        net.minecraft.client.KeyMapping mapping = switch (mappingId) {
+            case "key.up" -> options.keyUp;
+            case "key.down" -> options.keyDown;
+            case "key.left" -> options.keyLeft;
+            case "key.right" -> options.keyRight;
+            case "key.jump" -> options.keyJump;
+            case "key.sprint" -> options.keySprint;
+            case "key.sneak" -> options.keyShift;
+            default -> throw new UnsupportedOperationException(
+                    "unknown mapping id: " + mappingId);
+        };
+        // 26.2 keeps the bound key protected; saveString() returns the
+        // "key.keyboard.x" identifier parseable via InputConstants.getKey.
+        com.mojang.blaze3d.platform.InputConstants.Key key =
+                com.mojang.blaze3d.platform.InputConstants.getKey(mapping.saveString());
+        if (key.getType() != com.mojang.blaze3d.platform.InputConstants.Type.KEYSYM) {
+            throw new UnsupportedOperationException("bound key is not a KEYSYM: " + mappingId);
+        }
+        return key.getValue();
+    }
+
+    @Override
+    public java.util.Optional<double[]> playerPosition() {
+        net.minecraft.client.player.LocalPlayer player =
+                net.minecraft.client.Minecraft.getInstance().player;
+        if (player == null) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(new double[] {player.getX(), player.getY(), player.getZ()});
+    }
+
     /** @return the synthetic held state for a key (never native GLFW state) */
     boolean isSyntheticallyHeld(int keyCode) {
         return syntheticHeld.getOrDefault(keyCode, false);

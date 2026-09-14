@@ -82,6 +82,16 @@ class ActionDispatchServiceTest {
         public long clientTick() {
             return tick.get();
         }
+
+        @Override
+        public int keyCodeForMapping(String mappingId) {
+            throw new UnsupportedOperationException(mappingId);
+        }
+
+        @Override
+        public java.util.Optional<double[]> playerPosition() {
+            return java.util.Optional.of(new double[] {1.0, 64.0, 2.0});
+        }
     }
 
     /** Bridge that runs tasks inline (single-threaded test). */
@@ -111,6 +121,11 @@ class ActionDispatchServiceTest {
 
         @Override
         public Optional<WindowBackend> window() {
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<LanBackend> lan() {
             return Optional.empty();
         }
 

@@ -40,7 +40,8 @@ public final class NeoForgeClientBridge implements ClientBridge {
 
     @Override
     public java.util.Set<String> supportedCapabilities() {
-        return java.util.Set.of("client.window", "client.screenshots", "client.input");
+        return java.util.Set.of("client.window", "client.screenshots", "client.input",
+                "client.lan");
     }
 
     @Override
@@ -56,6 +57,11 @@ public final class NeoForgeClientBridge implements ClientBridge {
     @Override
     public Optional<WindowBackend> window() {
         return Optional.of(new NeoForgeWindow());
+    }
+
+    @Override
+    public Optional<LanBackend> lan() {
+        return Optional.of(new NeoForgeLan());
     }
 
     /**
@@ -139,6 +145,57 @@ public final class NeoForgeClientBridge implements ClientBridge {
             Minecraft.getInstance().getWindow().setGuiScale(guiScale);
             windowRevision.incrementAndGet();
             return currentState();
+        }
+    }
+
+    /** LAN publication over the verified IntegratedServer publish APIs. */
+    private final class NeoForgeLan implements LanBackend {
+
+        private net.minecraft.client.server.IntegratedServer server() {
+            net.minecraft.client.server.IntegratedServer server =
+                    Minecraft.getInstance().getSingleplayerServer();
+            if (server == null) {
+                throw new dev.example.mapi.internal.problem.ProblemException(
+                        dev.example.mapi.internal.problem.ProblemCode.WORLD_NOT_LOADED,
+                        "no integrated server is running");
+            }
+            return server;
+        }
+
+        @Override
+        public boolean isPublished() {
+            return server().isPublished();
+        }
+
+        @Override
+        public boolean publish(int port, String gamemode, boolean cheats) {
+            var scope = net.minecraft.server.MinecraftServer.MultiplayerScope.LAN;
+            if (port > 0) {
+                return server().publishServer(scope, gamemodeOf(gamemode), cheats, port);
+            }
+            // 26.2 game-assigned port path (verified overload on
+            // IntegratedServer).
+            return server().publishServer(scope, 0);
+        }
+
+        @Override
+        public boolean unpublish() {
+            return server().unpublishServer();
+        }
+
+        private net.minecraft.world.level.GameType gamemodeOf(String name) {
+            if (name == null || name.isBlank()) {
+                return net.minecraft.world.level.GameType.DEFAULT_MODE;
+            }
+            return switch (name.toLowerCase(java.util.Locale.ROOT)) {
+                case "survival" -> net.minecraft.world.level.GameType.SURVIVAL;
+                case "creative" -> net.minecraft.world.level.GameType.CREATIVE;
+                case "adventure" -> net.minecraft.world.level.GameType.ADVENTURE;
+                case "spectator" -> net.minecraft.world.level.GameType.SPECTATOR;
+                default -> throw new dev.example.mapi.internal.problem.ProblemException(
+                        dev.example.mapi.internal.problem.ProblemCode.BAD_REQUEST,
+                        "unknown gamemode: " + name);
+            };
         }
     }
 
