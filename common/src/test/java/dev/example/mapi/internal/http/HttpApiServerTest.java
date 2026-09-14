@@ -769,6 +769,40 @@ class HttpApiServerTest {
     }
 
     // ------------------------------------------------------------------
+    // Capabilities (slice 4.1, spec §5)
+    // ------------------------------------------------------------------
+
+    @Test
+    void capabilitiesReflectDynamicState() throws Exception {
+        startServer(enabledConfig());
+        HttpResponse<String> all = get("/api/v1/capabilities", "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, all.statusCode(), all.body());
+        // observe-authorized core op: fully available under the full scope set.
+        assertTrue(all.body().contains("\"op\":\"tasks.create\",\"supported\":true,\"enabled\":true,"
+                + "\"available\":true,\"authorized\":true,\"coverage\":\"full\",\"tier\":\"core\""), all.body());        // world ops are listed but unavailable without an active server session.
+        int worldBlock = all.body().indexOf("\"op\":\"server.world.block\"");
+        assertTrue(worldBlock >= 0, all.body());
+        String entry = all.body().substring(worldBlock, all.body().indexOf('}', worldBlock) + 1);
+        assertTrue(entry.contains("\"available\":false"), entry);
+
+        HttpResponse<String> core = get("/api/v1/capabilities?tier=core",
+                "Authorization", "Bearer " + TOKEN);
+        assertTrue(core.body().contains("\"op\":\"leases.acquire\""), core.body());
+        assertFalse(core.body().contains("\"op\":\"unsafe.reflect\""), core.body());
+    }
+
+    @Test
+    void capabilitiesScopeAndSwitchState() throws Exception {
+        // observe-only token: unsafe ops show authorized=false and enabled=false.
+        startServer(scopedConfig(java.util.List.of(dev.example.mapi.internal.auth.Scope.OBSERVE)));
+        HttpResponse<String> restricted = get("/api/v1/capabilities?tier=experimental",
+                "Authorization", "Bearer " + TOKEN);
+        assertTrue(restricted.body().contains("\"op\":\"unsafe.reflect\""), restricted.body());
+        assertTrue(restricted.body().contains("\"authorized\":false"), restricted.body());
+        assertTrue(restricted.body().contains("\"enabled\":false"), restricted.body());
+    }
+
+    // ------------------------------------------------------------------
     // Storage read (slice 2.5)
     // ------------------------------------------------------------------
 

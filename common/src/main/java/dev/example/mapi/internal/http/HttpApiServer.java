@@ -323,6 +323,7 @@ public final class HttpApiServer {
             case API_PREFIX + "ready" -> respond(exchange, requestId, 200, JsonWriter.write(ready()));
             case API_PREFIX + "time" -> sendTime(exchange, requestId);
             case API_PREFIX + "info" -> respond(exchange, requestId, 200, JsonWriter.write(info()));
+            case API_PREFIX + "capabilities" -> sendCapabilities(exchange, requestId);
             case API_PREFIX + "events" -> listEvents(exchange, requestId);
             case API_PREFIX + "server/status" -> sendServerStatus(exchange, requestId);
             case API_PREFIX + "server/players" -> sendPlayers(exchange, requestId);
@@ -487,8 +488,31 @@ public final class HttpApiServer {
         respond(exchange, requestId, 200, JsonWriter.write(body));
     }
 
-    private Map<String, Object> info() {
+    private void sendCapabilities(HttpExchange exchange, String requestId) throws IOException {
+        Map<String, List<String>> query = splitQuery(exchange.getRequestURI().getRawQuery());
+        String tierFilter = single(query, "tier");
+        if (tierFilter != null && !List.of("core", "extended", "experimental").contains(tierFilter)) {
+            error(exchange, requestId, 400, "INVALID_QUERY", "tier must be core, extended, or experimental");
+            return;
+        }
+        var state = new dev.example.mapi.internal.capability.CapabilityEntry.Capabilities(
+                runtime.serverRunning(), runtime.clientOps() != null,
+                config.reflectionEnabled(), config.filesEnabled());
+        List<Map<String, Object>> capabilities = new java.util.ArrayList<>();
+        for (var entry : dev.example.mapi.internal.capability.CapabilityEntry.TABLE) {
+            if (tierFilter != null && !entry.tier().equals(tierFilter)) {
+                continue;
+            }
+            capabilities.add(entry.toJson(state, config.scopes().contains(entry.scope())));
+        }
         Map<String, Object> body = new LinkedHashMap<>();
+        body.put("protocolVersion", PROTOCOL_VERSION);
+        body.put("capabilities", capabilities);
+        body.put("total", capabilities.size());
+        respond(exchange, requestId, 200, JsonWriter.write(body));
+    }
+
+    private Map<String, Object> info() {        Map<String, Object> body = new LinkedHashMap<>();
         body.put("protocolVersion", PROTOCOL_VERSION);
         body.put("name", "mapi");
         body.put("version", runtime.modVersion());
