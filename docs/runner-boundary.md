@@ -36,9 +36,15 @@
   codes. Depends only on the HTTP contract — never on `common` internals
   (ADR-0002 rule 3).
 - **Runtime-verified 2026-09-15** (NeoForge 26.2.0.87, live client):
-  process-scoped API at the main menu, client bridge capabilities, real
-  screenshot capture (TitleScreen, 371 KB PNG via GPU two-phase readback),
-  auth-off mode with browser access, graceful shutdown endpoint.
+  process-scoped API at the main menu AND in-world, full menu automation
+  (inspect title-screen widgets, click Singleplayer, load world via API),
+  movement (11.91 blocks walked via waypoints with 180-degree turn; first
+  attempt blocked by terrain — jungle wall — confirming collision honesty),
+  tick control (lease → freeze → step 20 → unfreeze, world count 21717 →
+  21738; known issue: step job reports completed:0 because 26.2 advances
+  the tick counter asynchronously after stepGameIfPaused), LAN publish/
+  unpublish, screenshots (title screen + in-world), auth-off browser
+  access, graceful shutdown endpoint.
 - **Not yet implemented (tracked in `docs/execution-plan.md`):** test
   profiles/preflight (5.3), participant mapping UI (5.4), path planning
   (5.9), in-world movement/UI execution evidence (3.4-3.13 — routes land,
