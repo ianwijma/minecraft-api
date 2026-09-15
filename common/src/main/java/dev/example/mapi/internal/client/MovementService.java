@@ -108,20 +108,42 @@ public final class MovementService {
         var descriptor = operations.find("client.movement.waypoints").orElseThrow();
         var backend = bridge.input().orElseThrow(() -> new ProblemException(
                 ProblemCode.CAPABILITY_UNAVAILABLE, "input backend unavailable"));
+        // The scheduling loop runs on the CALLING thread (it sleeps while
+        // client ticks advance on the client thread); each raw dispatch is
+        // bounced onto the client thread individually. Wrapping the whole
+        // loop in a client-thread task would deadlock against the tick
+        // counter (spec §4.2 boundary semantics).
         RawInput raw = new RawInput() {
             @Override
             public void lookDelta(double yawDelta, double pitchDelta) {
-                backend.mouseDelta(yawDelta, pitchDelta);
+                try {
+                    bridge.onClientThread(() -> {
+                        backend.mouseDelta(yawDelta, pitchDelta);
+                        return null;
+                    });
+                } catch (RuntimeException e) {
+                    throw e;
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
+                }
             }
 
             @Override
             public void forward(boolean held) {
-                // W (GLFW_KEY_W) through the raw key path; keybindings pick it
-                // up as forward per the game's input mapping.
-                if (held) {
-                    backend.pressKey(87);
-                } else {
-                    backend.releaseKey(87);
+                try {
+                    bridge.onClientThread(() -> {
+                        // W (GLFW_KEY_W) through the raw key path.
+                        if (held) {
+                            backend.pressKey(87);
+                        } else {
+                            backend.releaseKey(87);
+                        }
+                        return null;
+                    });
+                } catch (RuntimeException e) {
+                    throw e;
+                } catch (Exception e) {
+                    throw new IllegalStateException(e);
                 }
             }
 
@@ -152,38 +174,30 @@ public final class MovementService {
         java.util.List<LegResult> legs = new java.util.ArrayList<>();
         ActionReceipt receipt;
         try {
-            receipt = bridge.onClientThread(() -> {
-                try {
-                    for (int i = 0; i < waypoints.size(); i++) {
-                        Waypoint waypoint = waypoints.get(i);
-                        raw.lookDelta(waypoint.yaw(), waypoint.pitch());
-                        InputScheduler.HoldResult hold = scheduler.holdKey(
-                                new InputScheduler.Dispatch() {
-                                    @Override
-                                    public void down(int keyCode) {
-                                        raw.forward(true);
-                                    }
+            for (int i = 0; i < waypoints.size(); i++) {
+                Waypoint waypoint = waypoints.get(i);
+                raw.lookDelta(waypoint.yaw(), waypoint.pitch());
+                InputScheduler.HoldResult hold = scheduler.holdKey(
+                        new InputScheduler.Dispatch() {
+                            @Override
+                            public void down(int keyCode) {
+                                raw.forward(true);
+                            }
 
-                                    @Override
-                                    public void up(int keyCode) {
-                                        raw.forward(false);
-                                    }
-                                },
-                                87, waypoint.ticks(), deadline);
-                        legs.add(new LegResult(i, waypoint.yaw(), waypoint.pitch(),
-                                waypoint.ticks(), hold.heldTicks(),
-                                hold.startBoundary(), hold.endBoundary()));
-                        if (System.currentTimeMillis() >= deadline) {
-                            throw new ProblemException(ProblemCode.DEADLINE_EXCEEDED,
-                                    "waypoint path exceeded the wall-clock deadline");
-                        }
-                    }
-                    return null;
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new ProblemException(ProblemCode.SERVER_BUSY, "interrupted");
+                            @Override
+                            public void up(int keyCode) {
+                                raw.forward(false);
+                            }
+                        },
+                        87, waypoint.ticks(), deadline);
+                legs.add(new LegResult(i, waypoint.yaw(), waypoint.pitch(),
+                        waypoint.ticks(), hold.heldTicks(),
+                        hold.startBoundary(), hold.endBoundary()));
+                if (System.currentTimeMillis() >= deadline) {
+                    throw new ProblemException(ProblemCode.DEADLINE_EXCEEDED,
+                            "waypoint path exceeded the wall-clock deadline");
                 }
-            });
+            }
             receipt = ActionReceipt.builder(UUID.randomUUID().toString(),
                             UUID.randomUUID().toString(), ExecutionMode.RAW_INPUT)
                     .backendId(backend.backendId())

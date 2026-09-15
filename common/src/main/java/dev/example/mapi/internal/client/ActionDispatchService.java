@@ -89,24 +89,40 @@ public final class ActionDispatchService {
         }
         ActionReceipt receipt;
         try {
-            InputScheduler.HoldResult result = bridge.onClientThread(() -> {
-                try {
-                    return scheduler.holdKey(new InputScheduler.Dispatch() {
+            // Scheduler loop on the CALLING thread (ticks advance on the
+            // client thread); each dispatch bounced onto the client thread
+            // individually - wrapping the whole hold would deadlock the tick
+            // counter (spec §4.2).
+            InputScheduler.HoldResult result = scheduler.holdKey(
+                    new InputScheduler.Dispatch() {
                         @Override
                         public void down(int keyCode) {
-                            input.pressKey(keyCode);
+                            try {
+                                bridge.onClientThread(() -> {
+                                    input.pressKey(keyCode);
+                                    return null;
+                                });
+                            } catch (RuntimeException e) {
+                                throw e;
+                            } catch (Exception e) {
+                                throw new IllegalStateException(e);
+                            }
                         }
 
                         @Override
                         public void up(int keyCode) {
-                            input.releaseKey(keyCode);
+                            try {
+                                bridge.onClientThread(() -> {
+                                    input.releaseKey(keyCode);
+                                    return null;
+                                });
+                            } catch (RuntimeException e) {
+                                throw e;
+                            } catch (Exception e) {
+                                throw new IllegalStateException(e);
+                            }
                         }
                     }, request.keyCode(), request.ticks(), deadline);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    throw new ProblemException(ProblemCode.SERVER_BUSY, "interrupted during hold");
-                }
-            });
             receipt = ActionReceipt.builder(UUID.randomUUID().toString(),
                             UUID.randomUUID().toString(), ExecutionMode.RAW_INPUT)
                     .backendId(input.backendId())
