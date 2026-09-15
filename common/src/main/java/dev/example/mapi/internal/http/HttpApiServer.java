@@ -156,6 +156,9 @@ public final class HttpApiServer {
                 "Delete a saved singleplayer world",
                 Set.of(Scope.OPERATIONS_DESTRUCTIVE), true,
                 SideEffectClass.GAME, false, Set.of()));
+        operations.register(new OperationDescriptor("client.inventory.click",
+                "Container click via client-logic mode (server-confirmed postcondition, §10.3)",
+                java.util.Set.of(), false, SideEffectClass.GAME, true, rawInput));
         operations.register(new OperationDescriptor("client.connect",
                 "Join a server through the vanilla connect flow (spec §9.2)",
                 Set.of(Scope.CLIENT_CONNECT), false, SideEffectClass.GAME,
@@ -420,6 +423,7 @@ public final class HttpApiServer {
         getRoutes.put(API_PREFIX + "client/screenshots", this::sendScreenshot);
         getRoutes.put(API_PREFIX + "client/screen", this::sendScreenInfo);
         getRoutes.put(API_PREFIX + "client/worlds", this::sendWorldList);
+        getRoutes.put(API_PREFIX + "client/inventory", this::sendInventory);
         getRoutes.put(API_PREFIX + "logs", this::sendLogs);
         getRoutes.put(API_PREFIX + "server/ticks", this::sendTickState);
         getRoutes.put(API_PREFIX + "server/queries/players", this::sendPlayerQuery);
@@ -445,6 +449,7 @@ public final class HttpApiServer {
         postRoutes.put(API_PREFIX + "client/actions/hold-key", this::handleHoldKey);
         postRoutes.put(API_PREFIX + "client/movement/waypoints", this::handleWaypoints);
         postRoutes.put(API_PREFIX + "client/actions/click", this::handleClick);
+        postRoutes.put(API_PREFIX + "client/inventory/click", this::handleInventoryClick);
         postRoutes.put(API_PREFIX + "client/worlds/load", this::handleWorldLoad);
         postRoutes.put(API_PREFIX + "client/worlds/create", this::handleWorldCreate);
         postRoutes.put(API_PREFIX + "client/worlds/delete", this::handleWorldDelete);
@@ -663,6 +668,47 @@ public final class HttpApiServer {
                 .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
                         "command dispatch is not available on this loader bridge"));
         respond(exchange, 200, JsonWriter.write(service.dispatch(stringField(body, "command"))));
+    }
+
+    private void sendInventory(HttpExchange exchange) throws IOException {
+        var inv = runtime.clientBridge().inventory()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "inventory is not available on this process"));
+        var slots = runtime.callOnClientThread(inv::inspect);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("containerId", runtime.callOnClientThread(inv::containerId));
+        out.put("carriedCount", runtime.callOnClientThread(inv::carriedCount));
+        java.util.List<Map<String, Object>> slotMaps = new java.util.ArrayList<>();
+        for (dev.example.mapi.internal.client.ClientBridge.InventoryBackend.SlotNode node : slots) {
+            slotMaps.add(node.toMap());
+        }
+        out.put("slots", slotMaps);
+        respond(exchange, 200, JsonWriter.write(out));
+    }
+
+    private void handleInventoryClick(HttpExchange exchange, Map<String, Object> body,
+            java.util.Set<Scope> grants) throws IOException {
+        checkAccess("client.inventory.click", grants, body);
+        var inv = runtime.clientBridge().inventory()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "inventory is not available on this process"));
+        int slot = (int) longField(body, "slot", -1);
+        int button = (int) longField(body, "button", 0);
+        String input = stringField(body, "containerInput") == null
+                ? "PICKUP" : stringField(body, "containerInput");
+        if (slot < 0) {
+            throw new ProblemException(ProblemCode.BAD_REQUEST, "slot is required");
+        }
+        boolean accepted = runtime.callOnClientThread(() -> inv.click(slot, button, input));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("slot", slot);
+        out.put("button", button);
+        out.put("containerInput", input);
+        out.put("dispatched", accepted);
+        out.put("note", "client-logic mode: server-confirmed postcondition — verify via GET /server/queries/players");
+        respond(exchange, 200, JsonWriter.write(out));
     }
 
     private void handleClick(HttpExchange exchange, Map<String, Object> body,

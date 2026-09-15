@@ -150,6 +150,11 @@ class ActionDispatchServiceTest {
         }
 
         @Override
+        public Optional<InventoryBackend> inventory() {
+            return Optional.empty();
+        }
+
+        @Override
         public <T> T onClientThread(java.util.function.Supplier<T> task) {
             return task.get();
         }

@@ -65,6 +65,11 @@ public interface ClientBridge {
         }
 
         @Override
+        public Optional<InventoryBackend> inventory() {
+            return Optional.empty();
+        }
+
+        @Override
         public <T> T onClientThread(java.util.function.Supplier<T> task) {
             throw new dev.example.mapi.internal.problem.ProblemException(
                     dev.example.mapi.internal.problem.ProblemCode.CAPABILITY_UNAVAILABLE,
@@ -100,8 +105,59 @@ public interface ClientBridge {
     /** @return the worlds backend, empty when unsupported */
     Optional<WorldsBackend> worlds();
 
+    /** @return the inventory backend, empty when unsupported */
+    Optional<InventoryBackend> inventory();
+
     /** @return the direct-connection backend, empty when unsupported */
     Optional<ConnectBackend> connect();
+
+    /**
+     * Inventory backend (spec §10.3): client-logic mode — clicks dispatch
+     * through the game's own container-input flow (server roundtrip, not
+     * client-side prediction), giving server-confirmed postconditions.
+     */
+    interface InventoryBackend {
+
+        /** One inventory slot observation. */
+        record SlotNode(int slot, String itemId, int count) {
+
+            /** @return the slot as an ordered map for JSON serialization */
+            public Map<String, Object> toMap() {
+                Map<String, Object> map = new LinkedHashMap<>();
+                map.put("slot", slot);
+                map.put("itemId", itemId);
+                map.put("count", count);
+                return map;
+            }
+        }
+
+        /** @return the container id (0 for the player inventory) */
+        int containerId();
+
+        /**
+         * @return non-empty slots of the player's inventory menu (§10.3
+         *     cursor observation is the carried-stack state)
+         */
+        java.util.List<SlotNode> inspect();
+
+        /**
+         * Dispatches a container click through the game's server-flow
+         * (client-logic mode, §3.1): the server receives the input and
+         * confirms the postcondition.
+         *
+         * @param slot          menu slot index
+         * @param button        mouse button (0 left, 1 right)
+         * @param containerInput PICKUP | QUICK_MOVE | SWAP | CLONE | THROW |
+         *                      QUICK_CRAFT | PICKUP_ALL
+         * @return true when the game accepted the input
+         * @throws UnsupportedOperationException when the input name is
+         *     unknown (declared, never substituted)
+         */
+        boolean click(int slot, int button, String containerInput);
+
+        /** @return the carried stack size on the cursor (0 when empty) */
+        int carriedCount();
+    }
 
     /**
      * Runs a task on the client thread with a bounded wait.
@@ -142,9 +198,13 @@ public interface ClientBridge {
         void releaseKey(int keyCode);
 
         /**
-         * Dispatches a character input (separate from key presses, spec
-         * §3.5). Unsupported by the keybinding-state backend (declared via
-         * coverage, spec §3.5).
+         * Dispatches a character input to the ACTIVE SCREEN (chat box, text
+         * fields) via its charTyped path. Only works while a screen is
+         * open — throws when in-world (declared honestly, spec §3.5: the
+         * keybinding-state backend has no direct-to-world character
+         * channel).
+         *
+         * @param c the character to dispatch
          */
         void character(char c);
 

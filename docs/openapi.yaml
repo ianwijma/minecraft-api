@@ -575,6 +575,46 @@ paths:
         "403": { $ref: "#/components/responses/InsufficientScope" }
         "503": { $ref: "#/components/responses/CapabilityUnavailable" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/inventory:
+    get:
+      operationId: inspectInventory
+      summary: >
+        Player inventory menu slots (§10.3): non-empty slots with itemId and
+        count, carried-stack size, container id.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/inventory/click:
+    post:
+      operationId: clickInventory
+      summary: >
+        Container click (client-logic mode, §3.1/§10.3): dispatches through
+        the game's server flow for server-confirmed postconditions. Verify
+        via GET /server/queries/players (inventory field).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slot]
+              properties:
+                slot: { type: integer, minimum: 0, description: "0=result, 1-4=craft, 5-8=armor, 9-44=main, 45=offhand" }
+                button: { type: integer, minimum: 0, maximum: 2, default: 0 }
+                containerInput: { type: string, enum: [PICKUP, QUICK_MOVE, SWAP, CLONE, THROW, QUICK_CRAFT, PICKUP_ALL], default: PICKUP }
+      responses:
+        "200":
+          description: Click dispatched
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/screen:
     get:
       operationId: inspectScreen

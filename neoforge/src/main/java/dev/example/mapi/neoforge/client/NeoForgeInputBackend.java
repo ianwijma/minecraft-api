@@ -8,6 +8,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.common.NeoForge;
 
@@ -67,8 +68,16 @@ public final class NeoForgeInputBackend implements ClientBridge.InputBackend {
 
     @Override
     public void character(char c) {
-        throw new UnsupportedOperationException(
-                "character input is not supported by the keybinding-state backend");
+        // Screen-dispatch path: the active screen's text fields receive
+        // characters via charTyped (spec §3.5). Only works while a screen
+        // with a text field is open (chat, rename, search) — throws
+        // honestly when in-world.
+        Screen screen = Minecraft.getInstance().gui.screen();
+        if (screen == null) {
+            throw new IllegalStateException(
+                    "character input requires an open screen (chat, text field)");
+        }
+        screen.charTyped(new net.minecraft.client.input.CharacterEvent(c));
     }
 
     @Override

@@ -52,8 +52,28 @@ final class NeoForgeTickControlBackend implements TickControlBackend {
     public StepResult step(int ticks) {
         long before = server.getTickCount();
         boolean accepted = manager().stepGameIfPaused(ticks);
-        long after = server.getTickCount();
-        int completed = accepted ? (int) Math.max(0, Math.min(ticks, after - before)) : 0;
+        if (!accepted) {
+            return new StepResult(ticks, 0, before);
+        }
+        // 26.2 stepping advances the count over subsequent frames — poll
+        // briefly. Safe to sleep on the server thread here: the tick loop is
+        // frozen, only step frames run.
+        long deadline = System.currentTimeMillis() + 2000;
+        long after = before;
+        while (System.currentTimeMillis() < deadline) {
+            after = server.getTickCount();
+            if (after - before >= ticks) {
+                break;
+            }
+            try {
+                Thread.sleep(25);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        after = server.getTickCount();
+        int completed = (int) Math.max(0, Math.min(ticks, after - before));
         return new StepResult(ticks, completed, after);
     }
 
