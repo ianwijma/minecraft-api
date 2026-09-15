@@ -40,8 +40,8 @@ public final class MapiRuntime implements Mapi {
     private volatile dev.example.mapi.internal.query.WorldQueryService worldQueries;
     private volatile dev.example.mapi.internal.command.CommandDispatchService commands;
     private volatile dev.example.mapi.internal.snapshot.SnapshotCaptureService snapshotCapture;
-    private final dev.example.mapi.internal.client.ActionDispatchService clientActions;
-    private final dev.example.mapi.internal.client.MovementService movement;
+    private volatile dev.example.mapi.internal.client.ActionDispatchService clientActions;
+    private volatile dev.example.mapi.internal.client.MovementService movement;
     private final dev.example.mapi.internal.logging.LogCaptureService logCapture;
 
     private final MapiPlatform platform;
@@ -80,17 +80,6 @@ public final class MapiRuntime implements Mapi {
         this.platform = Objects.requireNonNull(platform, "platform");
         this.logCapture = new dev.example.mapi.internal.logging.LogCaptureService(512, java.util.List.of());
         var clientBridge = platform.clientBridge();
-        this.clientActions = clientBridge == dev.example.mapi.internal.client.ClientBridge.NONE
-                ? null
-                : new dev.example.mapi.internal.client.ActionDispatchService(
-                        clientBridge, clientOperations, new dev.example.mapi.internal.operation.OperationGuard());
-        this.movement = clientBridge == dev.example.mapi.internal.client.ClientBridge.NONE
-                ? null
-                : new dev.example.mapi.internal.client.MovementService(
-                        clientBridge, clientOperations, new dev.example.mapi.internal.operation.OperationGuard(),
-                        () -> clientBridge.input().map(
-                                dev.example.mapi.internal.client.ClientBridge.InputBackend::clientTick)
-                                .orElse(0L));
         platform.registerClientLifecycle(new ClientLifecycleListener() {
             @Override
             public void onClientStarted() {
@@ -299,12 +288,45 @@ public final class MapiRuntime implements Mapi {
 
     /** @return the client action service while a client bridge is present, empty otherwise */
     public java.util.Optional<dev.example.mapi.internal.client.ActionDispatchService> clientActions() {
-        return java.util.Optional.ofNullable(clientActions);
+        dev.example.mapi.internal.client.ActionDispatchService service = clientActions;
+        if (service == null) {
+            var bridge = platform.clientBridge();
+            if (bridge != dev.example.mapi.internal.client.ClientBridge.NONE
+                    && bridge.input().isPresent()) {
+                synchronized (this) {
+                    if (clientActions == null) {
+                        clientActions = new dev.example.mapi.internal.client.ActionDispatchService(
+                                bridge, clientOperations,
+                                new dev.example.mapi.internal.operation.OperationGuard());
+                    }
+                    service = clientActions;
+                }
+            }
+        }
+        return java.util.Optional.ofNullable(service);
     }
 
     /** @return the movement service while a client bridge is present, empty otherwise */
     public java.util.Optional<dev.example.mapi.internal.client.MovementService> movement() {
-        return java.util.Optional.ofNullable(movement);
+        dev.example.mapi.internal.client.MovementService service = movement;
+        if (service == null) {
+            var bridge = platform.clientBridge();
+            if (bridge != dev.example.mapi.internal.client.ClientBridge.NONE
+                    && bridge.input().isPresent()) {
+                synchronized (this) {
+                    if (movement == null) {
+                        movement = new dev.example.mapi.internal.client.MovementService(
+                                bridge, clientOperations,
+                                new dev.example.mapi.internal.operation.OperationGuard(),
+                                () -> bridge.input().map(
+                                        dev.example.mapi.internal.client.ClientBridge.InputBackend::clientTick)
+                                        .orElse(0L));
+                    }
+                    service = movement;
+                }
+            }
+        }
+        return java.util.Optional.ofNullable(service);
     }
 
     /** @return the client bridge, or the NONE bridge on dedicated servers */
