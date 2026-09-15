@@ -317,6 +317,20 @@ public interface ClientBridge {
         void loadWorld(String levelId) throws Exception;
 
         /**
+         * Creates a fresh survival world with a random seed and vanilla
+         * defaults (async; poll for phase ACTIVE). The world is created
+         * even if a world with the same id exists? No: creation fails when
+         * the id is taken (reported, never overwritten).
+         *
+         * @param levelId  directory id, never blank
+         * @param gamemode {@code survival} or {@code creative} (default
+         *                 survival)
+         * @param seed     world seed; {@code null} = random
+         * @throws Exception when creation fails or the id already exists
+         */
+        void createWorld(String levelId, String gamemode, Long seed) throws Exception;
+
+        /**
          * Deletes a saved world.
          *
          * @param levelId the world's directory id

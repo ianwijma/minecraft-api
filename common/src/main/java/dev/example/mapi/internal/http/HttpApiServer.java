@@ -146,6 +146,9 @@ public final class HttpApiServer {
         operations.register(new OperationDescriptor("client.ui.click",
                 "Click the active screen at GUI coordinates (screen dispatch)",
                 Set.of(), false, SideEffectClass.LOCAL, false, rawInput));
+        operations.register(new OperationDescriptor("client.worlds.create",
+                "Create a fresh world with vanilla defaults (async; poll /server/world)",
+                java.util.Set.of(), false, SideEffectClass.GAME, false, Set.of()));
         operations.register(new OperationDescriptor("client.worlds.load",
                 "Load a saved singleplayer world (async; poll /server/world)",
                 Set.of(), false, SideEffectClass.GAME, false, Set.of()));
@@ -443,6 +446,7 @@ public final class HttpApiServer {
         postRoutes.put(API_PREFIX + "client/movement/waypoints", this::handleWaypoints);
         postRoutes.put(API_PREFIX + "client/actions/click", this::handleClick);
         postRoutes.put(API_PREFIX + "client/worlds/load", this::handleWorldLoad);
+        postRoutes.put(API_PREFIX + "client/worlds/create", this::handleWorldCreate);
         postRoutes.put(API_PREFIX + "client/worlds/delete", this::handleWorldDelete);
         postRoutes.put(API_PREFIX + "client/connect", this::handleConnect);
         postRoutes.put(API_PREFIX + "client/window/set-windowed",
@@ -702,6 +706,35 @@ public final class HttpApiServer {
         out.put("protocolVersion", PROTOCOL_VERSION);
         out.put("levelId", levelId);
         out.put("note", "world load started asynchronously; poll GET /api/v1/server/world for phase ACTIVE");
+        respond(exchange, 202, JsonWriter.write(out));
+    }
+
+    private void handleWorldCreate(HttpExchange exchange, Map<String, Object> body,
+            java.util.Set<Scope> grants) throws IOException {
+        checkAccess("client.worlds.create", grants, body);
+        var worlds = runtime.clientBridge().worlds()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "world management is not available on this process"));
+        String levelId = stringField(body, "levelId");
+        if (levelId == null) {
+            throw new ProblemException(ProblemCode.BAD_REQUEST, "levelId is required");
+        }
+        Long seed = body.get("seed") instanceof Number number ? number.longValue() : null;
+        runtime.callOnClientThread(() -> {
+            try {
+                worlds.createWorld(levelId, stringField(body, "gamemode"), seed);
+            } catch (Exception e) {
+                if (e instanceof ProblemException problem) {
+                    throw problem;
+                }
+                throw new ProblemException(ProblemCode.INTERNAL, "world create failed: " + e);
+            }
+            return null;
+        });
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("levelId", levelId);
+        out.put("note", "world creation started asynchronously; poll GET /api/v1/server/world for phase ACTIVE");
         respond(exchange, 202, JsonWriter.write(out));
     }
 
