@@ -176,11 +176,19 @@ public final class JobManager {
             Object result = entry.body.run(entry.context());
             entry.finalizeSuccess(result);
         } catch (ProblemException e) {
-            entry.finalizeFailure(e.code(), e.getMessage());
+            if (shutdown) {
+                entry.finalizeCancelled(null);
+            } else {
+                entry.finalizeFailure(e.code(), e.getMessage());
+            }
         } catch (CancellationException e) {
             entry.finalizeCancelled(null);
         } catch (Throwable t) {
-            entry.finalizeFailure(ProblemCode.INTERNAL, String.valueOf(t));
+            if (shutdown) {
+                entry.finalizeCancelled(null);
+            } else {
+                entry.finalizeFailure(ProblemCode.INTERNAL, String.valueOf(t));
+            }
         }
     }
 
