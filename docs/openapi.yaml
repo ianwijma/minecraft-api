@@ -575,6 +575,130 @@ paths:
         "403": { $ref: "#/components/responses/InsufficientScope" }
         "503": { $ref: "#/components/responses/CapabilityUnavailable" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/screen:
+    get:
+      operationId: inspectScreen
+      summary: >
+        Inspect the active screen's widgets (§10.1-lite: recognized widget
+        structures with rendered text and bounds). Empty at in-world state.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/actions/click:
+    post:
+      operationId: clickScreen
+      summary: >
+        Click the active screen at GUI coordinates through its own event
+        routing (screen dispatch). Returns consumed flag.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [x, y]
+              properties:
+                x: { type: integer, minimum: 0 }
+                y: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: Click dispatched
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/worlds:
+    get:
+      operationId: listWorlds
+      summary: Saved singleplayer worlds
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/worlds/load:
+    post:
+      operationId: loadWorld
+      summary: >
+        Load a saved world (202; loads asynchronously — poll
+        GET /api/v1/server/world for phase ACTIVE).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [levelId]
+              properties:
+                levelId: { type: string }
+      responses:
+        "202":
+          description: Load started
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/worlds/delete:
+    post:
+      operationId: deleteWorld
+      summary: >
+        Delete a saved world (destructive: requires operations:destructive
+        grant AND "confirm": true, spec §14).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [levelId, confirm]
+              properties:
+                levelId: { type: string }
+                confirm: { type: boolean, description: must be exactly true }
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/InsufficientScope" }
+        "428": { $ref: "#/components/responses/DestructiveIntentRequired" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/connect:
+    post:
+      operationId: connectServer
+      summary: >
+        Join a server through the vanilla connect flow (§9.2; requires
+        client:connect scope and the client.connect.allowlist — empty list
+        denies all).
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [address]
+              properties:
+                address: { type: string, description: "host[:port]" }
+      responses:
+        "202":
+          description: Connection started
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/InsufficientScope" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/logs:
     get:
       operationId: readLogs

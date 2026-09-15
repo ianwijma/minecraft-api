@@ -1,5 +1,7 @@
 package dev.example.mapi.internal.client;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -48,6 +50,21 @@ public interface ClientBridge {
         }
 
         @Override
+        public Optional<UiBackend> ui() {
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<WorldsBackend> worlds() {
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<ConnectBackend> connect() {
+            return Optional.empty();
+        }
+
+        @Override
         public <T> T onClientThread(java.util.function.Supplier<T> task) {
             throw new dev.example.mapi.internal.problem.ProblemException(
                     dev.example.mapi.internal.problem.ProblemCode.CAPABILITY_UNAVAILABLE,
@@ -76,6 +93,15 @@ public interface ClientBridge {
 
     /** @return the LAN backend, empty on dedicated servers or when unsupported */
     Optional<LanBackend> lan();
+
+    /** @return the UI backend, empty when unsupported */
+    Optional<UiBackend> ui();
+
+    /** @return the worlds backend, empty when unsupported */
+    Optional<WorldsBackend> worlds();
+
+    /** @return the direct-connection backend, empty when unsupported */
+    Optional<ConnectBackend> connect();
 
     /**
      * Runs a task on the client thread with a bounded wait.
@@ -211,6 +237,105 @@ public interface ClientBridge {
         record Screenshot(byte[] png, int width, int height, long frame,
                 int guiScale, String screenId, long capturedAtEpochMs) {
         }
+    }
+
+    /**
+     * UI inspection and screen dispatch (spec §10.1-lite: recognized widget
+     * structures + rendered text; full §10 semantic sources land later).
+     */
+    interface UiBackend {
+
+        /** One inspectable widget on the active screen. */
+        record WidgetNode(String kind, String text, int x, int y, int width,
+                int height, boolean active, boolean visible) {
+
+            /** @return the node as an ordered map for JSON serialization */
+            public Map<String, Object> toMap() {
+                Map<String, Object> map = new LinkedHashMap<>();
+                map.put("kind", kind);
+                map.put("text", text);
+                map.put("x", x);
+                map.put("y", y);
+                map.put("width", width);
+                map.put("height", height);
+                map.put("active", active);
+                map.put("visible", visible);
+                return map;
+            }
+        }
+
+        /** @return the active screen identifier (simple class name) */
+        String screenId();
+
+        /** @return direct child widgets of the active screen, empty at menu-less states */
+        java.util.List<WidgetNode> widgets();
+
+        /**
+         * Dispatches a left click at GUI coordinates through the screen's
+         * own event routing (screen dispatch path; the active widget under
+         * (x, y) handles it).
+         *
+         * @param x GUI x coordinate
+         * @param y GUI y coordinate
+         * @return true when a child consumed the click
+         */
+        boolean click(int x, int y);
+    }
+
+    /** World list/load/delete over the level storage (spec §17.2-adjacent). */
+    interface WorldsBackend {
+
+        /** One saved world. */
+        record WorldEntry(String levelId, String levelName, boolean requiresConversion,
+                boolean requiresFileFixing, boolean experimental) {
+
+            /** @return the entry as an ordered map for JSON serialization */
+            public Map<String, Object> toMap() {
+                Map<String, Object> map = new LinkedHashMap<>();
+                map.put("levelId", levelId);
+                map.put("levelName", levelName);
+                map.put("requiresConversion", requiresConversion);
+                map.put("requiresFileFixing", requiresFileFixing);
+                map.put("experimental", experimental);
+                return map;
+            }
+        }
+
+        /**
+         * @return saved worlds (bounded by the caller)
+         * @throws Exception when storage reads fail
+         */
+        java.util.List<WorldEntry> listWorlds() throws Exception;
+
+        /**
+         * Loads a saved world (async in vanilla: returns when the load has
+         * been started; poll {@code /server/world} for phase ACTIVE).
+         *
+         * @param levelId the world's directory id
+         * @throws Exception when the world cannot be opened
+         */
+        void loadWorld(String levelId) throws Exception;
+
+        /**
+         * Deletes a saved world.
+         *
+         * @param levelId the world's directory id
+         * @throws Exception when deletion fails
+         */
+        void deleteWorld(String levelId) throws Exception;
+    }
+
+    /** Direct connection (spec §9.2). */
+    interface ConnectBackend {
+
+        /**
+         * Joins a server through the vanilla connect flow. The HTTP layer
+         * enforces the allowlist before calling this.
+         *
+         * @param address host[:port] address
+         * @throws Exception when connection setup fails
+         */
+        void join(String address);
     }
 
     /** LAN publication backend (spec §9.3; integrated server only). */

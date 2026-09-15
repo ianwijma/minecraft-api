@@ -135,6 +135,21 @@ class ActionDispatchServiceTest {
         }
 
         @Override
+        public Optional<UiBackend> ui() {
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<WorldsBackend> worlds() {
+            return Optional.empty();
+        }
+
+        @Override
+        public Optional<ConnectBackend> connect() {
+            return Optional.empty();
+        }
+
+        @Override
         public <T> T onClientThread(java.util.function.Supplier<T> task) {
             return task.get();
         }

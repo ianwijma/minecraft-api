@@ -391,6 +391,8 @@ public final class HttpApiServer {
         getRoutes.put(API_PREFIX + "client", this::sendClientInfo);
         getRoutes.put(API_PREFIX + "client/window", this::sendWindowInfo);
         getRoutes.put(API_PREFIX + "client/screenshots", this::sendScreenshot);
+        getRoutes.put(API_PREFIX + "client/screen", this::sendScreenInfo);
+        getRoutes.put(API_PREFIX + "client/worlds", this::sendWorldList);
         getRoutes.put(API_PREFIX + "logs", this::sendLogs);
         getRoutes.put(API_PREFIX + "server/ticks", this::sendTickState);
         getRoutes.put(API_PREFIX + "server/queries/players", this::sendPlayerQuery);
@@ -415,6 +417,10 @@ public final class HttpApiServer {
         postRoutes.put(API_PREFIX + "server/commands", this::handleCommand);
         postRoutes.put(API_PREFIX + "client/actions/hold-key", this::handleHoldKey);
         postRoutes.put(API_PREFIX + "client/movement/waypoints", this::handleWaypoints);
+        postRoutes.put(API_PREFIX + "client/actions/click", this::handleClick);
+        postRoutes.put(API_PREFIX + "client/worlds/load", this::handleWorldLoad);
+        postRoutes.put(API_PREFIX + "client/worlds/delete", this::handleWorldDelete);
+        postRoutes.put(API_PREFIX + "client/connect", this::handleConnect);
         postRoutes.put(API_PREFIX + "client/window/set-windowed",
                 (exchange, body, grants) -> handleWindowSet(exchange, body, grants, "windowed"));
         postRoutes.put(API_PREFIX + "client/window/set-fullscreen",
@@ -631,6 +637,120 @@ public final class HttpApiServer {
         respond(exchange, 200, JsonWriter.write(service.dispatch(stringField(body, "command"))));
     }
 
+    private void handleClick(HttpExchange exchange, Map<String, Object> body,
+            java.util.Set<Scope> grants) throws IOException {
+        checkAccess("client.ui.click", grants, body);
+        var ui = runtime.clientBridge().ui()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "UI dispatch is not available on this process"));
+        int x = (int) longField(body, "x", -1);
+        int y = (int) longField(body, "y", -1);
+        if (x < 0 || y < 0) {
+            throw new ProblemException(ProblemCode.BAD_REQUEST, "x and y are required");
+        }
+        boolean consumed = runtime.callOnClientThread(() -> ui.click(x, y));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("screenId", ui.screenId());
+        out.put("consumed", consumed);
+        respond(exchange, 200, JsonWriter.write(out));
+    }
+
+    private void handleWorldLoad(HttpExchange exchange, Map<String, Object> body,
+            java.util.Set<Scope> grants) throws IOException {
+        checkAccess("client.worlds.load", grants, body);
+        var worlds = runtime.clientBridge().worlds()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "world management is not available on this process"));
+        String levelId = stringField(body, "levelId");
+        if (levelId == null) {
+            throw new ProblemException(ProblemCode.BAD_REQUEST, "levelId is required");
+        }
+        runtime.callOnClientThread(() -> {
+            try {
+                worlds.loadWorld(levelId);
+            } catch (Exception e) {
+                throw new ProblemException(ProblemCode.INTERNAL, "world load failed: " + e);
+            }
+            return null;
+        });
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("levelId", levelId);
+        out.put("note", "world load started asynchronously; poll GET /api/v1/server/world for phase ACTIVE");
+        respond(exchange, 202, JsonWriter.write(out));
+    }
+
+    private void handleWorldDelete(HttpExchange exchange, Map<String, Object> body,
+            java.util.Set<Scope> grants) throws IOException {
+        checkAccess("client.worlds.delete", grants, body);
+        var worlds = runtime.clientBridge().worlds()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "world management is not available on this process"));
+        String levelId = stringField(body, "levelId");
+        if (levelId == null) {
+            throw new ProblemException(ProblemCode.BAD_REQUEST, "levelId is required");
+        }
+        // §14: destructive = grant + explicit intent.
+        if (body.get("confirm") != Boolean.TRUE) {
+            throw new ProblemException(ProblemCode.DESTRUCTIVE_INTENT_REQUIRED,
+                    "deleting a world requires \"confirm\": true");
+        }
+        runtime.callOnClientThread(() -> {
+            try {
+                worlds.deleteWorld(levelId);
+            } catch (Exception e) {
+                throw new ProblemException(ProblemCode.INTERNAL, "world delete failed: " + e);
+            }
+            return null;
+        });
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("levelId", levelId);
+        out.put("deleted", true);
+        respond(exchange, 200, JsonWriter.write(out));
+    }
+
+    private void handleConnect(HttpExchange exchange, Map<String, Object> body,
+            java.util.Set<Scope> grants) throws IOException {
+        checkAccess("client.connect", grants, body);
+        var connect = runtime.clientBridge().connect()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "direct connection is not available on this process"));
+        String address = stringField(body, "address");
+        if (address == null || !address.matches("[A-Za-z0-9.\\-]+(:[0-9]{1,5})?")) {
+            throw new ProblemException(ProblemCode.BAD_REQUEST,
+                    "address must be host[:port]");
+        }
+        // §9.2: allowlist enforced at the final connect boundary (host match;
+        // host entries match any port, host:port entries match exactly).
+        java.util.List<String> allowlist = runtime.config().clientConnectAllowlist();
+        String host = address.contains(":")
+                ? address.substring(0, address.indexOf(':')) : address;
+        boolean allowed = allowlist.stream().anyMatch(entry ->
+                entry.equalsIgnoreCase(address) || entry.equalsIgnoreCase(host)
+                        || (entry.endsWith(".*") && host.startsWith(
+                                entry.substring(0, entry.length() - 1))));
+        if (!allowed) {
+            throw new ProblemException(ProblemCode.INSUFFICIENT_SCOPE,
+                    "address is not on the client.connect.allowlist",
+                    Map.of("address", address));
+        }
+        runtime.callOnClientThread(() -> {
+            try {
+                connect.join(address);
+            } catch (Exception e) {
+                throw new ProblemException(ProblemCode.INTERNAL, "connect failed: " + e);
+            }
+            return null;
+        });
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("address", address);
+        out.put("note", "connection started; poll GET /api/v1/server/world for phase transitions");
+        respond(exchange, 202, JsonWriter.write(out));
+    }
+
     private void handleWaypoints(HttpExchange exchange, Map<String, Object> body,
             java.util.Set<Scope> grants) throws IOException {
         var service = runtime.movement()
@@ -716,6 +836,46 @@ public final class HttpApiServer {
         out.put("protocolVersion", PROTOCOL_VERSION);
         out.put("unpublished", unpublished);
         respond(exchange, 200, JsonWriter.write(out));
+    }
+
+    private void sendScreenInfo(HttpExchange exchange) throws IOException {
+        var ui = runtime.clientBridge().ui()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "UI inspection is not available on this process"));
+        var widgets = runtime.callOnClientThread(ui::widgets);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("screenId", runtime.callOnClientThread(ui::screenId));
+        java.util.List<Map<String, Object>> widgetMaps = new java.util.ArrayList<>();
+        for (dev.example.mapi.internal.client.ClientBridge.UiBackend.WidgetNode node : widgets) {
+            widgetMaps.add(node.toMap());
+        }
+        out.put("widgets", widgetMaps);
+        respond(exchange, 200, JsonWriter.write(out));
+    }
+
+    private void sendWorldList(HttpExchange exchange) throws IOException {
+        var worlds = runtime.clientBridge().worlds()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "world management is not available on this process"));
+        try {
+            var entries = worlds.listWorlds();
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("protocolVersion", PROTOCOL_VERSION);
+            java.util.List<Map<String, Object>> worldMaps = new java.util.ArrayList<>();
+            for (dev.example.mapi.internal.client.ClientBridge.WorldsBackend.WorldEntry entry : entries) {
+                worldMaps.add(entry.toMap());
+            }
+            out.put("worlds", worldMaps);
+            respond(exchange, 200, JsonWriter.write(out));
+        } catch (IOException e) {
+            throw e;
+        } catch (Exception e) {
+            if (e instanceof ProblemException problem) {
+                throw problem;
+            }
+            throw new ProblemException(ProblemCode.INTERNAL, "world list failed: " + e);
+        }
     }
 
     private void handleShutdown(HttpExchange exchange, Map<String, Object> body,

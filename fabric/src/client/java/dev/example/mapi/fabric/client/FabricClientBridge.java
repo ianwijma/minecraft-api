@@ -38,7 +38,7 @@ final class FabricClientBridge implements ClientBridge {
     @Override
     public java.util.Set<String> supportedCapabilities() {
         return java.util.Set.of("client.window", "client.screenshots", "client.input",
-                "client.lan");
+                "client.lan", "client.ui", "client.worlds", "client.connect");
     }
 
     @Override
@@ -59,6 +59,21 @@ final class FabricClientBridge implements ClientBridge {
     @Override
     public Optional<LanBackend> lan() {
         return Optional.of(new FabricLan());
+    }
+
+    @Override
+    public Optional<UiBackend> ui() {
+        return Optional.of(new FabricUi());
+    }
+
+    @Override
+    public Optional<WorldsBackend> worlds() {
+        return Optional.of(new FabricWorlds());
+    }
+
+    @Override
+    public Optional<ConnectBackend> connect() {
+        return Optional.of(new FabricConnect());
     }
 
     /**

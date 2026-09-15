@@ -41,7 +41,7 @@ public final class NeoForgeClientBridge implements ClientBridge {
     @Override
     public java.util.Set<String> supportedCapabilities() {
         return java.util.Set.of("client.window", "client.screenshots", "client.input",
-                "client.lan");
+                "client.lan", "client.ui", "client.worlds", "client.connect");
     }
 
     @Override
@@ -62,6 +62,21 @@ public final class NeoForgeClientBridge implements ClientBridge {
     @Override
     public Optional<LanBackend> lan() {
         return Optional.of(new NeoForgeLan());
+    }
+
+    @Override
+    public Optional<UiBackend> ui() {
+        return Optional.of(new NeoForgeUi());
+    }
+
+    @Override
+    public Optional<WorldsBackend> worlds() {
+        return Optional.of(new NeoForgeWorlds());
+    }
+
+    @Override
+    public Optional<ConnectBackend> connect() {
+        return Optional.of(new NeoForgeConnect());
     }
 
     /**
