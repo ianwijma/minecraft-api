@@ -419,7 +419,6 @@ public interface ClientBridge {
          * enforces the allowlist before calling this.
          *
          * @param address host[:port] address
-         * @throws Exception when connection setup fails
          */
         void join(String address);
     }
