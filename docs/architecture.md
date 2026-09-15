@@ -1,5 +1,35 @@
 # Architecture
 
+## Module groups (ADR-0002)
+
+The target module groups come from `docs/product-spec.md` §15.1; their
+concrete locations and introduction policy are fixed in ADR-0002
+(**staged introduction**: a Gradle module is created when it gains real
+content, never as empty scaffolding).
+
+| Spec §15.1 group | Location now | Becomes separate module when |
+| --- | --- | --- |
+| Contract and DTOs | `common` (`dev.example.mapi.api` + contract packages) | owner decides the DTO surface warrants a published artifact |
+| Transport/authentication | `common` (`internal.http`) | — |
+| Jobs, leases, events, scheduling | `common` (`internal.*`) | — |
+| Minecraft-version bridge | loader modules behind `MapiPlatform` | second version approved → `bridge-<version>` modules |
+| Fabric / NeoForge platform | `fabric/`, `neoforge/` | already separate |
+| Optional adapters | `adapters/<name>/` | first adapter lands |
+| Cross-loader fixture mod | `fixture-mod/` | execution-plan chunk 6.1 |
+| SDK generation | `sdk/<language>/` | execution-plan chunk 7.2 |
+| Reference runner | `runner/` | execution-plan chunk 5.1 |
+
+Dependency rules (normative, enforced by review and `verifyDistributions`):
+
+1. Contract/DTO, transport, and scheduling code never compiles against
+   Minecraft or loader APIs — Minecraft classes must not leak into the
+   transport contract.
+2. Loader modules depend on shared modules; never the reverse.
+3. Runner, SDKs, and the fixture mod depend only on the HTTP contract /
+   public API, never on `common` internals.
+4. Distributable loader jars merge shared module classes exactly once
+   (`verifyDistributions` asserts this).
+
 ## Modules
 
 ```

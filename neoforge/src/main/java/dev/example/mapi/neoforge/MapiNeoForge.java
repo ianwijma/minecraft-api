@@ -27,6 +27,22 @@ public final class MapiNeoForge {
      *                     configuration integration)
      */
     public MapiNeoForge(IEventBus modBus, ModContainer modContainer) {
+        // Loader-native config: NeoForge generates config/mapi-common.toml
+        // with defaults + comments on first run (never hand-created).
+        modContainer.registerConfig(net.neoforged.fml.config.ModConfig.Type.COMMON,
+                NeoForgeConfig.SPEC);
         MapiBootstrap.initialize(new NeoForgePlatform());
+        // Dist-guarded client registration (docs/architecture.md): the
+        // listener body never runs on a dedicated server, so the client-only
+        // bridge class is never loaded there (spec §20).
+        modBus.addListener(net.neoforged.fml.event.lifecycle.FMLClientSetupEvent.class,
+                event -> {
+                    if (net.neoforged.fml.loading.FMLEnvironment.getDist().isClient()) {
+                        dev.example.mapi.neoforge.client.NeoForgeClientBridge bridge =
+                                new dev.example.mapi.neoforge.client.NeoForgeClientBridge();
+                        bridge.initialize();
+                        dev.example.mapi.internal.client.ClientBridgeHolder.set(bridge);
+                    }
+                });
     }
 }

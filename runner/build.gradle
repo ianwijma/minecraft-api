@@ -1,0 +1,36 @@
+// minecraft-api — runner module: the reference out-of-process automation
+// runner (product-spec deliverable 3). Uses ONLY the public HTTP API —
+// never MAPI internals, never loader or Minecraft classes (ADR-0002).
+// Pure JDK; zero bundled dependencies.
+
+plugins {
+    id 'java'
+}
+
+base {
+    archivesName = 'minecraft-api-runner'
+}
+
+dependencies {
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
+}
+
+java {
+    withSourcesJar()
+}
+
+tasks.register('runnerJar', Jar) {
+    group = 'build'
+    description = 'Executable runner jar with a Main-Class manifest.'
+    archiveClassifier = 'all'
+    from sourceSets.main.output
+    manifest {
+        attributes 'Main-Class': 'dev.example.mapi.runner.MapiRunner'
+    }
+}
+
+tasks.named('build') {
+    dependsOn tasks.named('runnerJar')
+}

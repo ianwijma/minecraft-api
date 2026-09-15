@@ -26,11 +26,49 @@ public final class MapiRuntime implements Mapi {
      */
     public static final long SNAPSHOT_WAIT_MS = 500L;
 
+    /** Default retention period for retained snapshots (30 minutes). */
+    public static final long SNAPSHOT_TTL_MS = 30L * 60L * 1000L;
+
+    /** Default maximum number of retained snapshots. */
+    public static final int SNAPSHOT_MAX_COUNT = 64;
+
+    /** Default tick-control rate bounds (spec §5: configured bounds; config wiring in chunk 4.2). */
+    public static final float MIN_TICK_RATE = 1.0f;
+    public static final float MAX_TICK_RATE = 100.0f;
+
+    private volatile dev.example.mapi.internal.tick.TickControlService tickControl;
+    private volatile dev.example.mapi.internal.query.WorldQueryService worldQueries;
+    private volatile dev.example.mapi.internal.command.CommandDispatchService commands;
+    private volatile dev.example.mapi.internal.snapshot.SnapshotCaptureService snapshotCapture;
+    private volatile dev.example.mapi.internal.client.ActionDispatchService clientActions;
+    private volatile dev.example.mapi.internal.client.MovementService movement;
+    private final dev.example.mapi.internal.logging.LogCaptureService logCapture;
+
     private final MapiPlatform platform;
     private final MapiServicesImpl services = new MapiServicesImpl();
+    private final dev.example.mapi.internal.event.EventBus eventBus =
+            new dev.example.mapi.internal.event.EventBus();
+    private final dev.example.mapi.internal.clock.ClockRegistry clocks =
+            new dev.example.mapi.internal.clock.ClockRegistry();
+    private final dev.example.mapi.internal.serverstate.ServerProgressTracker progressTracker =
+            new dev.example.mapi.internal.serverstate.ServerProgressTracker(clocks, eventBus);
+    private final dev.example.mapi.internal.job.JobManager jobManager = new dev.example.mapi.internal.job.JobManager();
+    private final dev.example.mapi.internal.lease.LeaseManager leaseManager =
+            new dev.example.mapi.internal.lease.LeaseManager();
+    private final dev.example.mapi.internal.snapshot.SnapshotStore snapshots =
+            new dev.example.mapi.internal.snapshot.SnapshotStore(
+                    SNAPSHOT_TTL_MS, SNAPSHOT_MAX_COUNT,
+                    dev.example.mapi.internal.encoding.EncodingLimits.DEFAULT);
+    private final dev.example.mapi.internal.world.WorldLifecycleCoordinator worldLifecycle =
+            new dev.example.mapi.internal.world.WorldLifecycleCoordinator(
+                    jobManager, snapshots, leaseManager, eventBus);
+    private final dev.example.mapi.internal.operation.OperationRegistry clientOperations =
+            new dev.example.mapi.internal.operation.OperationRegistry();
 
+    private volatile boolean clientPresent;
     private volatile ServerHandle serverHandle;
     private volatile HttpApiServer httpServer;
+    private volatile dev.example.mapi.internal.config.MapiConfig config;
 
     /**
      * Creates the runtime. Public because loader modules and tests live in
@@ -40,17 +78,73 @@ public final class MapiRuntime implements Mapi {
      */
     public MapiRuntime(MapiPlatform platform) {
         this.platform = Objects.requireNonNull(platform, "platform");
+        this.logCapture = new dev.example.mapi.internal.logging.LogCaptureService(512, java.util.List.of());
+        var clientBridge = platform.clientBridge();
+        platform.registerClientLifecycle(new ClientLifecycleListener() {
+            @Override
+            public void onClientStarted() {
+                clientPresent = true;
+                startHttp();
+                eventBus.publish("client.started", java.util.Optional.empty(), Map.of());
+            }
+
+            @Override
+            public void onClientStopping() {
+                eventBus.publish("client.stopping", java.util.Optional.empty(), Map.of());
+                clientPresent = false;
+                stopHttp();
+            }
+        });
         platform.registerServerLifecycle(new ServerLifecycleListener() {
             @Override
             public void onServerStarting(ServerHandle handle) {
                 serverHandle = handle;
+                logCapture.record(dev.example.mapi.internal.logging.LogCaptureService.Level.INFO,
+                        "mapi.runtime", "server starting (world session opening)");
+                var backend = platform.serverBridge().tickControl();
+                tickControl = backend
+                        .<dev.example.mapi.internal.tick.TickControlService>map(
+                                b -> new dev.example.mapi.internal.tick.TickControlService(
+                                        b, leaseManager, progressTracker, worldLifecycle,
+                                        MIN_TICK_RATE, MAX_TICK_RATE))
+                        .orElse(null);
+                var queryBackend = platform.serverBridge().worldQueries();
+                worldQueries = queryBackend
+                        .map(b -> new dev.example.mapi.internal.query.WorldQueryService(
+                                b, worldLifecycle, MapiRuntime.this::callOnServerThread))
+                        .orElse(null);
+                snapshotCapture = queryBackend
+                        .map(b -> new dev.example.mapi.internal.snapshot.SnapshotCaptureService(
+                                snapshots, b, worldLifecycle, MapiRuntime.this::callOnServerThread))
+                        .orElse(null);
+                var commandBackend = platform.serverBridge().commands();
+                commands = commandBackend
+                        .map(b -> new dev.example.mapi.internal.command.CommandDispatchService(
+                                b, MapiRuntime.this::callOnServerThread, eventBus))
+                        .orElse(null);
+                worldLifecycle.beginLoad();
                 services.fireServerStart(handle, platform.logger());
-                startHttp(handle);
+                startHttp();
+            }
+
+            @Override
+            public void onServerStarted() {
+                worldLifecycle.activated();
+                logCapture.record(dev.example.mapi.internal.logging.LogCaptureService.Level.INFO,
+                        "mapi.runtime", "server started (world session active)");
             }
 
             @Override
             public void onServerStopping() {
-                stopHttp();
+                logCapture.record(dev.example.mapi.internal.logging.LogCaptureService.Level.INFO,
+                        "mapi.runtime", "server stopping (terminating world-scoped work)");
+                worldLifecycle.beginUnload();
+                // On clients the listener stays up at the main menu (spec §6:
+                // /server/* availability changes, the process listener does
+                // not stop with the integrated server).
+                if (!clientPresent) {
+                    stopHttp();
+                }
                 ServerHandle handle = serverHandle;
                 if (handle != null) {
                     services.fireServerStop(handle, platform.logger());
@@ -59,6 +153,7 @@ public final class MapiRuntime implements Mapi {
 
             @Override
             public void onServerStopped() {
+                worldLifecycle.unloaded();
                 serverHandle = null;
             }
         });
@@ -115,6 +210,232 @@ public final class MapiRuntime implements Mapi {
         return httpServer != null;
     }
 
+    /**
+     * @return the runtime-wide ordered event bus for lifecycle and operation
+     *     events (spec §6, §13); internal accessor (also used by tests)
+     */
+    public dev.example.mapi.internal.event.EventBus eventBus() {
+        return eventBus;
+    }
+
+    /**
+     * @return the loader's server-side bridge capabilities; internal accessor
+     */
+    public dev.example.mapi.internal.server.ServerBridge serverBridge() {
+        return platform.serverBridge();
+    }
+
+    /** @return the runtime job manager; internal accessor */
+    public dev.example.mapi.internal.job.JobManager jobs() {
+        return jobManager;
+    }
+
+    /** @return the runtime lease manager; internal accessor */
+    public dev.example.mapi.internal.lease.LeaseManager leases() {
+        return leaseManager;
+    }
+
+    /** @return the runtime snapshot store; internal accessor */
+    public dev.example.mapi.internal.snapshot.SnapshotStore snapshots() {
+        return snapshots;
+    }
+
+    /** @return the world-lifecycle coordinator; internal accessor */
+    public dev.example.mapi.internal.world.WorldLifecycleCoordinator worldLifecycle() {
+        return worldLifecycle;
+    }
+
+    /** @return the resolved configuration while the listener runs (throws before start) */
+    public dev.example.mapi.internal.config.MapiConfig config() {
+        dev.example.mapi.internal.config.MapiConfig resolved = config;
+        if (resolved == null) {
+            throw new dev.example.mapi.internal.problem.ProblemException(
+                    dev.example.mapi.internal.problem.ProblemCode.CAPABILITY_UNAVAILABLE,
+                    "the HTTP API has not started; no configuration is loaded");
+        }
+        return resolved;
+    }
+
+    /** @return the named-clock registry; internal accessor */
+    public dev.example.mapi.internal.clock.ClockRegistry clocks() {
+        return clocks;
+    }
+
+    /** @return the server progress tracker; internal accessor */
+    public dev.example.mapi.internal.serverstate.ServerProgressTracker progressTracker() {
+        return progressTracker;
+    }
+
+    /** @return the tick-control service while the bridge supports it, empty otherwise */
+    public java.util.Optional<dev.example.mapi.internal.tick.TickControlService> tickControl() {
+        return java.util.Optional.ofNullable(tickControl);
+    }
+
+    /** @return the world-query service while the bridge supports it, empty otherwise */
+    public java.util.Optional<dev.example.mapi.internal.query.WorldQueryService> worldQueries() {
+        return java.util.Optional.ofNullable(worldQueries);
+    }
+
+    /** @return the command dispatch service while the bridge supports it, empty otherwise */
+    public java.util.Optional<dev.example.mapi.internal.command.CommandDispatchService> commands() {
+        return java.util.Optional.ofNullable(commands);
+    }
+
+    /** @return the snapshot capture service while the bridge supports queries, empty otherwise */
+    public java.util.Optional<dev.example.mapi.internal.snapshot.SnapshotCaptureService> snapshotCapture() {
+        return java.util.Optional.ofNullable(snapshotCapture);
+    }
+
+    /** @return the client action service while a client bridge is present, empty otherwise */
+    public java.util.Optional<dev.example.mapi.internal.client.ActionDispatchService> clientActions() {
+        dev.example.mapi.internal.client.ActionDispatchService service = clientActions;
+        if (service == null) {
+            var bridge = platform.clientBridge();
+            if (bridge != dev.example.mapi.internal.client.ClientBridge.NONE
+                    && bridge.input().isPresent()) {
+                synchronized (this) {
+                    if (clientActions == null) {
+                        clientActions = new dev.example.mapi.internal.client.ActionDispatchService(
+                                bridge, clientOperations,
+                                new dev.example.mapi.internal.operation.OperationGuard());
+                    }
+                    service = clientActions;
+                }
+            }
+        }
+        return java.util.Optional.ofNullable(service);
+    }
+
+    /** @return the movement service while a client bridge is present, empty otherwise */
+    public java.util.Optional<dev.example.mapi.internal.client.MovementService> movement() {
+        dev.example.mapi.internal.client.MovementService service = movement;
+        if (service == null) {
+            var bridge = platform.clientBridge();
+            if (bridge != dev.example.mapi.internal.client.ClientBridge.NONE
+                    && bridge.input().isPresent()) {
+                synchronized (this) {
+                    if (movement == null) {
+                        movement = new dev.example.mapi.internal.client.MovementService(
+                                bridge, clientOperations,
+                                new dev.example.mapi.internal.operation.OperationGuard(),
+                                () -> bridge.input().map(
+                                        dev.example.mapi.internal.client.ClientBridge.InputBackend::clientTick)
+                                        .orElse(0L));
+                    }
+                    service = movement;
+                }
+            }
+        }
+        return java.util.Optional.ofNullable(service);
+    }
+
+    /** @return the client bridge, or the NONE bridge on dedicated servers */
+    public dev.example.mapi.internal.client.ClientBridge clientBridge() {
+        return platform.clientBridge();
+    }
+
+    /** @return the client operation registry (client action metadata) */
+    public dev.example.mapi.internal.operation.OperationRegistry clientOperations() {
+        return clientOperations;
+    }
+
+    /** @return the bounded log capture (spec §17.1); internal accessor */
+    public dev.example.mapi.internal.logging.LogCaptureService logs() {
+        return logCapture;
+    }
+
+    /**
+     * Requests a graceful local shutdown through the platform adapter (spec
+     * §1.1).
+     *
+     * @return true when the adapter accepted the request
+     */
+    public boolean requestProcessShutdown() {
+        logCapture.record(dev.example.mapi.internal.logging.LogCaptureService.Level.INFO,
+                "mapi.runtime", "process shutdown requested via API");
+        return platform.requestProcessShutdown();
+    }
+
+    /**
+     * Runs a supplier on the client thread via the bridge, translating
+     * failures into problem exceptions.
+     *
+     * @param task supplier to run
+     * @param <T>  result type
+     * @return the result
+     */
+    public <T> T callOnClientThread(java.util.function.Supplier<T> task) {
+        try {
+            return platform.clientBridge().onClientThread(task);
+        } catch (dev.example.mapi.internal.problem.ProblemException e) {
+            throw e;
+        } catch (Exception e) {
+            Throwable cause = e.getCause() == null ? e : e.getCause();
+            if (cause instanceof dev.example.mapi.internal.problem.ProblemException problem) {
+                throw problem;
+            }
+            throw new dev.example.mapi.internal.problem.ProblemException(
+                    dev.example.mapi.internal.problem.ProblemCode.INTERNAL,
+                    "client-thread work failed: " + cause);
+        }
+    }
+
+    /**
+     * Runs a supplier on the server thread with the bounded snapshot wait,
+     * translating failures into problem exceptions.
+     *
+     * @param task supplier to run
+     * @param <T>  result type
+     * @return the result
+     */
+    public <T> T callOnServerThread(java.util.function.Supplier<T> task) {
+        return callOnServerThread(task, SNAPSHOT_WAIT_MS);
+    }
+
+    /**
+     * Runs a supplier on the server thread with an explicit bounded wait,
+     * translating failures into problem exceptions.
+     *
+     * @param task      supplier to run
+     * @param timeoutMs wall-clock bound in milliseconds
+     * @param <T>       result type
+     * @return the result
+     */
+    public <T> T callOnServerThread(java.util.function.Supplier<T> task, long timeoutMs) {
+        ServerHandle handle = serverHandle;
+        if (handle == null) {
+            throw new dev.example.mapi.internal.problem.ProblemException(
+                    dev.example.mapi.internal.problem.ProblemCode.WORLD_NOT_LOADED,
+                    "no server is running");
+        }
+        var future = new java.util.concurrent.FutureTask<>(task::get);
+        handle.executeOnServerThread(future);
+        try {
+            return future.get(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.TimeoutException e) {
+            future.cancel(false);
+            throw new dev.example.mapi.internal.problem.ProblemException(
+                    dev.example.mapi.internal.problem.ProblemCode.SERVER_BUSY,
+                    "server thread busy; work did not complete within " + timeoutMs + " ms");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new dev.example.mapi.internal.problem.ProblemException(
+                    dev.example.mapi.internal.problem.ProblemCode.SERVER_BUSY,
+                    "interrupted while waiting for the server thread");
+        } catch (java.util.concurrent.ExecutionException e) {
+            Throwable cause = e.getCause() == null ? e : e.getCause();
+            if (cause instanceof dev.example.mapi.internal.problem.ProblemException problem) {
+                throw problem;
+            }
+            if (cause instanceof RuntimeException runtime) {
+                throw runtime;
+            }
+            throw new dev.example.mapi.internal.problem.ProblemException(
+                    dev.example.mapi.internal.problem.ProblemCode.INTERNAL,
+                    "server-thread work failed: " + cause);
+        }
+    }
+
     // ------------------------------------------------------------------
     // Snapshot machinery (shared by the Java API and the HTTP endpoint)
     // ------------------------------------------------------------------
@@ -136,6 +457,8 @@ public final class MapiRuntime implements Mapi {
         try {
             RawServerInfo raw = task.get(SNAPSHOT_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS);
             long captured = System.currentTimeMillis();
+            progressTracker.observe(new dev.example.mapi.internal.serverstate.TickObservation(
+                    captured, raw.tickCount(), raw.tickFrozen(), raw.sprinting()));
             ServerStatusSnapshot snapshot = new ServerStatusSnapshot(captured, raw.startedAtEpochMs(),
                     raw.playerCount(), raw.maxPlayers(), raw.tickCount(), raw.averageTickTimeMs(), raw.motd());
             return SnapshotResult.of(snapshot);
@@ -156,21 +479,27 @@ public final class MapiRuntime implements Mapi {
     // HTTP lifecycle
     // ------------------------------------------------------------------
 
-    private void startHttp(ServerHandle handle) {
-        dev.example.mapi.internal.config.MapiConfig config;
+    private void startHttp() {
+        if (httpServer != null) {
+            return;
+        }
+        dev.example.mapi.internal.config.MapiConfig loaded;
         try {
-            config = dev.example.mapi.internal.config.MapiConfig.load(platform.configDir(), System.getenv(),
+            loaded = platform.loadConfig(platform.configDir(), System.getenv(),
                     platform.logger());
         } catch (dev.example.mapi.internal.config.MapiConfigException e) {
             platform.logger().error("MAPI: HTTP API not started: {}", e.getMessage());
             return;
         }
-        if (!config.httpEnabled()) {
-            platform.logger().info("MAPI: local HTTP API is disabled (enable with http.enabled=true in "
-                    + "{}/mapi.properties)", platform.configDir());
+        if (!loaded.httpEnabled()) {
+            platform.logger().info("MAPI: local HTTP API is disabled (enable with http.enabled=true "
+                    + "in the loader-native config file)", platform.configDir());
             return;
         }
-        HttpApiServer httpServer = new HttpApiServer(config, this, platform.logger());
+        this.config = loaded;
+        logCapture.setSecrets(java.util.List.of(loaded.httpToken() == null ? "" : loaded.httpToken()));
+        platform.attachLogCapture(logCapture);
+        HttpApiServer httpServer = new HttpApiServer(loaded, this, platform.logger());
         if (httpServer.start()) {
             this.httpServer = httpServer;
         }

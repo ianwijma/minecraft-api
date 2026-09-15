@@ -1,0 +1,105 @@
+package dev.example.mapi.neoforge.client;
+
+import dev.example.mapi.internal.client.ClientBridge;
+import dev.example.mapi.internal.problem.ProblemCode;
+import dev.example.mapi.internal.problem.ProblemException;
+import java.util.ArrayList;
+import java.util.List;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.MultiPlayerGameMode;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.item.ItemStack;
+
+/**
+ * NeoForge inventory backend (spec §10.3): client-logic mode — container
+ * clicks dispatch through the game's own server-flow
+ * ({@code MultiPlayerGameMode.handleContainerInput}), giving
+ * server-confirmed postconditions. Slot indexes are the player inventory
+ * menu's (0 = craft result, 1-4 craft grid, 5-8 armor, 9-44 main, 45 =
+ * offhand).
+ */
+public final class NeoForgeInventory implements ClientBridge.InventoryBackend {
+
+    private final Minecraft client = Minecraft.getInstance();
+
+    private void requireInWorld() {
+        if (client.player == null || client.gameMode == null) {
+            throw new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                    "inventory requires an in-world player");
+        }
+    }
+
+    private AbstractContainerMenu menu() {
+        requireInWorld();
+        // The player's own inventory menu (containerId 0). Opened containers
+        // (chests etc.) are containerMenu — full container support lands
+        // with the §10.3 follow-up.
+        return client.player.inventoryMenu;
+    }
+
+    @Override
+    public int containerId() {
+        return menu().containerId;
+    }
+
+    @Override
+    public List<ClientBridge.InventoryBackend.SlotNode> inspect() {
+        AbstractContainerMenu menu = menu();
+        List<ClientBridge.InventoryBackend.SlotNode> nodes = new ArrayList<>();
+        for (int slot = 0; slot < menu.slots.size(); slot++) {
+            ItemStack stack = menu.slots.get(slot).getItem();
+            if (!stack.isEmpty()) {
+                Identifier id = BuiltInRegistries.ITEM.getKey(stack.getItem());
+                nodes.add(new ClientBridge.InventoryBackend.SlotNode(
+                        slot, id == null ? "unknown" : id.toString(), stack.getCount()));
+            }
+        }
+        return List.copyOf(nodes);
+    }
+
+    @Override
+    public boolean click(int slot, int button, String containerInput) {
+        ContainerInput input;
+        try {
+            input = ContainerInput.valueOf(containerInput.toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new ProblemException(ProblemCode.BAD_REQUEST,
+                    "unknown containerInput: " + containerInput
+                            + " (valid: PICKUP, QUICK_MOVE, SWAP, CLONE, THROW, QUICK_CRAFT, PICKUP_ALL)");
+        }
+        AbstractContainerMenu menu = menu();
+        MultiPlayerGameMode gameMode = client.gameMode;
+        gameMode.handleContainerInput(menu.containerId, slot, button, input,
+                client.player);
+        // Server roundtrip: the authoritative slot sync arrives via network.
+        // The postcondition is verified by the caller via the players query
+        // (§10.3: server-confirmed postconditions where available).
+        return true;
+    }
+
+    @Override
+    public int carriedCount() {
+        requireInWorld();
+        return menu().getCarried().getCount();
+    }
+
+    @Override
+    public List<String> tooltip(int slot) {
+        AbstractContainerMenu menu = menu();
+        if (slot < 0 || slot >= menu.slots.size()) {
+            throw new ProblemException(ProblemCode.BAD_REQUEST,
+                    "slot " + slot + " out of range (0.." + (menu.slots.size() - 1) + ")");
+        }
+        ItemStack stack = menu.slots.get(slot).getItem();
+        if (stack.isEmpty()) {
+            return List.of();
+        }
+        return net.minecraft.client.gui.screens.Screen.getTooltipFromItem(
+                client, stack).stream()
+                .map(net.minecraft.network.chat.Component::getString)
+                .toList();
+    }
+}

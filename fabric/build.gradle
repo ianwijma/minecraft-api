@@ -25,9 +25,13 @@ dependencies {
 def serverRunDir = providers.gradleProperty('mapiServerRunDir').getOrElse('run/server')
 
 loom {
+    // Split main (both sides) from client-only code so dedicated servers
+    // never receive Minecraft client classes (docs/architecture.md).
+    splitEnvironmentSourceSets()
     mods {
         mapi {
             sourceSet sourceSets.main
+            sourceSet sourceSets.client
         }
     }
     runs {

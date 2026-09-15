@@ -10,6 +10,7 @@ import net.minecraft.server.MinecraftServer;
 import net.neoforged.fml.ModList;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStartingEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
@@ -22,6 +23,9 @@ import org.slf4j.LoggerFactory;
 final class NeoForgePlatform implements MapiPlatform {
 
     private static final Logger LOG = LoggerFactory.getLogger("mapi");
+
+    private final NeoForgeServerBridge bridge = new NeoForgeServerBridge();
+    private volatile MinecraftServer currentServer;
 
     @Override
     public PlatformType type() {
@@ -59,10 +63,50 @@ final class NeoForgePlatform implements MapiPlatform {
 
     @Override
     public void registerServerLifecycle(ServerLifecycleListener listener) {
-        NeoForge.EVENT_BUS.addListener((ServerStartingEvent event) ->
-                listener.onServerStarting(NeoForgeServerHandle.starting(event.getServer())));
+        NeoForge.EVENT_BUS.addListener((ServerStartingEvent event) -> {
+            currentServer = event.getServer();
+            bridge.onServerStarting(event.getServer());
+            listener.onServerStarting(NeoForgeServerHandle.starting(event.getServer()));
+        });
+        NeoForge.EVENT_BUS.addListener((ServerStartedEvent event) -> listener.onServerStarted());
         NeoForge.EVENT_BUS.addListener((ServerStoppingEvent event) -> listener.onServerStopping());
-        NeoForge.EVENT_BUS.addListener((ServerStoppedEvent event) -> listener.onServerStopped());
+        NeoForge.EVENT_BUS.addListener((ServerStoppedEvent event) -> {
+            currentServer = null;
+            bridge.onServerStopped();
+            listener.onServerStopped();
+        });
+    }
+
+    @Override
+    public dev.example.mapi.internal.server.ServerBridge serverBridge() {
+        return bridge;
+    }
+
+    @Override
+    public void registerClientLifecycle(dev.example.mapi.internal.ClientLifecycleListener listener) {
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.client.event.lifecycle.ClientStartedEvent event) ->
+                listener.onClientStarted());
+        NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.client.event.lifecycle.ClientStoppingEvent event) ->
+                listener.onClientStopping());
+    }
+
+    @Override
+    public dev.example.mapi.internal.config.MapiConfig loadConfig(java.nio.file.Path configDir,
+            java.util.Map<String, String> env, org.slf4j.Logger logger) {
+        return NeoForgeConfig.toMapiConfig(env, logger);
+    }
+
+    @Override
+    public boolean requestProcessShutdown() {
+        MinecraftServer server = currentServer;
+        if (server != null) {
+            server.execute(() -> server.halt(false));
+            return true;
+        }
+        // Main menu (no integrated server): stop the client process itself.
+        var client = net.minecraft.client.Minecraft.getInstance();
+        client.execute(client::stop);
+        return true;
     }
 
     /**
@@ -92,7 +136,9 @@ final class NeoForgePlatform implements MapiPlatform {
                     server.getPlayerList().getMaxPlayers(),
                     server.getTickCount(),
                     server.getAverageTickTimeNanos() / 1_000_000.0d,
-                    server.getMotd());
+                    server.getMotd(),
+                    server.tickRateManager().isFrozen(),
+                    server.tickRateManager().isSprinting());
         }
     }
 }

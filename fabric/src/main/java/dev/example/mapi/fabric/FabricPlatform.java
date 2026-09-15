@@ -1,6 +1,7 @@
 package dev.example.mapi.fabric;
 
 import dev.example.mapi.api.PlatformType;
+import dev.example.mapi.internal.ClientLifecycleListener;
 import dev.example.mapi.internal.MapiPlatform;
 import dev.example.mapi.internal.RawServerInfo;
 import dev.example.mapi.internal.ServerHandle;
@@ -18,6 +19,9 @@ import org.slf4j.LoggerFactory;
 final class FabricPlatform implements MapiPlatform {
 
     private static final Logger LOG = LoggerFactory.getLogger("mapi");
+
+    private final FabricServerBridge bridge = new FabricServerBridge();
+    private volatile MinecraftServer currentServer;
 
     @Override
     public PlatformType type() {
@@ -51,10 +55,47 @@ final class FabricPlatform implements MapiPlatform {
 
     @Override
     public void registerServerLifecycle(ServerLifecycleListener listener) {
-        ServerLifecycleEvents.SERVER_STARTING.register(server ->
-                listener.onServerStarting(FabricServerHandle.starting(server)));
+        ServerLifecycleEvents.SERVER_STARTING.register(server -> {
+            currentServer = server;
+            bridge.onServerStarting(server);
+            listener.onServerStarting(FabricServerHandle.starting(server));
+        });
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> listener.onServerStarted());
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> listener.onServerStopping());
-        ServerLifecycleEvents.SERVER_STOPPED.register(server -> listener.onServerStopped());
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> {
+            currentServer = null;
+            bridge.onServerStopped();
+            listener.onServerStopped();
+        });
+    }
+
+    @Override
+    public void registerClientLifecycle(ClientLifecycleListener listener) {
+        MapiFabricHooks.registerClientLifecycle(listener);
+    }
+
+    @Override
+    public dev.example.mapi.internal.config.MapiConfig loadConfig(java.nio.file.Path configDir,
+            java.util.Map<String, String> env, org.slf4j.Logger logger) {
+        return FabricConfig.load(configDir, env, logger);
+    }
+
+    @Override
+    public dev.example.mapi.internal.server.ServerBridge serverBridge() {
+        return bridge;
+    }
+
+    @Override
+    public boolean requestProcessShutdown() {
+        MinecraftServer server = currentServer;
+        if (server != null) {
+            server.execute(() -> server.halt(false));
+            return true;
+        }
+        // Main menu (no integrated server): stop the client process itself
+        // via the client-installed hook (main source set has no client
+        // classes, per loom.splitEnvironmentSourceSets).
+        return MapiFabricHooks.runClientShutdown(false);
     }
 
     /**
@@ -84,7 +125,9 @@ final class FabricPlatform implements MapiPlatform {
                     server.getPlayerList().getMaxPlayers(),
                     server.getTickCount(),
                     server.getAverageTickTimeNanos() / 1_000_000.0d,
-                    server.getMotd());
+                    server.getMotd(),
+                    server.tickRateManager().isFrozen(),
+                    server.tickRateManager().isSprinting());
         }
     }
 }

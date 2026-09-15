@@ -6,7 +6,10 @@
   "language": "java",
   "version": "0.1.0",
   "minecraftTarget": "26.2",
-  "loaders": ["fabric", "neoforge"],
+  "loaders": [
+    "fabric",
+    "neoforge"
+  ],
   "packageGroup": "dev.example.mapi",
   "modules": [
     {
@@ -18,35 +21,135 @@
       "path": "fabric",
       "kind": "loader-adapter",
       "description": "Fabric entrypoint, platform adapter, fabric.mod.json, dev runs.",
-      "runTasks": [":fabric:runClient", ":fabric:runServer"]
+      "runTasks": [
+        ":fabric:runClient",
+        ":fabric:runServer"
+      ]
     },
     {
       "path": "neoforge",
       "kind": "loader-adapter",
       "description": "NeoForge entrypoint, platform adapter, mods.toml template, dev runs.",
-      "runTasks": [":neoforge:runClient", ":neoforge:runServer"]
+      "runTasks": [
+        ":neoforge:runClient",
+        ":neoforge:runServer"
+      ]
     },
     {
       "path": "example-consumer",
       "kind": "example",
       "description": "Compiles against the public API only; never included in distributable jars."
+    },
+    {
+      "path": "runner",
+      "kind": "reference-runner",
+      "description": "Out-of-process reference runner CLI (spec deliverable 3): plan execution over the public HTTP API, waits, EULA-gated provisioning. Depends only on the HTTP contract."
     }
   ],
   "documentation": {
     "entrypoint": "AGENTS.md",
     "index": "docs/README.md",
     "files": [
-      { "path": "docs/toolchain.md", "topic": "verified versions and sources" },
-      { "path": "docs/architecture.md", "topic": "modules and boundaries" },
-      { "path": "docs/development.md", "topic": "build, run, test commands" },
-      { "path": "docs/api.md", "topic": "public Java API contract" },
-      { "path": "docs/http-api.md", "topic": "local HTTP endpoints and schemas" },
-      { "path": "docs/security.md", "topic": "HTTP security model" },
-      { "path": "docs/llm-workflow.md", "topic": "coding-agent workflow" },
-      { "path": "docs/troubleshooting.md", "topic": "known failure modes" },
-      { "path": "docs/openapi.yaml", "topic": "OpenAPI description of the HTTP API" },
-      { "path": "README.md", "topic": "human-facing overview and quick start" },
-      { "path": "CONTRIBUTING.md", "topic": "contribution rules" }
+      {
+        "path": "docs/product-spec.md",
+        "topic": "approved target product specification (scope, contracts, acceptance targets; ADRs pending)"
+      },
+      {
+        "path": "docs/execution-plan.md",
+        "topic": "spec decomposed into executable chunks (phases, dependencies, gates)"
+      },
+      {
+        "path": "docs/adr/README.md",
+        "topic": "architecture decision records (ADRs 0001-0005, accepted)"
+      },
+      {
+        "path": "docs/acceptance-targets.md",
+        "topic": "adopted release gates and measurement procedures"
+      },
+      {
+        "path": "docs/input-contract.md",
+        "topic": "execution modes, input backend coverage, receipts (draft)"
+      },
+      {
+        "path": "docs/timing-and-pause.md",
+        "topic": "clocks, scheduling, deadlines, pause states (draft)"
+      },
+      {
+        "path": "docs/participant-identity.md",
+        "topic": "identity strategies, participant mapping (draft)"
+      },
+      {
+        "path": "docs/test-profiles.md",
+        "topic": "versioned client/server profiles and preflight (draft)"
+      },
+      {
+        "path": "docs/data-encoding.md",
+        "topic": "typed NBT, codec JSON, item components (draft)"
+      },
+      {
+        "path": "docs/mixin-surface.md",
+        "topic": "mixin registry and compatibility risks (draft)"
+      },
+      {
+        "path": "docs/runner-boundary.md",
+        "topic": "mod/SDK/runner responsibility split (runner implemented)"
+      },
+      {
+        "path": "docs/non-goals.md",
+        "topic": "explicit project boundaries (draft)"
+      },
+      {
+        "path": "docs/toolchain.md",
+        "topic": "verified versions and sources"
+      },
+      {
+        "path": "docs/architecture.md",
+        "topic": "modules and boundaries"
+      },
+      {
+        "path": "docs/development.md",
+        "topic": "build, run, test commands"
+      },
+      {
+        "path": "docs/api.md",
+        "topic": "public Java API contract"
+      },
+      {
+        "path": "docs/http-api.md",
+        "topic": "local HTTP endpoints and schemas"
+      },
+      {
+        "path": "docs/security.md",
+        "topic": "HTTP security model"
+      },
+      {
+        "path": "docs/llm-workflow.md",
+        "topic": "coding-agent workflow"
+      },
+      {
+        "path": "docs/troubleshooting.md",
+        "topic": "known failure modes"
+      },
+      {
+        "path": "docs/openapi.yaml",
+        "topic": "OpenAPI description of the HTTP API"
+      },
+      {
+        "path": "README.md",
+        "topic": "human-facing overview and quick start"
+      },
+      {
+        "path": "CONTRIBUTING.md",
+        "topic": "contribution rules"
+      },
+      {
+        "path": "docs/examples/mapi-common.toml.example",
+        "topic": "NeoForge config example (loader-native TOML)"
+      },
+      {
+        "path": "docs/examples/mapi.json.example",
+        "topic": "Fabric config example (JSON, auto-generated)"
+      }
     ]
   },
   "commands": {
@@ -77,6 +180,11 @@
     "llmContext": "build/llm/CONTEXT.md"
   },
   "secrets": {
-    "neverCommit": ["MAPI_HTTP_TOKEN", "http.token", "eula.txt", "run directories"]
+    "neverCommit": [
+      "MAPI_HTTP_TOKEN",
+      "http.token",
+      "eula.txt",
+      "run directories"
+    ]
   }
 }
