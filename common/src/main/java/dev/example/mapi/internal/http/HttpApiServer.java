@@ -1269,7 +1269,11 @@ public final class HttpApiServer {
                     .orElseThrow(() -> new ProblemException(ProblemCode.BAD_REQUEST,
                             "unknown executionMode: " + mode));
         }
-        guard.checkAccess(descriptor, grants, false, requested);
+        // §14: explicit destructive intent comes from the request body
+        // ("confirm": true) — a request flag alone never grants permission,
+        // but a grant without stated intent fails before the handler runs.
+        boolean destructiveIntent = Boolean.TRUE.equals(body.get("confirm"));
+        guard.checkAccess(descriptor, grants, destructiveIntent, requested);
     }
 
     private static String stringField(Map<String, Object> body, String key) {
