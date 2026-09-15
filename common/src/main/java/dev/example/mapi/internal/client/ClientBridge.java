@@ -1,6 +1,7 @@
 package dev.example.mapi.internal.client;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -157,6 +158,17 @@ public interface ClientBridge {
 
         /** @return the carried stack size on the cursor (0 when empty) */
         int carriedCount();
+
+        /**
+         * Computes tooltip lines for a slot's item without reproducing hover
+         * (spec §10.2: computed tooltip data — the rendered-capture path is
+         * separate). Lines include the item name, durability, enchantments,
+         * and lore as the game would render them.
+         *
+         * @param slot menu slot index
+         * @return the tooltip lines, empty when the slot is empty
+         */
+        List<String> tooltip(int slot);
     }
 
     /**

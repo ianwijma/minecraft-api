@@ -71,6 +71,23 @@ final class FabricInventory implements ClientBridge.InventoryBackend {
     }
 
     @Override
+    public List<String> tooltip(int slot) {
+        AbstractContainerMenu menu = menu();
+        if (slot < 0 || slot >= menu.slots.size()) {
+            throw new ProblemException(ProblemCode.BAD_REQUEST,
+                    "slot " + slot + " out of range (0.." + (menu.slots.size() - 1) + ")");
+        }
+        ItemStack stack = menu.slots.get(slot).getItem();
+        if (stack.isEmpty()) {
+            return List.of();
+        }
+        return net.minecraft.client.gui.screens.Screen.getTooltipFromItem(
+                client, stack).stream()
+                .map(net.minecraft.network.chat.Component::getString)
+                .toList();
+    }
+
+    @Override
     public int carriedCount() {
         requireInWorld();
         return menu().getCarried().getCount();

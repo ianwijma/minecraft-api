@@ -615,6 +615,24 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "503": { $ref: "#/components/responses/CapabilityUnavailable" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/inventory/tooltip:
+    get:
+      operationId: getTooltip
+      summary: >
+        Computed tooltip lines for a slot's item (§10.2: calculated without
+        reproducing hover — rendered capture is a separate path). Includes
+        item name, durability, enchantments, and lore.
+      parameters:
+        - { name: slot, in: query, required: true, schema: { type: integer, minimum: 0 } }
+      responses:
+        "200":
+          description: Tooltip lines (empty when the slot is empty)
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/screen:
     get:
       operationId: inspectScreen

@@ -26,6 +26,7 @@ import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -424,6 +425,7 @@ public final class HttpApiServer {
         getRoutes.put(API_PREFIX + "client/screen", this::sendScreenInfo);
         getRoutes.put(API_PREFIX + "client/worlds", this::sendWorldList);
         getRoutes.put(API_PREFIX + "client/inventory", this::sendInventory);
+        getRoutes.put(API_PREFIX + "client/inventory/tooltip", this::sendTooltip);
         getRoutes.put(API_PREFIX + "logs", this::sendLogs);
         getRoutes.put(API_PREFIX + "server/ticks", this::sendTickState);
         getRoutes.put(API_PREFIX + "server/queries/players", this::sendPlayerQuery);
@@ -684,6 +686,25 @@ public final class HttpApiServer {
             slotMaps.add(node.toMap());
         }
         out.put("slots", slotMaps);
+        respond(exchange, 200, JsonWriter.write(out));
+    }
+
+    private void sendTooltip(HttpExchange exchange) throws IOException {
+        var inv = runtime.clientBridge().inventory()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "inventory is not available on this process"));
+        Map<String, String> params = queryParams(exchange.getRequestURI().getRawQuery());
+        int slot;
+        try {
+            slot = Integer.parseInt(params.getOrDefault("slot", "-1"));
+        } catch (NumberFormatException e) {
+            throw new ProblemException(ProblemCode.BAD_REQUEST, "slot must be an integer");
+        }
+        List<String> lines = runtime.callOnClientThread(() -> inv.tooltip(slot));
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("protocolVersion", PROTOCOL_VERSION);
+        out.put("slot", slot);
+        out.put("lines", lines);
         respond(exchange, 200, JsonWriter.write(out));
     }
 
