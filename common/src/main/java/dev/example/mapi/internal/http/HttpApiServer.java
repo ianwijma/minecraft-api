@@ -137,6 +137,30 @@ public final class HttpApiServer {
                 "Request a graceful local shutdown of the process (administrative access)",
                 Set.of(Scope.OPERATIONS_UNRESTRICTED), false, SideEffectClass.UNRESTRICTED,
                 false, privileged));
+        operations.register(new OperationDescriptor("client.actions.hold-key",
+                "Hold a key for N client ticks (raw-input)",
+                Set.of(), false, SideEffectClass.LOCAL, true, rawInput));
+        operations.register(new OperationDescriptor("client.movement.waypoints",
+                "Execute straight-line waypoints (raw-input; no teleport fallback)",
+                Set.of(), false, SideEffectClass.LOCAL, true, rawInput));
+        operations.register(new OperationDescriptor("client.ui.click",
+                "Click the active screen at GUI coordinates (screen dispatch)",
+                Set.of(), false, SideEffectClass.LOCAL, false, rawInput));
+        operations.register(new OperationDescriptor("client.worlds.load",
+                "Load a saved singleplayer world (async; poll /server/world)",
+                Set.of(), false, SideEffectClass.GAME, false, Set.of()));
+        operations.register(new OperationDescriptor("client.worlds.delete",
+                "Delete a saved singleplayer world",
+                Set.of(Scope.OPERATIONS_DESTRUCTIVE), true,
+                SideEffectClass.GAME, false, Set.of()));
+        operations.register(new OperationDescriptor("client.connect",
+                "Join a server through the vanilla connect flow (spec §9.2)",
+                Set.of(Scope.CLIENT_CONNECT), false, SideEffectClass.GAME,
+                false, privileged));
+        operations.register(new OperationDescriptor("server.lan.publish",
+                "Publish the integrated server to LAN (network exposure; spec §9.3)",
+                Set.of(Scope.SERVER_PUBLISH), false, SideEffectClass.GAME, true,
+                privileged));
     }
 
     /** @return the operation metadata registry (for introspection endpoints/tests) */
