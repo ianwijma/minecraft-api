@@ -21,7 +21,7 @@ tools — **never** the mod's HTTP API, which is read-only status only.
 The snapshot is deterministic and bounded (≈1 MB). It excludes by
 construction: `.git/`, `.gradle/`, `build/`, `run*/` directories, worlds,
 logs, crash reports, binaries, and any file that looks like a secret
-(`mapi.properties`, `.env*`, `*token*`, `eula.txt`, `server.properties`).
+(loader-native config files, `.env*`, `*token*`, `eula.txt`, `server.properties`).
 Downloaded Minecraft sources/artifacts live outside the repo (`~/.gradle`),
 so they are excluded by construction too.
 

@@ -21,12 +21,18 @@ import org.slf4j.Logger;
  *   <tr><td>http.port</td><td>MAPI_HTTP_PORT</td><td>25586</td><td>Loopback port to bind</td></tr>
  *   <tr><td>http.token</td><td>MAPI_HTTP_TOKEN</td><td>none</td><td>Bearer token; prefer the env var</td></tr>
  *   <tr><td>http.rateLimitPerMinute</td><td>MAPI_HTTP_RATE_LIMIT_PER_MINUTE</td><td>60</td><td>Requests per client per minute</td></tr>
+ *   <tr><td>http.scopes</td><td>MAPI_HTTP_SCOPES</td><td>all</td><td>Comma-separated granted scopes (spec §14); absent/blank grants the full set</td></tr>
+ *   <tr><td>client.connect.allowlist</td><td>MAPI_CLIENT_CONNECT_ALLOWLIST</td><td>empty (deny all)</td><td>Comma-separated host[:port] targets for direct connection (spec §9.2)</td></tr>
+ *   <tr><td>server.lan.enabled</td><td>MAPI_SERVER_LAN_ENABLED</td><td>false</td><td>Whether integrated-server LAN publication is permitted (spec §9.3)</td></tr>
  * </table>
  *
  * <p>Secrets are never logged. The bind address is fixed to loopback and is
  * deliberately not configurable.
  */
-public record MapiConfig(boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute) {
+public record MapiConfig(
+        boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute,
+        java.util.Set<dev.example.mapi.internal.operation.Scope> httpScopes,
+        java.util.List<String> clientConnectAllowlist, boolean serverLanEnabled) {
 
     /** Default HTTP port. */
     public static final int DEFAULT_PORT = 25586;
@@ -39,6 +45,52 @@ public record MapiConfig(boolean httpEnabled, int httpPort, String httpToken, in
 
     /** Configuration file name inside the config directory. */
     public static final String CONFIG_FILE_NAME = "mapi.properties";
+
+    /**
+     * Creates a configuration with the historical shape: no scope
+     * restrictions (the token grants the full scope set).
+     *
+     * @param httpEnabled        whether the HTTP API is enabled
+     * @param httpPort           loopback port
+     * @param httpToken          bearer token
+     * @param rateLimitPerMinute requests per client per minute
+     */
+    public MapiConfig(boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute) {
+        this(httpEnabled, httpPort, httpToken, rateLimitPerMinute, java.util.Set.of(),
+                java.util.List.of(), false);
+    }
+
+    public MapiConfig(boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute,
+            java.util.Set<dev.example.mapi.internal.operation.Scope> httpScopes) {
+        this(httpEnabled, httpPort, httpToken, rateLimitPerMinute, httpScopes,
+                java.util.List.of(), false);
+    }
+
+    /**
+     * @param token the presented bearer token, may be {@code null}
+     * @return the scopes granted to this token: the configured subset, or the
+     *     full set when no subset is configured; empty for an unknown token
+     */
+    public java.util.Set<dev.example.mapi.internal.operation.Scope> grantedScopes(String token) {
+        // Auth explicitly disabled (blank token): the documented warning is
+        // "every local process gains full control, including administrative
+        // operations" - so every request gets the full scope set.
+        if (httpToken == null || httpToken.isBlank()) {
+            return java.util.Collections.unmodifiableSet(
+                    java.util.EnumSet.allOf(dev.example.mapi.internal.operation.Scope.class));
+        }
+        if (token == null
+                || !java.security.MessageDigest.isEqual(
+                        httpToken.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        token.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
+            return java.util.Set.of();
+        }
+        if (httpScopes.isEmpty()) {
+            return java.util.Collections.unmodifiableSet(
+                    java.util.EnumSet.allOf(dev.example.mapi.internal.operation.Scope.class));
+        }
+        return httpScopes;
+    }
 
     /**
      * Loads and validates the configuration.
@@ -58,7 +110,55 @@ public record MapiConfig(boolean httpEnabled, int httpPort, String httpToken, in
         int rateLimit = readInt(file, env, "http.rateLimitPerMinute", "MAPI_HTTP_RATE_LIMIT_PER_MINUTE",
                 DEFAULT_RATE_LIMIT);
         String token = readString(file, env, "http.token", "MAPI_HTTP_TOKEN", null);
+        java.util.Set<dev.example.mapi.internal.operation.Scope> scopes =
+                readScopes(file, env, logger);
+        java.util.List<String> allowlist = readAllowlist(file, env, logger);
+        boolean lanEnabled = readBool(file, env, "server.lan.enabled", "MAPI_SERVER_LAN_ENABLED",
+                false, logger);
 
+        return fromValues(enabled, port, token, rateLimit, scopes, allowlist, lanEnabled,
+                env, logger);
+    }
+
+    /**
+     * Validates raw resolved values (already merged from the loader-native
+     * config source with environment overrides applied) and builds the
+     * configuration. This is the single validation entry point shared by
+     * every loader config format; environment variables win over file
+     * values.
+     *
+     * @param enabled    whether the HTTP API is enabled
+     * @param port       loopback port
+     * @param token      bearer token (may be {@code null} when disabled)
+     * @param rateLimit  requests per client per minute
+     * @param scopes     granted scopes (empty = full set)
+     * @param allowlist  direct-connection allowlist (empty = deny all)
+     * @param lanEnabled whether LAN publication is permitted
+     * @param env        process environment (env vars win over file values)
+     * @param logger     logger for warnings; secrets are never logged
+     * @return a validated configuration
+     * @throws MapiConfigException when values are invalid
+     */
+    public static MapiConfig fromValues(
+            boolean enabled, int port, String token, int rateLimit,
+            java.util.Set<dev.example.mapi.internal.operation.Scope> scopes,
+            java.util.List<String> allowlist, boolean lanEnabled,
+            Map<String, String> env, Logger logger) {
+        if (env.containsKey("MAPI_HTTP_ENABLED")) {
+            enabled = readBooleanText(env.get("MAPI_HTTP_ENABLED"), "MAPI_HTTP_ENABLED");
+        }
+        String rawPort = env.get("MAPI_HTTP_PORT");
+        if (rawPort != null && !rawPort.isBlank()) {
+            port = parseIntStrict(rawPort, "MAPI_HTTP_PORT");
+        }
+        String rawRate = env.get("MAPI_HTTP_RATE_LIMIT_PER_MINUTE");
+        if (rawRate != null && !rawRate.isBlank()) {
+            rateLimit = parseIntStrict(rawRate, "MAPI_HTTP_RATE_LIMIT_PER_MINUTE");
+        }
+        String envToken = env.get("MAPI_HTTP_TOKEN");
+        if (envToken != null && !envToken.isBlank()) {
+            token = envToken;
+        }
         if (port < 1 || port > 65535) {
             throw new MapiConfigException("http.port must be between 1 and 65535 (got " + port + ")");
         }
@@ -67,17 +167,76 @@ public record MapiConfig(boolean httpEnabled, int httpPort, String httpToken, in
         }
         if (enabled) {
             if (token == null || token.isBlank()) {
-                throw new MapiConfigException("MAPI HTTP API is enabled but no bearer token is configured. "
-                        + "Set the MAPI_HTTP_TOKEN environment variable (preferred) or http.token in "
-                        + configDir.resolve(CONFIG_FILE_NAME) + ". The HTTP API refuses to start without one.");
-            }
-            if (token.trim().length() < MIN_TOKEN_LENGTH) {
+                // Explicit operator choice: a blank token disables
+                // authentication entirely (dangerous - every local process
+                // gains full control, including administrative operations).
+                // First-run installs never hit this path: generated configs
+                // ship with a generated token.
+                logger.warn("MAPI: HTTP authentication is DISABLED (blank http.token). "
+                        + "Every local process can call all operations, including administrative ones. "
+                        + "Set a token or MAPI_HTTP_TOKEN to re-enable authentication.");
+            } else if (token.trim().length() < MIN_TOKEN_LENGTH) {
                 throw new MapiConfigException("MAPI HTTP API bearer token is shorter than " + MIN_TOKEN_LENGTH
                         + " characters. Generate a long random token, for example: "
                         + "python3 -c \"import secrets; print(secrets.token_urlsafe(32))\"");
             }
         }
-        return new MapiConfig(enabled, port, token == null ? null : token.trim(), rateLimit);
+        return new MapiConfig(enabled, port, token == null ? null : token.trim(), rateLimit, scopes,
+                allowlist, lanEnabled);
+    }
+
+    /**
+     * @return true when every request must present the configured bearer
+     *     token; false when authentication is explicitly disabled via a
+     *     blank token (enabled instances only)
+     */
+    public boolean authRequired() {
+        return httpToken != null && !httpToken.isBlank();
+    }
+
+    private static int parseIntStrict(String raw, String name) {
+        try {
+            return Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+            throw new MapiConfigException(name + " must be an integer (got a non-integer value)");
+        }
+    }
+
+    private static boolean readBooleanText(String raw, String name) {
+        String value = raw.trim();
+        if (value.equalsIgnoreCase("true") || value.equalsIgnoreCase("false")) {
+            return Boolean.parseBoolean(value);
+        }
+        throw new MapiConfigException(name + " must be 'true' or 'false' (got a non-boolean value)");
+    }
+
+    private static java.util.Set<dev.example.mapi.internal.operation.Scope> readScopes(
+            Properties file, Map<String, String> env, Logger logger) {
+        String raw = effective(file, env, "http.scopes", "MAPI_HTTP_SCOPES");
+        if (raw == null || raw.isBlank()) {
+            return java.util.Set.of();
+        }
+        java.util.EnumSet<dev.example.mapi.internal.operation.Scope> parsed =
+                java.util.EnumSet.noneOf(dev.example.mapi.internal.operation.Scope.class);
+        for (String part : raw.split(",")) {
+            String name = part.trim();
+            if (name.isEmpty()) {
+                continue;
+            }
+            java.util.Optional<dev.example.mapi.internal.operation.Scope> match =
+                    java.util.Arrays.stream(dev.example.mapi.internal.operation.Scope.values())
+                            .filter(scope -> scope.wireName().equalsIgnoreCase(name))
+                            .findFirst();
+            if (match.isEmpty()) {
+                throw new MapiConfigException("http.scopes contains unknown scope '" + name
+                        + "'. Valid scopes: " + java.util.Arrays.stream(dev.example.mapi.internal.operation.Scope.values())
+                                .map(dev.example.mapi.internal.operation.Scope::wireName)
+                                .reduce((a, b) -> a + ", " + b).orElse(""));
+            }
+            parsed.add(match.get());
+        }
+        logger.info("MAPI: HTTP scope grants restricted to {} scope(s)", parsed.size());
+        return java.util.Collections.unmodifiableSet(parsed);
     }
 
     private static Properties readPropertiesFile(Path configDir, Logger logger) {
@@ -102,8 +261,31 @@ public record MapiConfig(boolean httpEnabled, int httpPort, String httpToken, in
         return trimmed;
     }
 
+    private static java.util.List<String> readAllowlist(Properties file, Map<String, String> env,
+            Logger logger) {
+        String raw = effective(file, env, "client.connect.allowlist", "MAPI_CLIENT_CONNECT_ALLOWLIST");
+        if (raw == null || raw.isBlank()) {
+            return java.util.List.of();
+        }
+        java.util.List<String> entries = new java.util.ArrayList<>();
+        for (String part : raw.split(",")) {
+            String entry = part.trim();
+            if (entry.isEmpty()) {
+                continue;
+            }
+            if (!entry.matches("[A-Za-z0-9.\\-]+(:[0-9]{1,5})?")) {
+                throw new MapiConfigException("client.connect.allowlist entry is not host[:port]: '"
+                        + entry + "'");
+            }
+            entries.add(entry);
+        }
+        logger.info("MAPI: direct-connection allowlist configured with {} entrie(s)", entries.size());
+        return java.util.List.copyOf(entries);
+    }
+
     private static final java.util.Set<String> KNOWN_KEYS = java.util.Set.of(
-            "http.enabled", "http.port", "http.token", "http.rateLimitPerMinute");
+            "http.enabled", "http.port", "http.token", "http.rateLimitPerMinute", "http.scopes",
+            "client.connect.allowlist", "server.lan.enabled");
 
     private static String effective(Properties file, Map<String, String> env, String fileKey, String envKey) {
         String fromEnv = env.get(envKey);

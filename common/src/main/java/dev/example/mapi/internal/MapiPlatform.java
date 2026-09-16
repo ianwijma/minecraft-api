@@ -52,4 +52,74 @@ public interface MapiPlatform {
      * @param listener the listener, never {@code null}
      */
     void registerServerLifecycle(ServerLifecycleListener listener);
+
+    /**
+     * Registers the given listener for client lifecycle callbacks. Called
+     * exactly once during MAPI bootstrap. Adapters without a client
+     * environment ignore this (dedicated servers never fire it).
+     *
+     * @param listener the listener, never {@code null}
+     */
+    default void registerClientLifecycle(ClientLifecycleListener listener) {
+    }
+
+    /**
+     * Loads the resolved configuration from the loader-native config source
+     * (NeoForge: auto-generated {@code config/mapi-common.toml} via
+     * ModConfigSpec; Fabric: auto-generated {@code config/mapi.json}). The
+     * default delegates to the loader-neutral properties path (used by test
+     * platforms); environment variables override file values in every case
+     * (spec: token handling in docs/security.md).
+     *
+     * @param configDir the instance configuration directory
+     * @param env       process environment
+     * @param logger    platform logger
+     * @return a validated configuration
+     */
+    default dev.example.mapi.internal.config.MapiConfig loadConfig(java.nio.file.Path configDir,
+            java.util.Map<String, String> env, Logger logger) {
+        return dev.example.mapi.internal.config.MapiConfig.load(configDir, env, logger);
+    }
+
+    /**
+     * @return the server-side bridge capabilities for this loader; the
+     *     default reports no capabilities (nothing beyond the base runtime)
+     */
+    default dev.example.mapi.internal.server.ServerBridge serverBridge() {
+        return dev.example.mapi.internal.server.ServerBridge.NONE;
+    }
+
+    /**
+     * @return the client-side bridge while a game client is present and the
+     *     loader implements client capabilities; the default reads the
+     *     client-only registration point
+     *     ({@link dev.example.mapi.internal.client.ClientBridgeHolder}) so
+     *     dedicated servers keep
+     *     {@link dev.example.mapi.internal.client.ClientBridge#NONE}
+     */
+    default dev.example.mapi.internal.client.ClientBridge clientBridge() {
+        return dev.example.mapi.internal.client.ClientBridgeHolder.get();
+    }
+
+    /**
+     * Attaches a bounded log-capture sink to the process logging backend
+     * (spec §17.1). The default is a no-op: loader adapters wire the Log4j
+     * appender in their own chunks; no global logging reconfiguration is
+     * permitted.
+     *
+     * @param capture the sink to feed, never {@code null}
+     */
+    default void attachLogCapture(dev.example.mapi.internal.logging.LogCaptureService capture) {
+    }
+
+    /**
+     * Requests a graceful local shutdown of the process (spec §1.1: the mod
+     * performs graceful local shutdown only; the runner owns launch/kill).
+     * The default reports unsupported.
+     *
+     * @return true when the shutdown was accepted
+     */
+    default boolean requestProcessShutdown() {
+        return false;
+    }
 }

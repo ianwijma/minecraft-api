@@ -1,0 +1,42 @@
+// minecraft-api — sdk module: generated/handwritten Java client for the
+// MAPI local HTTP API (spec deliverable 2). Depends ONLY on the HTTP
+// contract — never on MAPI internals, never on loader or Minecraft classes
+// (ADR-0002). Pure JDK; zero bundled dependencies.
+
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+base {
+    archivesName = 'minecraft-api-sdk'
+}
+
+dependencies {
+    testImplementation platform(libs.junit.bom)
+    testImplementation libs.junit.jupiter
+    testRuntimeOnly libs.junit.platform.launcher
+}
+
+java {
+    withSourcesJar()
+}
+
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            artifactId = 'minecraft-api-sdk'
+            from components.java
+            pom {
+                name = 'MAPI Java SDK'
+                description = 'Java client for the MAPI local HTTP API (spec deliverable 2)'
+                licenses {
+                    license {
+                        name = providers.gradleProperty('mapiLicense').get()
+                        comments = 'License selection is pending; see LICENSE.pending.md.'
+                    }
+                }
+            }
+        }
+    }
+}

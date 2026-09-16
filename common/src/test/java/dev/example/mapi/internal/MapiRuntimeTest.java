@@ -100,6 +100,88 @@ public class MapiRuntimeTest {
         platform.listener.onServerStopped();
     }
 
+    @Test
+    void worldSessionLifecycleIsTrackedAcrossServerLifecycle() {
+        TestPlatform platform = new TestPlatform(LOG);
+        MapiRuntime runtime = new MapiRuntime(platform);
+        assertEquals(dev.example.mapi.internal.world.WorldPhase.NONE,
+                runtime.worldLifecycle().phase());
+
+        TestServerHandle handle = TestServerHandle.inline();
+        platform.listener.onServerStarting(handle);
+        assertEquals(dev.example.mapi.internal.world.WorldPhase.LOADING,
+                runtime.worldLifecycle().phase());
+        String sessionId = runtime.worldLifecycle().currentSessionId().orElseThrow();
+
+        platform.listener.onServerStarted();
+        assertEquals(dev.example.mapi.internal.world.WorldPhase.ACTIVE,
+                runtime.worldLifecycle().phase());
+        assertEquals(sessionId, runtime.worldLifecycle().requireActive(Optional.of(sessionId)));
+
+        platform.listener.onServerStopping();
+        assertEquals(dev.example.mapi.internal.world.WorldPhase.UNLOADING,
+                runtime.worldLifecycle().phase());
+        platform.listener.onServerStopped();
+        assertEquals(dev.example.mapi.internal.world.WorldPhase.NONE,
+                runtime.worldLifecycle().phase());
+        assertThrows(dev.example.mapi.internal.problem.ProblemException.class,
+                () -> runtime.worldLifecycle().requireActive(Optional.empty()));
+
+        // The four world-session events were published in order.
+        var lifecycle = runtime.eventBus().eventsAfter(0,
+                dev.example.mapi.internal.event.EventFilter.any(), 100).events();
+        assertEquals(java.util.List.of("world.loading", "world.loaded", "world.unloading", "world.unloaded"),
+                lifecycle.stream().map(e -> e.type()).toList());
+    }
+
+    @Test
+    void clientLifecycleKeepsHttpAliveAcrossWorldSessions() throws Exception {
+        TestPlatform platform = new TestPlatform(LOG) {
+            @Override
+            public dev.example.mapi.internal.config.MapiConfig loadConfig(
+                    java.nio.file.Path configDir, java.util.Map<String, String> env,
+                    Logger logger) {
+                return new dev.example.mapi.internal.config.MapiConfig(true, freeTestPort(),
+                        "test-token-0123456789", 10_000);
+            }
+        };
+        MapiRuntime runtime = new MapiRuntime(platform);
+
+        // Client boots to the main menu: HTTP up without any server.
+        platform.clientListener.onClientStarted();
+        assertTrue(runtime.httpRunning(), "API must be up at the main menu");
+        assertEquals(dev.example.mapi.internal.world.WorldPhase.NONE,
+                runtime.worldLifecycle().phase());
+
+        // Integrated server session: world work starts; listener stays.
+        platform.listener.onServerStarting(TestServerHandle.inline());
+        platform.listener.onServerStarted();
+        assertTrue(runtime.httpRunning());
+        platform.listener.onServerStopping();
+        platform.listener.onServerStopped();
+        assertTrue(runtime.httpRunning(),
+                "world exit must not stop the client listener");
+        assertEquals(dev.example.mapi.internal.world.WorldPhase.NONE,
+                runtime.worldLifecycle().phase());
+
+        // Second session: startHttp is idempotent (no double-bind).
+        platform.listener.onServerStarting(TestServerHandle.inline());
+        assertTrue(runtime.httpRunning());
+
+        // Client shutdown: only now does the listener stop.
+        platform.clientListener.onClientStopping();
+        assertFalse(runtime.httpRunning());
+        assertFalse(runtime.httpRunning(), "stop must be idempotent");
+    }
+
+    private static int freeTestPort() {
+        try (var socket = new java.net.ServerSocket(0)) {
+            return socket.getLocalPort();
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     /**
      * Minimal Mapi implementation for negative binding tests.
      */
@@ -146,6 +228,7 @@ public class MapiRuntimeTest {
     public static class TestPlatform implements MapiPlatform {
         final Logger logger;
         ServerLifecycleListener listener;
+        ClientLifecycleListener clientListener;
 
         public TestPlatform(Logger logger) {
             this.logger = logger;
@@ -191,6 +274,11 @@ public class MapiRuntimeTest {
         @Override
         public void registerServerLifecycle(ServerLifecycleListener listener) {
             this.listener = listener;
+        }
+
+        @Override
+        public void registerClientLifecycle(ClientLifecycleListener listener) {
+            this.clientListener = listener;
         }
     }
 
