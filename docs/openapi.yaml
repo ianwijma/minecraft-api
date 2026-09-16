@@ -633,6 +633,31 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "503": { $ref: "#/components/responses/CapabilityUnavailable" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/inventory/tooltip-rendered:
+    post:
+      operationId: captureRenderedTooltip
+      summary: >
+        Rendered tooltip capture (§10.2): opens the inventory, hovers over
+        the slot, captures a screenshot showing the tooltip as the game
+        actually displayed it. Returns both the visual evidence and the
+        computed lines.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [slot]
+              properties:
+                slot: { type: integer, minimum: 0 }
+      responses:
+        "200":
+          description: Rendered tooltip capture
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "503": { $ref: "#/components/responses/CapabilityUnavailable" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/screen:
     get:
       operationId: inspectScreen

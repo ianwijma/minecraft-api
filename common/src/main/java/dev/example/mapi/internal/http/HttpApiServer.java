@@ -452,6 +452,7 @@ public final class HttpApiServer {
         postRoutes.put(API_PREFIX + "client/movement/waypoints", this::handleWaypoints);
         postRoutes.put(API_PREFIX + "client/actions/click", this::handleClick);
         postRoutes.put(API_PREFIX + "client/inventory/click", this::handleInventoryClick);
+        postRoutes.put(API_PREFIX + "client/inventory/tooltip-rendered", this::handleRenderedTooltip);
         postRoutes.put(API_PREFIX + "client/worlds/load", this::handleWorldLoad);
         postRoutes.put(API_PREFIX + "client/worlds/create", this::handleWorldCreate);
         postRoutes.put(API_PREFIX + "client/worlds/delete", this::handleWorldDelete);
@@ -706,6 +707,20 @@ public final class HttpApiServer {
         out.put("slot", slot);
         out.put("lines", lines);
         respond(exchange, 200, JsonWriter.write(out));
+    }
+
+    private void handleRenderedTooltip(HttpExchange exchange, Map<String, Object> body,
+            java.util.Set<Scope> grants) throws IOException {
+        checkAccess("client.inventory.read", grants, body);
+        var inv = runtime.clientBridge().inventory()
+                .orElseThrow(() -> new ProblemException(ProblemCode.CAPABILITY_UNAVAILABLE,
+                        "inventory is not available on this process"));
+        int slot = (int) longField(body, "slot", -1);
+        if (slot < 0) {
+            throw new ProblemException(ProblemCode.BAD_REQUEST, "slot is required");
+        }
+        var capture = runtime.callOnClientThread(() -> inv.renderedCapture(slot));
+        respond(exchange, 200, JsonWriter.write(capture.toMap()));
     }
 
     private void handleInventoryClick(HttpExchange exchange, Map<String, Object> body,

@@ -215,37 +215,4 @@ final class FabricClientBridge implements ClientBridge {
         }
     }
 
-    /** Screenshot capture over the verified {@code Screenshot.takeScreenshot}. */
-    private final class FabricScreenshots implements ScreenshotBackend {
-
-        @Override
-        public PendingCapture beginCapture() {
-            net.minecraft.client.Minecraft client =
-                    net.minecraft.client.Minecraft.getInstance();
-            com.mojang.blaze3d.pipeline.RenderTarget target =
-                    client.gameRenderer.mainRenderTarget();
-            Path temp;
-            try {
-                temp = Files.createTempFile("mapi-shot", ".png");
-            } catch (IOException e) {
-                throw new ProblemException(ProblemCode.INTERNAL,
-                        "screenshot temp file failed: " + e);
-            }
-            Screen screen = client.gui.screen();
-            PendingCapture pending = new PendingCapture(temp, target.width,
-                    target.height, client.getFrameTimeNs(), currentState().guiScale(),
-                    screen == null ? null : screen.getClass().getSimpleName());
-            java.util.function.Consumer<NativeImage> writer = image -> {
-                try {
-                    image.writeToFile(temp.toFile());
-                } catch (IOException e) {
-                    throw new IllegalStateException(e);
-                } finally {
-                    image.close();
-                }
-            };
-            net.minecraft.client.Screenshot.takeScreenshot(target, writer);
-            return pending;
-        }
-    }
 }

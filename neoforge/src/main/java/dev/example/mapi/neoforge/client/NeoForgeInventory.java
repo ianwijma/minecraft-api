@@ -3,6 +3,7 @@ package dev.example.mapi.neoforge.client;
 import dev.example.mapi.internal.client.ClientBridge;
 import dev.example.mapi.internal.problem.ProblemCode;
 import dev.example.mapi.internal.problem.ProblemException;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
@@ -84,6 +85,87 @@ public final class NeoForgeInventory implements ClientBridge.InventoryBackend {
     public int carriedCount() {
         requireInWorld();
         return menu().getCarried().getCount();
+    }
+
+    @Override
+    public ClientBridge.InventoryBackend.RenderedTooltip renderedCapture(int slot) {
+        requireInWorld();
+        // Phase 1: open the inventory screen on the client thread.
+        var player = client.player;
+        client.gui.setScreen(new net.minecraft.client.gui.screens.inventory.InventoryScreen(player));
+
+        // Phase 2: wait a tick for the screen to initialize.
+        try {
+            Thread.sleep(50);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ProblemException(ProblemCode.SERVER_BUSY, "interrupted");
+        }
+
+        // Phase 3: compute the slot's absolute screen position from the
+        // known player inventory layout (176×166 centered).
+        var window = client.getWindow();
+        int guiW = window.getGuiScaledWidth();
+        int guiH = window.getGuiScaledHeight();
+        int leftPos = (guiW - 176) / 2;
+        int topPos = (guiH - 166) / 2;
+        AbstractContainerMenu menu = menu();
+        net.minecraft.world.inventory.Slot targetSlot = menu.slots.get(slot);
+        int absoluteX = leftPos + targetSlot.x + 8;  // +8: slot center
+        int absoluteY = topPos + targetSlot.y + 8;
+
+        // Phase 4: dispatch mouseMoved to hover over the slot.
+        net.minecraft.client.gui.screens.Screen screen = client.gui.screen();
+        if (screen != null) {
+            screen.mouseMoved(absoluteX, absoluteY);
+        }
+
+        // Phase 5: wait a render pass for the tooltip to appear.
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        // Phase 6: capture the screenshot (tooltip visible).
+        var screenshots = new NeoForgeScreenshots();
+        var pending = screenshots.beginCapture();
+        long deadline = System.currentTimeMillis() + 5000;
+        byte[] png = new byte[0];
+        try {
+            while (System.currentTimeMillis() < deadline) {
+                long size = java.nio.file.Files.size(pending.tempPath());
+                if (size > 0) {
+                    png = java.nio.file.Files.readAllBytes(pending.tempPath());
+                    break;
+                }
+                Thread.sleep(25);
+            }
+        } catch (IOException | InterruptedException e) {
+            throw new ProblemException(ProblemCode.INTERNAL,
+                    "screenshot capture failed: " + e);
+        } finally {
+            try {
+                java.nio.file.Files.deleteIfExists(pending.tempPath());
+            } catch (IOException ignored) {
+            }
+        }
+
+        // Phase 7: read the computed tooltip lines (what the game rendered).
+        ItemStack stack = targetSlot.getItem();
+        List<String> lines = stack.isEmpty() ? List.of()
+                : net.minecraft.client.gui.screens.Screen.getTooltipFromItem(
+                        client, stack).stream()
+                        .map(net.minecraft.network.chat.Component::getString)
+                        .toList();
+
+        // Phase 8: close the inventory and return to in-world.
+        client.gui.setScreen(null);
+
+        String b64 = java.util.Base64.getEncoder().encodeToString(png);
+        return new ClientBridge.InventoryBackend.RenderedTooltip(
+                b64, pending.width(), pending.height(), slot, lines,
+                pending.frame(), pending.guiScale());
     }
 
     @Override

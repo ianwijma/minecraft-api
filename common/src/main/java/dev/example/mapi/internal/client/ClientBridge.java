@@ -169,6 +169,37 @@ public interface ClientBridge {
          * @return the tooltip lines, empty when the slot is empty
          */
         List<String> tooltip(int slot);
+
+        /**
+         * Rendered tooltip capture (spec §10.2): opens the inventory,
+         * hovers over the slot, waits a render pass, captures a screenshot
+         * showing the tooltip as the game actually displayed it, and reads
+         * the tooltip lines. Returns both the visual evidence and the
+         * semantic data. Returns {@code TOOLTIP_SEMANTICS_UNAVAILABLE}
+         * semantics when the slot is empty.
+         *
+         * @param slot menu slot index (must have an item)
+         * @return the rendered capture: screenshot base64 + lines + metadata
+         */
+        RenderedTooltip renderedCapture(int slot);
+
+        /** Rendered tooltip capture result (§10.2). */
+        record RenderedTooltip(String pngBase64, int width, int height,
+                int slot, List<String> lines, long frame, int guiScale) {
+
+            /** @return the capture as an ordered map for JSON serialization */
+            public Map<String, Object> toMap() {
+                Map<String, Object> map = new LinkedHashMap<>();
+                map.put("slot", slot);
+                map.put("lines", lines);
+                map.put("frame", frame);
+                map.put("guiScale", guiScale);
+                map.put("width", width);
+                map.put("height", height);
+                map.put("pngBase64", pngBase64);
+                return map;
+            }
+        }
     }
 
     /**
