@@ -48,7 +48,10 @@
   (chat/screen path via charTyped), tooltip computed data.
   Known issue: step job reports completed:0 because 26.2 advances the tick
   counter asynchronously after stepGameIfPaused — stepping works (count
-  delta proves it).
+  delta proves it). Inventory interaction cycle verified live: PICKUP
+  diamond from slot 36 (carried=64), tooltip for emptied slot (correctly
+  empty), PICKUP again to place back (carried=0). Command dispatch live:
+  give via player name works (spec §20: command context and feedback).
 - **Not yet implemented (tracked in `docs/execution-plan.md`):** test
   profiles/preflight (5.3), participant mapping UI (5.4), path planning
   (5.9), in-world movement/UI execution evidence (3.4-3.13 — routes land,
