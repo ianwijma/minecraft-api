@@ -157,6 +157,9 @@ public final class HttpApiServer {
                 "Delete a saved singleplayer world",
                 Set.of(Scope.OPERATIONS_DESTRUCTIVE), true,
                 SideEffectClass.GAME, false, Set.of()));
+        operations.register(new OperationDescriptor("client.inventory.read",
+                "Inspect the player's inventory menu slots (§10.3 read path)",
+                java.util.Set.of(), false, SideEffectClass.READ_ONLY, false, Set.of()));
         operations.register(new OperationDescriptor("client.inventory.click",
                 "Container click via client-logic mode (server-confirmed postcondition, §10.3)",
                 java.util.Set.of(), false, SideEffectClass.GAME, true, rawInput));

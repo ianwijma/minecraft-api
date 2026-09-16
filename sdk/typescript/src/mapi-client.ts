@@ -36,7 +36,6 @@ export class MapiClient {
                         body?: unknown): Promise<MapiResult> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.token}`,
-      Host: '127.0.0.1',
     };
     if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
@@ -56,9 +55,24 @@ export class MapiClient {
     return { status: response.status, body: parsed, ok };
   }
 
+  /** Generic GET for any path (for operations without a typed method). */
+  async get(path: string): Promise<MapiResult> {
+    return this.request('GET', path);
+  }
+
+  /** Generic POST for any path (for operations without a typed method). */
+  async post(path: string, body: unknown): Promise<MapiResult> {
+    return this.request('POST', path, body);
+  }
+
   /** Client bridge identity and capabilities. CAPABILITY_UNAVAILABLE semantics apply per feature on dedicated servers (no client bridge). */
   getClientInfo(): Promise<MapiResult> {
     return this.request('GET', `/api/v1/client`);
+  }
+
+  /** Click the active screen at GUI coordinates through its own event routing (screen dispatch). Returns consumed flag. */
+  clickScreen(body: Record<string, unknown>): Promise<MapiResult> {
+    return this.request('POST', `/api/v1/client/actions/click`, body);
   }
 
   /** Hold a key for N client ticks (raw-input only, spec §3.4/§4.2). Returns an action receipt; unsupported modes fail with EXECUTION_MODE_UNSUPPORTED (no silent fallback). Key-up is always dispatched before a deadline failure surfaces (release-all). */
@@ -66,9 +80,39 @@ export class MapiClient {
     return this.request('POST', `/api/v1/client/actions/hold-key`, body);
   }
 
+  /** Join a server through the vanilla connect flow (§9.2; requires client:connect scope and the client.connect.allowlist — empty list denies all). */
+  connectServer(body: Record<string, unknown>): Promise<MapiResult> {
+    return this.request('POST', `/api/v1/client/connect`, body);
+  }
+
+  /** Player inventory menu slots (§10.3): non-empty slots with itemId and count, carried-stack size, container id. */
+  inspectInventory(): Promise<MapiResult> {
+    return this.request('GET', `/api/v1/client/inventory`);
+  }
+
+  /** Container click (client-logic mode, §3.1/§10.3): dispatches through the game's server flow for server-confirmed postconditions. Verify via GET /server/queries/players (inventory field). */
+  clickInventory(body: Record<string, unknown>): Promise<MapiResult> {
+    return this.request('POST', `/api/v1/client/inventory/click`, body);
+  }
+
+  /** Computed tooltip lines for a slot's item (§10.2: calculated without reproducing hover — rendered capture is a separate path). Includes item name, durability, enchantments, and lore. */
+  getTooltip(slot: number): Promise<MapiResult> {
+    return this.request('GET', `/api/v1/client/inventory/tooltip?slot=${encodeURIComponent(String(slot))}`);
+  }
+
+  /** Rendered tooltip capture (§10.2): opens the inventory, hovers over the slot, captures a screenshot showing the tooltip as the game actually displayed it. Returns both the visual evidence and the computed lines. */
+  captureRenderedTooltip(body: Record<string, unknown>): Promise<MapiResult> {
+    return this.request('POST', `/api/v1/client/inventory/tooltip-rendered`, body);
+  }
+
   /** Execute straight-line waypoints (raw-input; required mod, spec §16). No teleport fallback. Receipt reports per-leg boundaries; effects verified separately via world queries. */
   moveWaypoints(body: Record<string, unknown>): Promise<MapiResult> {
     return this.request('POST', `/api/v1/client/movement/waypoints`, body);
+  }
+
+  /** Inspect the active screen's widgets (§10.1-lite: recognized widget structures with rendered text and bounds). Empty at in-world state. */
+  inspectScreen(): Promise<MapiResult> {
+    return this.request('GET', `/api/v1/client/screen`);
   }
 
   /** Screenshot capture with frame/scale metadata (spec §20) */
@@ -94,6 +138,26 @@ export class MapiClient {
   /** Set windowed dimensions (OS may adjust; effective values returned, spec §9.1) */
   setWindowed(body: Record<string, unknown>): Promise<MapiResult> {
     return this.request('POST', `/api/v1/client/window/set-windowed`, body);
+  }
+
+  /** Saved singleplayer worlds */
+  listWorlds(): Promise<MapiResult> {
+    return this.request('GET', `/api/v1/client/worlds`);
+  }
+
+  /** Create a fresh world with vanilla defaults and a NORMAL preset (202; async — poll /server/world for phase ACTIVE). Creation over an existing id fails; never overwrites. */
+  createWorld(body: Record<string, unknown>): Promise<MapiResult> {
+    return this.request('POST', `/api/v1/client/worlds/create`, body);
+  }
+
+  /** Delete a saved world (destructive: requires operations:destructive grant AND "confirm": true, spec §14). */
+  deleteWorld(body: Record<string, unknown>): Promise<MapiResult> {
+    return this.request('POST', `/api/v1/client/worlds/delete`, body);
+  }
+
+  /** Load a saved world (202; loads asynchronously — poll GET /api/v1/server/world for phase ACTIVE). */
+  loadWorld(body: Record<string, unknown>): Promise<MapiResult> {
+    return this.request('POST', `/api/v1/client/worlds/load`, body);
   }
 
   /** Server-Sent Events stream of runtime events (spec §13) */
@@ -248,8 +312,7 @@ export class MapiClient {
     const query = cursor === undefined ? '' : `?cursor=${cursor}`;
     const response = await fetch(
         this.base + '/api/v1/events/stream' + query, {
-      headers: { Authorization: `Bearer ${this.token}`,
-               Host: '127.0.0.1' },
+      headers: { Authorization: `Bearer ${this.token}` },
       signal: AbortSignal.timeout(this.timeoutMs),
     });
     if (!response.ok || !response.body) {
