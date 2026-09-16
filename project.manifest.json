@@ -44,6 +44,11 @@
       "path": "runner",
       "kind": "reference-runner",
       "description": "Out-of-process reference runner CLI (spec deliverable 3): plan execution over the public HTTP API, waits, EULA-gated provisioning. Depends only on the HTTP contract."
+    },
+    {
+      "path": "sdk",
+      "kind": "sdk",
+      "description": "Java SDK client (spec deliverable 2): standalone HTTP client, zero MAPI-internal deps, published to mavenLocal."
     }
   ],
   "documentation": {
