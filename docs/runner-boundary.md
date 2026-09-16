@@ -41,10 +41,14 @@
   movement (11.91 blocks walked via waypoints with 180-degree turn; first
   attempt blocked by terrain — jungle wall — confirming collision honesty),
   tick control (lease → freeze → step 20 → unfreeze, world count 21717 →
-  21738; known issue: step job reports completed:0 because 26.2 advances
-  the tick counter asynchronously after stepGameIfPaused), LAN publish/
-  unpublish, screenshots (title screen + in-world), auth-off browser
-  access, graceful shutdown endpoint.
+  21738), LAN publish/unpublish, screenshots (title screen + in-world),
+  auth-off browser access, graceful shutdown endpoint, world CRUD cycle
+  (create → load → use → save&quit → delete via API), inventory inspect
+  (containerId, carriedCount, slot enumeration), character input dispatch
+  (chat/screen path via charTyped), tooltip computed data.
+  Known issue: step job reports completed:0 because 26.2 advances the tick
+  counter asynchronously after stepGameIfPaused — stepping works (count
+  delta proves it).
 - **Not yet implemented (tracked in `docs/execution-plan.md`):** test
   profiles/preflight (5.3), participant mapping UI (5.4), path planning
   (5.9), in-world movement/UI execution evidence (3.4-3.13 — routes land,
