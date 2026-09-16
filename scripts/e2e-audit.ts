@@ -196,6 +196,16 @@ async function testObservability(): Promise<void> {
 async function testClientBridge(): Promise<void> {
     console.log('\n── 2. Client bridge');
 
+    // Wait for the TitleScreen (NeoForge shows GenericMessageScreen during loading)
+    await check('wait for TitleScreen', async () => {
+        for (let attempt = 0; attempt < 30; attempt++) {
+            const screen = await getScreen();
+            if (screen.screenId.includes('Title')) return `TitleScreen after ${attempt * 2}s`;
+            await sleep(2000);
+        }
+        throw new Error('TitleScreen not reached within 60s');
+    });
+
     await check('client capabilities', async () => {
         const r = await client.get('/api/v1/client');
         assert(r.ok, `status ${r.status}`);
