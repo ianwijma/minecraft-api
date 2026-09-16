@@ -25,7 +25,7 @@ export class MapiClient {
   private readonly base: string;
   private readonly token: string;
   private readonly timeoutMs: number;
-  constructor(base: string, token: string, timeoutMs = 10_000) {
+  constructor(base: string, token: string, timeoutMs = 30_000) {
     if (!token) throw new Error('a bearer token is required');
     this.base = base.replace(/\/+$/, '');
     this.token = token;
