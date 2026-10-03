@@ -42,18 +42,30 @@ export class Harness {
     }
 
     async get(path: string): Promise<any> {
-        const r = await this.api.get(path);
+        const r = await this.withRequestContext('GET', path, () => this.api.get(path));
         if (!r.ok) throw new Error(`GET ${path} -> ${r.status}: ${JSON.stringify(r.body)}`);
         return r.body;
     }
 
     async post(path: string, body: unknown): Promise<any> {
-        const r = await this.api.post(path, body);
+        const r = await this.withRequestContext('POST', path, () => this.api.post(path, body));
         if (!r.ok) throw new Error(`POST ${path} -> ${r.status}: ${JSON.stringify(r.body)}`);
         if (/^\/api\/v1\/client\/worlds\/(create|delete|load)$/.test(path)) {
             this.inputLeaseNeedsValidation = true;
         }
         return r.body;
+    }
+
+    private async withRequestContext<T>(method: 'GET' | 'POST', path: string,
+                                        request: () => Promise<T>): Promise<T> {
+        try {
+            return await request();
+        } catch (e) {
+            if (e instanceof MapiError) {
+                throw new MapiError(e.status, e.code, `${e.message} (${method} ${path})`);
+            }
+            throw e;
+        }
     }
 
     async healthWait(timeoutMs = 480_000, pollMs = 2_000): Promise<void> {

@@ -13,6 +13,7 @@ import { decodePng, encodePng, cropImage, type RgbaImage } from '../harness/png.
 import { diffImages, renderDiffImage } from '../harness/diff.ts';
 import { MAP, bfsPath, legsFromPath } from '../scenarios/04-hedge-maze.spec.ts';
 import { Harness } from '../harness/client.ts';
+import { MapiError } from '../../sdk/typescript/src/mapi-client.ts';
 import { createRunRoot } from '../harness/supervisor.ts';
 
 test('supervisor creates its isolated run root from a clean build directory', () => {
@@ -23,6 +24,24 @@ test('supervisor creates its isolated run root from a clean build directory', ()
         assert.ok(fs.statSync(runRoot).isDirectory());
     } finally {
         fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+});
+
+test('HTTP errors retain their route context and MapiError type', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+        error: { code: 'SERVER_BUSY', message: 'client thread busy' },
+    }), { status: 503, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+    try {
+        const h = new Harness('http://127.0.0.1:1', 'test-token');
+        await assert.rejects(h.get('/api/v1/client/screen'), (error: unknown) => {
+            assert.ok(error instanceof MapiError);
+            assert.equal(error.code, 'SERVER_BUSY');
+            assert.match(error.message, /GET \/api\/v1\/client\/screen/);
+            return true;
+        });
+    } finally {
+        globalThis.fetch = originalFetch;
     }
 });
 
