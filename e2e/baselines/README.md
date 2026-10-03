@@ -9,6 +9,11 @@ Initial references were captured by [CI run 37126285659](https://github.com/ianw
 from commit `8a8be6b`, with Minecraft 26.2 and MAPI 0.1.0. All packaged-smoke
 checks passed for both loaders before the reference artifacts were imported.
 
+Exterior checkpoints mask two background horizon strips (x=0–399 and
+x=875–1279, y=450–579). Distant chunk meshes outside the 97 × 97 prepared
+stage can differ between fresh clients. The house silhouette remains
+unmasked, the interior uses no masks, and comparison tolerances are unchanged.
+
 Normal runs fail if a reference is missing and never modify it. Failures
 upload actual and diff PNGs with the packaged-smoke acceptance reports.
 

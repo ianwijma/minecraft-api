@@ -4,8 +4,16 @@
  */
 import type { Ctx, Scenario } from '../harness/context.ts';
 import { Visual } from '../harness/visual.ts';
+import type { Mask } from '../harness/diff.ts';
 import { prepareStage, setCamera, hideHud, settleNearbyEntities, NOON, type Pose }
     from '../harness/stage.ts';
+
+// Distant chunk meshes outside the prepared stage vary across CI runs.
+// These horizon strips exclude the house silhouette at every pinned pose.
+export const HOUSE_EXTERIOR_MASKS: Mask[] = [
+    { x: 0, y: 450, width: 400, height: 130 },
+    { x: 875, y: 450, width: 405, height: 130 },
+];
 
 // 📐 pin-once values — tuned on the first live run, then frozen.
 const PINS = {
@@ -91,7 +99,8 @@ export const scenario: Scenario = {
 
         for (const [name, pose] of Object.entries(PINS.poses)) {
             await setCamera(h, pose);
-            await visual.capture({ name: `house-${name}`, expectedDayTime: NOON });
+            await visual.capture({ name: `house-${name}`, expectedDayTime: NOON,
+                masks: name === 'interior' ? [] : HOUSE_EXTERIOR_MASKS });
         }
     },
 };

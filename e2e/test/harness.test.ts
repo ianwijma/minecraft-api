@@ -13,6 +13,7 @@ import { deflateSync } from 'node:zlib';
 import { decodePng, encodePng, cropImage, type RgbaImage } from '../harness/png.ts';
 import { diffImages, renderDiffImage } from '../harness/diff.ts';
 import { MAP, bfsPath, legsFromPath } from '../scenarios/04-hedge-maze.spec.ts';
+import { HOUSE_EXTERIOR_MASKS } from '../scenarios/01-house.spec.ts';
 import { Harness } from '../harness/client.ts';
 import { Visual } from '../harness/visual.ts';
 import { Report } from '../harness/report.ts';
@@ -32,6 +33,23 @@ test('both CI loaders ship all five house reference PNGs at the profile dimensio
             assert.equal(png.height, 720, `${loader}/${checkpoint} height`);
         }
     }
+});
+
+test('house masks ignore distant terrain while retaining sensitivity to house changes', () => {
+    const file = fileURLToPath(new URL('../baselines/linux-ci-fabric/house/house-se.png', import.meta.url));
+    const expected = decodePng(fs.readFileSync(file));
+    const repaint = (x: number, y: number) => {
+        const changed = { ...expected, data: Buffer.from(expected.data) };
+        for (let row = y; row < y + 40; row++) {
+            for (let col = x; col < x + 40; col++) {
+                changed.data.set([255, 0, 255, 255], 4 * (row * changed.width + col));
+            }
+        }
+        return diffImages(expected, changed, { pixelThreshold: 4, masks: HOUSE_EXTERIOR_MASKS });
+    };
+    assert.equal(repaint(10, 470).changedFraction, 0);
+    assert.equal(repaint(1000, 470).changedFraction, 0);
+    assert.ok(repaint(600, 500).changedFraction > 0.001);
 });
 
 test('visual baselines require explicit updates and remain unchanged on divergence', async t => {

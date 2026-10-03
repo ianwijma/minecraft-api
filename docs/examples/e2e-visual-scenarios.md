@@ -245,6 +245,9 @@ the two stacks stay comparable:
   `.actual.png` for review. Only `--update-baselines` creates or replaces
   references. Local environments use their own `--env` and remain ignored.
   See `e2e/baselines/README.md` for the CI refresh procedure.
+  House exterior views mask the distant background horizon outside the
+  fixture silhouette; the interior is compared without masks. These masks
+  handle far-chunk mesh availability without widening pixel tolerances.
 
 ### 3.5 Supervisor (`supervisor.ts`)
 
