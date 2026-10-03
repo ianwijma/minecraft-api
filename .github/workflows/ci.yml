@@ -65,6 +65,10 @@ jobs:
           path: |
             common/build/reports/tests/
             common/build/test-results/
+            fixture-mod/build/reports/tests/
+            fixture-mod/build/test-results/
+            sdk/build/reports/tests/
+            sdk/build/test-results/
             build/reports/problems/
           if-no-files-found: ignore
 
@@ -215,3 +219,84 @@ jobs:
             build/acceptance/release-client/**/house/unstable-a.png
             build/acceptance/release-client/**/house/unstable-b.png
           if-no-files-found: ignore
+
+  api-e2e:
+    name: API corpus (${{ matrix.loader }}, ${{ matrix.sdk }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    if: ${{ vars.MAPI_ACCEPT_EULA == 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        loader: [fabric, neoforge]
+        sdk: [typescript, python, java]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build release artifacts and acceptance fixtures
+        run: ./gradlew :${{ matrix.loader }}:build :fixture-fabric:jar :fixture-neoforge:jar :sdk:apiWorkerJar --console=plain
+      - name: Record rendering environment
+        run: |
+          mkdir -p build/api-coverage
+          uname -a > build/api-coverage/rendering.txt
+          dpkg-query -W xvfb libgl1-mesa-dri mesa-vulkan-drivers >> build/api-coverage/rendering.txt
+          test -f /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          sha256sum /usr/share/vulkan/icd.d/lvp_icd.x86_64.json >> build/api-coverage/rendering.txt
+      - name: Run complete corpus against fresh packaged games
+        run: node --experimental-strip-types --no-warnings e2e/api/run.ts --loader ${{ matrix.loader }} --sdk ${{ matrix.sdk }}
+        env:
+          MAPI_ACCEPT_EULA: "true"
+          MAPI_USE_XVFB: "true"
+          LIBGL_ALWAYS_SOFTWARE: "true"
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+      - name: Upload first-attempt evidence and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api-coverage-${{ matrix.loader }}-${{ matrix.sdk }}
+          path: build/api-coverage/
+          if-no-files-found: error
+
+  api-coverage:
+    name: Complete API coverage (required)
+    runs-on: ubuntu-24.04
+    if: always()
+    needs: [api-e2e, verify, sdk-checks]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Require operator opt-in and successful prerequisites
+        env:
+          EULA_OPT_IN: ${{ vars.MAPI_ACCEPT_EULA }}
+          CORPUS_RESULT: ${{ needs.api-e2e.result }}
+          VERIFY_RESULT: ${{ needs.verify.result }}
+          SDK_RESULT: ${{ needs.sdk-checks.result }}
+        run: |
+          test "$EULA_OPT_IN" = true || { echo 'Required API coverage blocked: set repository variable MAPI_ACCEPT_EULA=true after operator acceptance.'; exit 1; }
+          test "$CORPUS_RESULT" = success
+          test "$VERIFY_RESULT" = success
+          test "$SDK_RESULT" = success
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: api-coverage-*
+          path: build/api-coverage
+      - name: Verify six complete behavior reports
+        run: node --experimental-strip-types --no-warnings e2e/api/aggregate.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-coverage-matrix
+          path: build/api-coverage/matrix.json
+          if-no-files-found: warn
