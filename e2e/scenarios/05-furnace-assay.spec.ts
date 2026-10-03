@@ -45,7 +45,7 @@ export const scenario: Scenario = {
             updateBaselines: ctx.updateBaselines,
         });
 
-        await prepareStage(h, 0, CZ);
+        await prepareStage(h, 0, CZ, ctx.tick);
         await hideHud(h);
         await setCamera(h, { x: 1.5, y: 67.5, z: CZ + 7, yaw: 180, pitch: -12 });
         const t0 = await h.dayTime();

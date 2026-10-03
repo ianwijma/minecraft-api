@@ -84,12 +84,31 @@ class TickControlServiceTest {
     void stepAndSprintValidateBounds() {
         ControlLease lease = service.acquireLease("runner", 10_000);
         var step = service.step(lease, 5);
-        assertEquals(5, step.completed());
+        assertEquals(5, step.scheduled().completed());
         var sprint = service.sprint(lease, 3);
         assertEquals(3, sprint.completed());
         assertThrows(ProblemException.class, () -> service.step(lease, 0));
         assertThrows(ProblemException.class, () -> service.step(lease, 10001));
         assertThrows(ProblemException.class, () -> service.sprint(lease, -1));
+    }
+
+    @Test
+    void incompleteStepIsReservedAndCleanupCannotStopItsReplacement() {
+        ControlLease lease = service.acquireLease("runner", 10_000);
+        backend.asyncStep = true;
+        var first = service.step(lease, 5);
+        assertEquals(0, first.scheduled().completed());
+        assertThrows(ProblemException.class, () -> service.step(lease, 2));
+
+        assertTrue(service.stopStepping(lease));
+        var second = service.step(lease, 3);
+        service.cancelStep(lease, first);
+        assertEquals(1, backend.stopCalls);
+        assertThrows(ProblemException.class, () -> service.stepState(lease, first));
+        assertEquals(3, service.stepState(lease, second).frozenTicksToRun());
+
+        service.cancelStep(lease, second);
+        assertEquals(2, backend.stopCalls);
     }
 
     @Test
@@ -107,10 +126,13 @@ class TickControlServiceTest {
         boolean sprinting;
         float rate = 20.0f;
         long tickCount = 100;
+        boolean asyncStep;
+        int frozenTicksToRun;
+        int stopCalls;
 
         @Override
         public State state() {
-            return new State(frozen, sprinting, rate, tickCount, Optional.empty());
+            return new State(frozen, sprinting, rate, tickCount, Optional.empty(), frozenTicksToRun);
         }
 
         @Override
@@ -133,6 +155,10 @@ class TickControlServiceTest {
 
         @Override
         public StepResult step(int ticks) {
+            if (asyncStep) {
+                frozenTicksToRun = ticks;
+                return new StepResult(ticks, 0, tickCount);
+            }
             tickCount += ticks;
             return new StepResult(ticks, ticks, tickCount);
         }
@@ -147,7 +173,9 @@ class TickControlServiceTest {
 
         @Override
         public boolean stopStepping() {
-            return false;
+            stopCalls++;
+            frozenTicksToRun = 0;
+            return true;
         }
 
         @Override

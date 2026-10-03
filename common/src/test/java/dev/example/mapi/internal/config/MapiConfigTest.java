@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.example.mapi.internal.config.MapiTokens;
+import dev.example.mapi.internal.operation.Scope;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -153,18 +154,49 @@ class MapiConfigTest {
     @Test
     void allowlistAndLanKeysParse() throws IOException {
         writeFile("http.enabled=true\nhttp.token=1234567890abcdefgh\n"
-                + "client.connect.allowlist=127.0.0.1:25565, localhost\n"
+                + "client.connect.allowlist=127.0.0.1:25565, localhost, [2001:db8::10]:25565\n"
                 + "server.lan.enabled=true\n");
         MapiConfig config = load(Map.of());
-        assertEquals(java.util.List.of("127.0.0.1:25565", "localhost"),
+        assertEquals(java.util.List.of("127.0.0.1:25565", "localhost", "[2001:db8::10]:25565"),
                 config.clientConnectAllowlist());
         assertTrue(config.serverLanEnabled());
+    }
+
+    @Test
+    void fromValuesAppliesEnvironmentOverridesForScopesAllowlistAndLan() {
+        MapiConfig config = MapiConfig.fromValues(false, MapiConfig.DEFAULT_PORT, null,
+                MapiConfig.DEFAULT_RATE_LIMIT, java.util.Set.of(Scope.SERVER_PUBLISH),
+                java.util.List.of("old.example.net"), false,
+                Map.of("MAPI_HTTP_SCOPES", "client:connect",
+                        "MAPI_CLIENT_CONNECT_ALLOWLIST",
+                        "play.example.net, 203.0.113.9:25565, [2001:db8::9]:25565",
+                        "MAPI_SERVER_LAN_ENABLED", "true"), LOG);
+
+        assertEquals(java.util.Set.of(Scope.CLIENT_CONNECT), config.httpScopes());
+        assertEquals(java.util.List.of("play.example.net", "203.0.113.9:25565", "[2001:db8::9]:25565"),
+                config.clientConnectAllowlist());
+        assertTrue(config.serverLanEnabled());
+    }
+
+    @Test
+    void blankEnvironmentScopesRetainDocumentedFullGrantSemanticsAndEmptyAllowlistDeniesAll() {
+        MapiConfig config = MapiConfig.fromValues(false, MapiConfig.DEFAULT_PORT, null,
+                MapiConfig.DEFAULT_RATE_LIMIT, java.util.Set.of(Scope.SERVER_PUBLISH),
+                java.util.List.of("old.example.net"), true,
+                Map.of("MAPI_HTTP_SCOPES", "", "MAPI_CLIENT_CONNECT_ALLOWLIST", "",
+                        "MAPI_SERVER_LAN_ENABLED", "false"), LOG);
+
+        assertTrue(config.httpScopes().isEmpty());
+        assertTrue(config.clientConnectAllowlist().isEmpty());
+        assertFalse(config.serverLanEnabled());
     }
 
     @Test
     void malformedAllowlistEntryIsRefused() {
         assertThrows(MapiConfigException.class,
                 () -> load(Map.of("MAPI_CLIENT_CONNECT_ALLOWLIST", "bad host!:99999")));
+        assertThrows(MapiConfigException.class,
+                () -> load(Map.of("MAPI_CLIENT_CONNECT_ALLOWLIST", "[2001:db8::10]:65536")));
     }
 
     @Test

@@ -1,14 +1,278 @@
 /**
  * Offline unit tests for the visual harness core (plan §7 step 1): PNG
  * codec and diff engine, synthetic images only — no game required.
- * Run: node --experimental-strip-types --no-warnings --test e2e/test/
+ * Run: cd e2e && npm test
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { decodePng, encodePng, cropImage, type RgbaImage } from '../harness/png.ts';
 import { diffImages, renderDiffImage } from '../harness/diff.ts';
 import { MAP, bfsPath, legsFromPath } from '../scenarios/04-hedge-maze.spec.ts';
+import { Harness } from '../harness/client.ts';
+import { MapiError } from '../../sdk/typescript/src/mapi-client.ts';
+import { createRunRoot } from '../harness/supervisor.ts';
+import { applyCharter, clearNonPlayerEntities, constructStageFloor,
+    holdStageChunkTickets, releaseStageChunkTickets, settleNearbyEntities }
+    from '../harness/stage.ts';
+import type { SessionTick } from '../harness/context.ts';
+
+test('tick stepping rejects successful jobs with incomplete simulation progress', async () => {
+    const originalFetch = globalThis.fetch;
+    let completed = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+        const isStep = new URL(String(input)).pathname.endsWith('/ticks/step');
+        return new Response(JSON.stringify(isStep ? { jobId: 'step-test' } : {
+            state: 'SUCCEEDED', result: { requested: 21, completed, boundary: 99 },
+        }), { status: isStep ? 202 : 200,
+            headers: { 'Content-Type': 'application/json' } });
+    }) as typeof fetch;
+    try {
+        const h = new Harness('http://127.0.0.1:1', 'test-token');
+        await assert.rejects(h.stepTicks('lease', 21), /did not complete 21 simulation ticks/);
+        completed = 21;
+        const job = await h.stepTicks('lease', 21);
+        assert.equal(job.result.completed, 21);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test('supervisor creates its isolated run root from a clean build directory', () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mapi-e2e-root-'));
+    try {
+        const runRoot = createRunRoot(repoRoot, 'fabric');
+        assert.equal(path.dirname(runRoot), path.join(repoRoot, 'build', 'e2e'));
+        assert.ok(fs.statSync(runRoot).isDirectory());
+    } finally {
+        fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+});
+
+test('HTTP errors retain their route context and MapiError type', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+        error: { code: 'SERVER_BUSY', message: 'client thread busy' },
+    }), { status: 503, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+    try {
+        const h = new Harness('http://127.0.0.1:1', 'test-token');
+        await assert.rejects(h.get('/api/v1/client/screen'), (error: unknown) => {
+            assert.ok(error instanceof MapiError);
+            assert.equal(error.code, 'SERVER_BUSY');
+            assert.match(error.message, /GET \/api\/v1\/client\/screen/);
+            return true;
+        });
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test('stage cleanup waits for death removal then clears drops and XP', async () => {
+    const calls: string[] = [];
+    let deathTicks = 0;
+    let corpse = false;
+    let drops = 0;
+    let killCount = 0;
+    const h = {
+        command: async (command: string) => {
+            calls.push(command);
+            killCount++;
+            if (killCount === 1) corpse = true;
+            else drops = 0;
+        },
+    } as unknown as Harness;
+    const tick = {
+        stepTicks: async (ticks: number) => {
+            calls.push(`step:${ticks}`);
+            for (let i = 0; i < ticks; i++) {
+                if (corpse && ++deathTicks >= 20) {
+                    corpse = false;
+                    drops++;
+                }
+            }
+        },
+    } as SessionTick;
+
+    await clearNonPlayerEntities(h, tick);
+
+    assert.deepEqual(calls, [
+        'kill @e[type=!minecraft:player]', 'step:21',
+        'kill @e[type=!minecraft:player]', 'step:1',
+    ]);
+    assert.ok(deathTicks >= 20, 'vanilla death timer completed');
+    assert.equal(corpse, false);
+    assert.equal(drops, 0);
+});
+
+test('stage chunk tickets preserve prior tickets and release only fixture-owned tickets', async () => {
+    const forced = new Set(['0,0']);
+    const added: string[] = [];
+    const removed: string[] = [];
+    const keyAt = (x: number, z: number) => `${Math.floor(x / 16)},${Math.floor(z / 16)}`;
+    const h = {
+        command: async (command: string) => {
+            const [verb, action, xText, zText] = command.split(' ');
+            assert.equal(verb, 'forceload');
+            const key = keyAt(Number(xText), Number(zText));
+            if (action === 'query') {
+                if (!forced.has(key)) throw new Error('chunk is not forced');
+                return { resultCode: 1 };
+            }
+            if (action === 'add') {
+                forced.add(key);
+                added.push(key);
+                return { resultCode: 1 };
+            }
+            if (action === 'remove') {
+                forced.delete(key);
+                removed.push(key);
+                return { resultCode: 1 };
+            }
+            throw new Error(`unexpected fixture command ${command}`);
+        },
+    } as unknown as Harness;
+
+    const scope = await holdStageChunkTickets(h, 0, 0);
+    assert.deepEqual(scope, { added: 48, preexisting: 1 });
+    assert.equal(added.length, 48);
+    await releaseStageChunkTickets(h);
+    assert.deepEqual(forced, new Set(['0,0']));
+    assert.equal(removed.length, 48);
+});
+
+test('stage ticket acquisition removes tickets already added when a later add fails', async () => {
+    const forced = new Set<string>();
+    const keyAt = (x: number, z: number) => `${Math.floor(x / 16)},${Math.floor(z / 16)}`;
+    let successfulAdds = 0;
+    const removed: string[] = [];
+    const h = {
+        command: async (command: string) => {
+            const [verb, action, xText, zText] = command.split(' ');
+            assert.equal(verb, 'forceload');
+            const key = keyAt(Number(xText), Number(zText));
+            if (action === 'query') {
+                if (!forced.has(key)) throw new Error('chunk is not forced');
+                return { resultCode: 1 };
+            }
+            if (action === 'add') {
+                if (successfulAdds === 2) throw new Error('ticket cap reached');
+                successfulAdds++;
+                forced.add(key);
+                return { resultCode: 1 };
+            }
+            if (action === 'remove') {
+                forced.delete(key);
+                removed.push(key);
+                return { resultCode: 1 };
+            }
+            throw new Error(`unexpected fixture command ${command}`);
+        },
+    } as unknown as Harness;
+
+    await assert.rejects(holdStageChunkTickets(h, 0, 0), /ticket cap reached/);
+    assert.equal(forced.size, 0);
+    assert.equal(removed.length, 2);
+});
+
+test('stage floor replacement never relies on a no-change fill result', async () => {
+    const layers = new Map<number, string>([[62, 'air']]);
+    const commands: string[] = [];
+    const h = {
+        command: async (command: string) => {
+            commands.push(command);
+            const match = command.match(/^fill -48 (-?\d+) -48 48 -?\d+ 48 (air|stone)$/);
+            assert.ok(match, `unexpected floor command: ${command}`);
+            const y = Number(match[1]);
+            const block = match[2];
+            if (block === 'air' && layers.get(y) === 'air') {
+                throw new Error('vanilla fill changed no blocks');
+            }
+            if (block === 'stone') assert.equal(layers.get(y), 'air');
+            layers.set(y, block);
+            return { success: true, resultCode: 1 };
+        },
+    } as unknown as Harness;
+
+    await constructStageFloor(h, 0, 0);
+
+    assert.deepEqual([...layers.entries()].sort((a, b) => a[0] - b[0]),
+        [[60, 'stone'], [61, 'stone'], [62, 'stone'], [63, 'stone']]);
+    assert.equal(commands.length, 8);
+});
+
+test('house entity settling cleans late arrivals and requires stable empty reads', async () => {
+    const seen: string[][] = [
+        ['minecraft:squid'],
+        ['minecraft:nautilus'],
+        ['minecraft:squid'],
+        [], [], [],
+    ];
+    let queries = 0;
+    let killCommands = 0;
+    const h = {
+        entitiesAround: async () => (seen[queries++] ?? []).map(typeId => ({ typeId })),
+        command: async () => { killCommands++; return { resultCode: 1 }; },
+    } as unknown as Harness;
+    const tick = { stepTicks: async () => ({ milestones: [
+        { name: 'stepped', details: { requested: 21, completed: 21 } },
+    ] }) } as SessionTick;
+
+    const result = await settleNearbyEntities(h, tick, 0, 64, 0, 32, {
+        maxCleanupPasses: 2, stablePolls: 3, pollMs: 0,
+    });
+
+    assert.equal(result.stable, true);
+    assert.deepEqual(result.entities, []);
+    assert.equal(result.cleanupPasses, 2);
+    assert.equal(killCommands, 3, 'observed arrivals trigger bounded cleanup commands');
+    assert.equal(queries, 7, 'a late arrival resets the consecutive empty observations');
+});
+
+test('house entity settling remains failed when entities persist through bounded cleanup', async () => {
+    const h = {
+        entitiesAround: async () => [{ typeId: 'minecraft:squid' }],
+        command: async () => ({ resultCode: 1 }),
+    } as unknown as Harness;
+    const tick = { stepTicks: async () => ({ milestones: [
+        { name: 'stepped', details: { requested: 21, completed: 21 } },
+    ] }) } as SessionTick;
+
+    const result = await settleNearbyEntities(h, tick, 0, 64, 0, 32, {
+        maxCleanupPasses: 1, stablePolls: 2, pollMs: 0,
+    });
+
+    assert.equal(result.stable, false);
+    assert.deepEqual(result.entities, [{ typeId: 'minecraft:squid' }]);
+    assert.equal(result.cleanupPasses, 1);
+});
+
+test('charter requires gamerule application but tolerates idempotent no-ops', async () => {
+    const rejectedCommands: string[] = [];
+    const rejectedHarness = {
+        command: async (command: string) => {
+            rejectedCommands.push(command);
+            if (command.startsWith('gamerule ')) throw new Error('invalid gamerule');
+        },
+    } as unknown as Harness;
+    await assert.rejects(applyCharter(rejectedHarness, () => {}), /invalid gamerule/);
+    assert.ok(rejectedCommands.at(-1)?.startsWith('gamerule '));
+
+    const advisories: string[] = [];
+    const idempotentHarness = {
+        command: async (command: string) => {
+            if (command === 'difficulty peaceful'
+                || command === 'kill @e[type=!minecraft:player]') {
+                throw new Error('already in requested state');
+            }
+        },
+        dayTime: async () => 6000,
+    } as unknown as Harness;
+    await applyCharter(idempotentHarness, message => advisories.push(message));
+    assert.equal(advisories.length, 2);
+});
 
 function image(width: number, height: number,
                fill: [number, number, number, number]): RgbaImage {
@@ -164,4 +428,100 @@ test('maze: legs group into same-yaw runs within the 64-leg contract', () => {
     }
     const cells = legs.reduce((s, l) => s + l.cells, 0);
     assert.equal(cells, bfsPath(MAP).length - 1);
+});
+
+test('input mutations acquire and reuse a 300-second control lease', async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: { path: string; body: any }[] = [];
+    let acquisitions = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input));
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+        requests.push({ path: url.pathname, body });
+        let result: any;
+        let status = 200;
+        if (url.pathname === '/api/v1/client/control/lease' && body.leaseId) {
+            status = 409;
+            result = { error: { code: 'LEASE_REQUIRED', message: 'lease expired' } };
+        } else if (url.pathname === '/api/v1/client/control/lease') {
+            acquisitions++;
+            result = {
+                leaseId: `input-lease-${acquisitions}`,
+                expiresAtEpochMs: Date.now() + (acquisitions === 1 ? 5_000 : 300_000),
+            };
+        } else {
+            result = { accepted: true };
+        }
+        return new Response(JSON.stringify(result), {
+            status, headers: { 'Content-Type': 'application/json' },
+        });
+    }) as typeof fetch;
+    try {
+        const h = new Harness('http://127.0.0.1:1', 'test-token');
+        await h.holdKey(69, 1);
+        await h.clickScreen(10, 20);
+        await h.post('/api/v1/client/worlds/load', { levelId: 'world' });
+        await h.clickInventory(3);
+        await h.moveWaypoints([{ yaw: 90, pitch: 0, ticks: 20 }]);
+        await h.captureRenderedTooltip(4);
+
+        const leases = requests.filter(r => r.path === '/api/v1/client/control/lease');
+        assert.equal(leases.length, 5);
+        assert.deepEqual(leases[0].body, { ttlSeconds: 300 });
+        assert.deepEqual(leases[1].body, { ttlSeconds: 300, leaseId: 'input-lease-1' });
+        assert.deepEqual(leases[2].body, { ttlSeconds: 300 });
+        assert.deepEqual(leases[3].body, { ttlSeconds: 300, leaseId: 'input-lease-2' });
+        assert.deepEqual(leases[4].body, { ttlSeconds: 300 });
+        const mutations = requests.filter(r => ['/api/v1/client/actions/hold-key',
+            '/api/v1/client/actions/click', '/api/v1/client/inventory/click',
+            '/api/v1/client/movement/waypoints',
+            '/api/v1/client/inventory/tooltip-rendered'].includes(r.path));
+        assert.equal(mutations.length, 5);
+        assert.deepEqual(mutations.map(r => r.body.leaseId), [
+            'input-lease-1', 'input-lease-2', 'input-lease-3', 'input-lease-3', 'input-lease-3',
+        ]);
+        assert.equal(mutations.filter(r => r.path.endsWith('/hold-key')).length, 1,
+            'a failed lease renewal must not replay the input mutation');
+        assert.equal(mutations.find(r => r.path.endsWith('/inventory/click'))?.body.executionMode,
+            'client-logic');
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test('world transitions revalidate and reuse a still-held input lease', async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: { path: string; body: any }[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input));
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+        requests.push({ path: url.pathname, body });
+        let result: any;
+        if (url.pathname === '/api/v1/client/control/lease') {
+            result = body.leaseId
+                ? { leaseId: body.leaseId, expiresAtEpochMs: Date.now() + 300_000 }
+                : { leaseId: 'kept-lease', expiresAtEpochMs: Date.now() + 300_000 };
+        } else {
+            result = { accepted: true };
+        }
+        return new Response(JSON.stringify(result), {
+            status: 200, headers: { 'Content-Type': 'application/json' },
+        });
+    }) as typeof fetch;
+    try {
+        const h = new Harness('http://127.0.0.1:1', 'test-token');
+        await h.holdKey(69, 1);
+        await h.post('/api/v1/client/worlds/load', { levelId: 'world' });
+        await h.clickInventory(3);
+        const leases = requests.filter(r => r.path === '/api/v1/client/control/lease');
+        assert.deepEqual(leases.map(r => r.body), [
+            { ttlSeconds: 300 },
+            { ttlSeconds: 300, leaseId: 'kept-lease' },
+        ]);
+        const actions = requests.filter(r => r.path.endsWith('/hold-key')
+            || r.path.endsWith('/inventory/click'));
+        assert.deepEqual(actions.map(r => r.body.leaseId), ['kept-lease', 'kept-lease']);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
 });

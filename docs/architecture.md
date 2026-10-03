@@ -90,24 +90,45 @@ MapiRuntime ── owns ──► MapiServicesImpl (thread-safe registry)
 
 Rules baked into this flow:
 
-- The tick thread is never blocked by HTTP work; snapshots use a bounded
+- The tick thread is never blocked by HTTP work; status snapshots use a bounded
   500 ms wait (`MapiRuntime.SNAPSHOT_WAIT_MS`).
 - The HTTP worker never touches live game objects directly; it only submits
   the snapshot task and waits with a bound.
-- HTTP starts on server start and stops on server stop (integrated servers
-  included), so repeated sessions and port conflicts are handled without
-  crashing the game.
+- HTTP follows process availability: dedicated-server sessions start and
+  stop it with the server, while clients retain it at the main menu across
+  integrated-world unloads. World-scoped work is invalidated separately.
 
 ## Client-only code
 
-There is none. Both entrypoints are `environment: "*"`/`side=BOTH`. If
-client-only code is ever added, it must live in a separate source set or
-module that dedicated servers never load, per the loaders' documented
-mechanisms (`loom.splitEnvironmentSourceSets()` on Fabric,
-`net.neoforged.api.distmarker.Dist` guards on NeoForge).
+Client capabilities exist in both loader artifacts. Fabric isolates them in
+`src/client/java` with `loom.splitEnvironmentSourceSets()`. NeoForge keeps
+client classes in its client package and initializes the bridge only through
+Dist-guarded client registration. Dedicated servers must never initialize
+those classes. Shared transport and scheduling remain free of Minecraft
+imports; `ClientBridge` and `ServerBridge` expose loader-neutral backend seams.
+
+## Current runtime services
+
+`MapiRuntime` owns jobs, leases, events, clocks, world lifecycle, retained
+snapshots, and bounded logs. HTTP routes call shared services, which arrange
+server/client thread dispatch through the bridges. Input holds run their wait
+loop off the client thread and dispatch individual input changes onto it.
+The SDKs and runner use the public HTTP contract, with no internal dependency.
 
 ## Extension points for growth
 
 - New loader: add a module implementing `MapiPlatform`, keep `common` intact.
 - New endpoint: `HttpApiServer.route()` + tests + `docs/openapi.yaml`.
 - New public API: `api` interfaces + `MapiRuntime` + `docs/api.md`.
+
+## Client-thread call cancellation
+
+Client bridges dispatch calls as `FutureTask` instances and wait for at most
+five seconds. Ordinary calls are cancelled on timeout or interruption, which
+prevents a supplier that has not started from running when its queued task is
+later drained. If the supplier has already started, cancellation cannot roll
+back game-state changes already performed; a timeout only stops the caller
+from waiting for its result. Cleanup calls use a separate path that leaves the
+task scheduled after timeout or interruption, allowing held input to be
+released when the client thread resumes. The caller still receives
+`SERVER_BUSY`; completion may happen later.

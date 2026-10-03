@@ -66,7 +66,7 @@ export const scenario: Scenario = {
             updateBaselines: ctx.updateBaselines,
         });
 
-        await prepareStage(h, CX, 0);
+        await prepareStage(h, CX, 0, ctx.tick);
         await h.command(`fill ${CX - 3} 65 0 ${CX + 3} 68 0 stone_bricks`);
         await hideHud(h);
 

@@ -1,5 +1,7 @@
 package dev.example.mapi.neoforge;
 
+import dev.example.mapi.internal.problem.ProblemCode;
+import dev.example.mapi.internal.problem.ProblemException;
 import dev.example.mapi.internal.tick.TickControlBackend;
 import java.util.Optional;
 import net.minecraft.server.MinecraftServer;
@@ -27,7 +29,7 @@ final class NeoForgeTickControlBackend implements TickControlBackend {
     public State state() {
         ServerTickRateManager manager = manager();
         return new State(manager.isFrozen(), manager.isSprinting(), manager.tickrate(),
-                server.getTickCount(), Optional.empty());
+                server.getTickCount(), Optional.empty(), manager.frozenTicksToRun());
     }
 
     @Override
@@ -53,28 +55,12 @@ final class NeoForgeTickControlBackend implements TickControlBackend {
         long before = server.getTickCount();
         boolean accepted = manager().stepGameIfPaused(ticks);
         if (!accepted) {
-            return new StepResult(ticks, 0, before);
+            throw new ProblemException(ProblemCode.SERVER_PAUSED,
+                    "tick step was not accepted; the server must be frozen and have no active step");
         }
-        // 26.2 stepping advances the count over subsequent frames — poll
-        // briefly. Safe to sleep on the server thread here: the tick loop is
-        // frozen, only step frames run.
-        long deadline = System.currentTimeMillis() + 2000;
-        long after = before;
-        while (System.currentTimeMillis() < deadline) {
-            after = server.getTickCount();
-            if (after - before >= ticks) {
-                break;
-            }
-            try {
-                Thread.sleep(25);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                break;
-            }
-        }
-        after = server.getTickCount();
-        int completed = (int) Math.max(0, Math.min(ticks, after - before));
-        return new StepResult(ticks, completed, after);
+        // The manager consumes this request on subsequent server frames. Never
+        // wait here: this method runs on the server thread that must advance.
+        return new StepResult(ticks, 0, before);
     }
 
     @Override

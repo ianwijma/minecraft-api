@@ -61,6 +61,30 @@ public final class ActionDispatchService {
      */
     public Map<String, Object> holdKey(ActionRequest request,
             java.util.Set<Scope> grantedScopes) throws Exception {
+        return holdKey(request, grantedScopes, () -> {});
+    }
+
+    /**
+     * Dispatches a hold with ownership checks at dispatch and polling boundaries.
+     *
+     * @param request action request
+     * @param grantedScopes caller scopes
+     * @param requireControl check that throws when control has expired or been revoked
+     * @return the action receipt
+     * @throws Exception when dispatch or the bounded hold fails
+     */
+    public Map<String, Object> holdKey(ActionRequest request,
+            java.util.Set<Scope> grantedScopes, Runnable requireControl) throws Exception {
+        Objects.requireNonNull(requireControl, "requireControl");
+        var input = bridge.input().orElseThrow(() -> new ProblemException(
+                ProblemCode.CAPABILITY_UNAVAILABLE, "input backend unavailable"));
+        synchronized (input) {
+            return holdKeyWithControl(request, grantedScopes, requireControl);
+        }
+    }
+
+    private Map<String, Object> holdKeyWithControl(ActionRequest request,
+            java.util.Set<Scope> grantedScopes, Runnable requireControl) throws Exception {
         Objects.requireNonNull(request, "request");
         var descriptor = operations.find("client.actions.hold-key").orElseThrow();
         var input = bridge.input().orElseThrow(() -> new ProblemException(
@@ -99,6 +123,7 @@ public final class ActionDispatchService {
                         public void down(int keyCode) {
                             try {
                                 bridge.onClientThread(() -> {
+                                    requireControl.run();
                                     input.pressKey(keyCode);
                                     return null;
                                 });
@@ -112,7 +137,7 @@ public final class ActionDispatchService {
                         @Override
                         public void up(int keyCode) {
                             try {
-                                bridge.onClientThread(() -> {
+                                bridge.onClientThreadCleanup(() -> {
                                     input.releaseKey(keyCode);
                                     return null;
                                 });
@@ -122,7 +147,7 @@ public final class ActionDispatchService {
                                 throw new IllegalStateException(e);
                             }
                         }
-                    }, request.keyCode(), request.ticks(), deadline);
+                    }, request.keyCode(), request.ticks(), deadline, requireControl);
             receipt = ActionReceipt.builder(UUID.randomUUID().toString(),
                             UUID.randomUUID().toString(), ExecutionMode.RAW_INPUT)
                     .backendId(input.backendId())

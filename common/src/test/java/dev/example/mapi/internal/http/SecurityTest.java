@@ -151,6 +151,103 @@ class SecurityTest {
             assertEquals(403, response.statusCode(), path);
             assertTrue(response.body().contains("INSUFFICIENT_SCOPE"), path + ": " + response.body());
         }
+        HttpResponse<String> window = send("POST", "/api/v1/client/window/set-windowed",
+                "Bearer " + TOKEN, "{\"width\":1280,\"height\":720}");
+        assertEquals(503, window.statusCode(),
+                "client:settings grant passes authorization and reaches the unavailable client capability");
+        assertTrue(window.body().contains("CAPABILITY_UNAVAILABLE"), window.body());
+    }
+
+    @Test
+    void windowMutationsRequireClientSettingsScope() throws Exception {
+        platform = new TestPlatform(LOG);
+        runtime = new MapiRuntime(platform);
+        server = new HttpApiServer(new MapiConfig(true, freePort(), TOKEN, 10_000,
+                        java.util.Set.of(dev.example.mapi.internal.operation.Scope.SERVER_TICK_CONTROL)),
+                runtime, LOG);
+        assertTrue(server.start());
+        port = server.boundAddress().getPort();
+        HttpResponse<String> window = send("POST", "/api/v1/client/window/set-windowed",
+                "Bearer " + TOKEN, "{\"width\":1280,\"height\":720}");
+        assertEquals(403, window.statusCode());
+        assertTrue(window.body().contains("client:settings"), window.body());
+    }
+
+    @Test
+    void operationLeasesAreValidatedBeforeCapabilityDispatch() throws Exception {
+        startServer();
+        HttpResponse<String> response = send("POST", "/api/v1/server/ticks/freeze",
+                "Bearer " + TOKEN, "{\"leaseId\":\"not-held\"}");
+        assertEquals(409, response.statusCode());
+        assertTrue(response.body().contains("LEASE_REQUIRED"), response.body());
+    }
+
+    @Test
+    void inventoryClickRequiresClientLogicModeAndInputLease() throws Exception {
+        startServer();
+        HttpResponse<String> unsupported = send("POST", "/api/v1/client/inventory/click",
+                "Bearer " + TOKEN,
+                "{\"slot\":1,\"executionMode\":\"raw-input\"}");
+        assertEquals(422, unsupported.statusCode());
+        assertTrue(unsupported.body().contains("EXECUTION_MODE_UNSUPPORTED"), unsupported.body());
+
+        HttpResponse<String> noLease = send("POST", "/api/v1/client/inventory/click",
+                "Bearer " + TOKEN,
+                "{\"slot\":1,\"executionMode\":\"client-logic\"}");
+        assertEquals(409, noLease.statusCode());
+        assertTrue(noLease.body().contains("LEASE_REQUIRED"), noLease.body());
+
+        HttpResponse<String> acquired = send("POST", "/api/v1/client/control/lease",
+                "Bearer " + TOKEN, "{}");
+        assertEquals(200, acquired.statusCode(), acquired.body());
+        var leaseId = java.util.regex.Pattern.compile("\"leaseId\":\"([^\"]+)\"")
+                .matcher(acquired.body());
+        assertTrue(leaseId.find(), acquired.body());
+        HttpResponse<String> click = send("POST", "/api/v1/client/inventory/click",
+                "Bearer " + TOKEN, "{\"slot\":1,\"executionMode\":\"client-logic\",\"leaseId\":\""
+                        + leaseId.group(1) + "\"}");
+        assertEquals(503, click.statusCode(), "valid mode and lease reach the unavailable platform capability");
+        assertTrue(click.body().contains("CAPABILITY_UNAVAILABLE"), click.body());
+    }
+
+    @Test
+    void inputLeaseCanRenewOnlyItsCurrentLeaseId() throws Exception {
+        startServer();
+        HttpResponse<String> acquired = send("POST", "/api/v1/client/control/lease",
+                "Bearer " + TOKEN, "{\"ttlSeconds\":60}");
+        assertEquals(200, acquired.statusCode(), acquired.body());
+        String leaseId = jsonStringField(acquired.body(), "leaseId");
+        long initialExpiry = jsonLongField(acquired.body(), "expiresAtEpochMs");
+
+        HttpResponse<String> renewed = send("POST", "/api/v1/client/control/lease",
+                "Bearer " + TOKEN, "{\"leaseId\":\"" + leaseId + "\",\"ttlSeconds\":300}");
+        assertEquals(200, renewed.statusCode(), renewed.body());
+        assertEquals(leaseId, jsonStringField(renewed.body(), "leaseId"));
+        assertTrue(jsonLongField(renewed.body(), "expiresAtEpochMs") > initialExpiry,
+                "renewal extends expiry while preserving the lease ID");
+
+        runtime.leases().release(runtime.leases().holderOf("input").orElseThrow());
+        var otherLease = runtime.leases().acquire("input", "test-other-owner", 60_000);
+        HttpResponse<String> staleRenewal = send("POST", "/api/v1/client/control/lease",
+                "Bearer " + TOKEN, "{\"leaseId\":\"" + leaseId + "\",\"ttlSeconds\":300}");
+        assertEquals(409, staleRenewal.statusCode());
+        assertTrue(staleRenewal.body().contains("LEASE_REQUIRED"), staleRenewal.body());
+        assertEquals(otherLease.id(), runtime.leases().holderOf("input").orElseThrow().id(),
+                "stale ID must not renew or replace another current lease");
+    }
+
+    private static String jsonStringField(String json, String field) {
+        var matcher = java.util.regex.Pattern.compile("\"" + field + "\":\"([^\"]+)\"")
+                .matcher(json);
+        assertTrue(matcher.find(), json);
+        return matcher.group(1);
+    }
+
+    private static long jsonLongField(String json, String field) {
+        var matcher = java.util.regex.Pattern.compile("\"" + field + "\":([0-9]+)")
+                .matcher(json);
+        assertTrue(matcher.find(), json);
+        return Long.parseLong(matcher.group(1));
     }
 
     @Test

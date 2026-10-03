@@ -40,3 +40,34 @@ The following must be pinned in chunk 0.6/8.1 before any benchmark number is
 recorded: reference hardware, JVM build, rendering stack, fixtures, and
 workload definitions. Until pinned, benchmark gates have **no** measured
 values — the table above defines targets only.
+
+## Implemented bounded checks
+
+`MAPI_SMOKE_LAUNCH_MODE=release scripts/server-smoke.sh <fabric|neoforge>`
+runs a disposable dedicated server from the release task and checks that the
+live `/api/v1/info` JAR SHA-256 matches the versioned distributable. Fabric
+uses Loom's production server runtime; NeoForge uses its pinned ModDevGradle
+runtime with MAPI loaded only from the distributable JAR.
+It also checks unauthenticated and authenticated responses for health, info,
+and server status. The passing Fabric and NeoForge live runs are recorded
+under ignored `build/smoke/`; subsequent runs also write machine-readable JSON
+under `build/acceptance/server-smoke/<loader>/`.
+
+`scripts/acceptance/release-client-smoke.sh <fabric|neoforge>` is a bounded
+packaged-client smoke check. It runs the E2E `house` scenario and verifies
+runtime JAR SHA-256 provenance. Each invocation writes its first-attempt
+checks to a unique directory under `build/acceptance/release-client/<loader>/`.
+This covers the `house` integrated-server functional subset; first-use images
+create environment baselines and are not compared with reviewed, pinned
+visual references. The full packaged-artifact suite, 300-run reliability,
+100-cycle leak, and parallel-isolation campaigns remain unimplemented; their
+stable `run-gate.sh` entries continue to fail with `NOT IMPLEMENTED`.
+
+`scripts/acceptance/connection-policy-smoke.sh <fabric|neoforge>` exercises
+the live resolver guard in two disposable release clients: hostname-only
+allowlisting must block the final numeric loopback address, while an exact
+loopback IP/port entry must reach a passive sink. It records per-case
+first-attempt E2E reports and an aggregate summary under
+`build/acceptance/connection-policy/`. The positive case proves admission to
+the TCP socket; it does not assert a complete multiplayer login or exercise
+SRV redirects.

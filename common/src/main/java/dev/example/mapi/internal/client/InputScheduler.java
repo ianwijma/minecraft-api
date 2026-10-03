@@ -52,35 +52,56 @@ public final class InputScheduler {
      */
     public HoldResult holdKey(Dispatch dispatch, int keyCode, int ticks, long deadlineEpochMs)
             throws InterruptedException {
+        return holdKey(dispatch, keyCode, ticks, deadlineEpochMs, () -> {});
+    }
+
+    /**
+     * Holds a key while control ownership remains valid.
+     *
+     * @param dispatch key dispatch callbacks
+     * @param keyCode key to hold
+     * @param ticks requested hold length, 1..3600
+     * @param deadlineEpochMs wall-clock deadline
+     * @param requireControl ownership check before dispatch and throughout the hold
+     * @return the observed boundaries and held count
+     * @throws InterruptedException when interrupted, after releasing the key
+     */
+    public HoldResult holdKey(Dispatch dispatch, int keyCode, int ticks, long deadlineEpochMs,
+            Runnable requireControl) throws InterruptedException {
         if (ticks < 1 || ticks > 3600) {
             throw new ProblemException(ProblemCode.BAD_REQUEST, "ticks must be between 1 and 3600");
         }
-        dispatch.down(keyCode);
-        long startBoundary = clientTick.getAsLong();
+        java.util.Objects.requireNonNull(requireControl, "requireControl");
+        long remainingMs = Math.max(0, deadlineEpochMs - System.currentTimeMillis());
+        long budgetNanos = java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(remainingMs);
+        long startedNanos = System.nanoTime();
+        requireControl.run();
+        if (remainingMs == 0) {
+            throw new ProblemException(ProblemCode.DEADLINE_EXCEEDED,
+                    "deadline elapsed before input dispatch");
+        }
         try {
+            dispatch.down(keyCode);
+            long startBoundary = clientTick.getAsLong();
             int held = 0;
             long last = startBoundary;
             while (held < ticks) {
+                requireControl.run();
                 long now = clientTick.getAsLong();
                 if (now != last) {
                     held++;
                     last = now;
                 }
-                if (System.currentTimeMillis() >= deadlineEpochMs) {
+                if (System.nanoTime() - startedNanos >= budgetNanos) {
                     throw new ProblemException(ProblemCode.DEADLINE_EXCEEDED,
                             "client ticks did not advance within the deadline",
                             java.util.Map.of("heldTicks", held, "requestedTicks", ticks));
                 }
                 Thread.sleep(5);
             }
-            dispatch.up(keyCode);
             return new HoldResult(keyCode, ticks, held, startBoundary, clientTick.getAsLong());
-        } catch (ProblemException e) {
+        } finally {
             dispatch.up(keyCode);
-            throw e;
-        } catch (RuntimeException e) {
-            dispatch.up(keyCode);
-            throw e;
         }
     }
 }

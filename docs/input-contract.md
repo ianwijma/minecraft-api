@@ -42,3 +42,20 @@
   screen captured through the full stack.
 - `POST /api/v1/client/actions/hold-key` exposes the first action; window
   and screenshot read endpoints exist behind the same capability gate.
+
+## Control ownership and cleanup
+
+Client input and movement HTTP requests require the exclusive `input` lease
+and present its `leaseId`. Control is checked at client-thread dispatch and
+while waiting for ticks. Expiry or revocation aborts a hold and releases its
+synthetic key before reporting failure, including when ticks have stalled.
+Long input actions serialize on the shared backend so cleanup from an older
+action completes before a later action presses a key. Interruption and elapsed
+deadlines also release input; an already elapsed deadline prevents key-down.
+Both loaders retain one input backend per client bridge and register its tick
+counter once during client setup. Holds and movement observe that same counter
+and share the same synthetic held-key state.
+
+Inventory clicks use `client-logic` execution mode. Dispatch acceptance is
+reported separately from server confirmation; callers must observe a
+postcondition before claiming a verified server effect.

@@ -32,6 +32,8 @@ runs that is `<runDir>/config/`. Environment variables override the file.
 | `http.token` | `MAPI_HTTP_TOKEN` | generated | bearer token (auto-generated on first run; env wins). **Empty = auth disabled** (dangerous; loud warning) |
 | `http.rateLimitPerMinute` | `MAPI_HTTP_RATE_LIMIT_PER_MINUTE` | `60` | per-client request budget |
 | `http.scopes` | `MAPI_HTTP_SCOPES` | all | comma-separated granted scopes (spec §14); absent/blank grants the full set |
+| `client.connect.allowlist` | `MAPI_CLIENT_CONNECT_ALLOWLIST` | empty (deny all) | comma-separated exact requested hosts and explicit final IP:port approvals; IPv6 literals use brackets |
+| `server.lan.enabled` | `MAPI_SERVER_LAN_ENABLED` | `false` | allow LAN publication |
 
 The bind address is fixed to loopback and is not configurable.
 
@@ -54,14 +56,21 @@ unknown fields in responses too).
 
 ```json
 {"protocolVersion":1,"name":"mapi","version":"0.1.0","apiVersion":"0.1.0",
- "minecraftVersion":"26.2","platform":"fabric","platformVersion":"0.19.5"}
+ "minecraftVersion":"26.2","platform":"fabric","platformVersion":"0.19.5",
+ "runtimeArtifact":{"kind":"jar","sha256":"<artifact digest>"}}
 ```
+
+`runtimeArtifact.kind` is `jar`, `directory`, or `unavailable`. A `sha256`
+field is present only when the runtime classes came from a readable regular
+JAR; it identifies the loaded artifact without exposing its filesystem path.
 
 ### `GET /api/v1/operations`
 
 The operation metadata registry (spec §14): every POST operation with its
 `requiredScopes`, `destructive`, `sideEffectClass`, `requiresLease`, and
-`supportedExecutionModes`.
+`supportedExecutionModes`. Each OpenAPI POST operation includes an
+`x-mapi-operation` reference to this registry. The HTTP router resolves that
+metadata and authorizes the request before invoking its handler.
 
 ### `GET /api/v1/server/status`
 
@@ -94,6 +103,13 @@ World-session and capability status: `phase`
 bridge id, sorted `capabilities`, booleans `tickControl`/`worldQueries`/
 `commands`, and the named-clock registry (`clocks`, spec §4.1).
 
+`POST /api/v1/client/worlds/create` validates the world id and options before
+admission, then queues vanilla world initialization on the client thread and
+returns **202** without waiting for data loading to finish. Poll
+`GET /api/v1/server/world` for `phase: ACTIVE`. A creation failure after admission is reported by the
+game's normal error screen/logging; the initial 202 confirms queue admission,
+not successful world creation.
+
 ### `GET /api/v1/server/ticks`
 
 Tick-control state: `available:false` when the bridge lacks tick control;
@@ -117,7 +133,48 @@ Tick-freeze limitation (spec §5): vanilla's freeze excludes players and
 ridden entities — freezing is not freezing all game state, and `stepAndObserve`
 is a scoped synchronization primitive, not global determinism.
 
-Every tick op without a valid `leaseId` → **409** `LEASE_REQUIRED`.
+Step jobs complete only after vanilla reports that all requested frozen ticks
+have run. The server-thread request is admitted without waiting there; the job
+worker polls the remaining-step counter. Cancellation, an explicit stop,
+unfreezing, lease loss, or the job deadline stops an incomplete step and does
+not report it as successful.
+
+Every tick operation validates that `leaseId` is the current holder of the
+`tick-control` topic before handler dispatch. LAN publish and unpublish also
+require this lease and recheck it on the client thread.
+
+### Client input control lease
+
+`POST /api/v1/client/control/lease` with optional `{"ttlSeconds":1..300}`
+(default 60) acquires the exclusive `input` lease. To renew it before expiry,
+include its current `leaseId` in the same request; the response preserves the
+ID and returns the extended expiry. A stale or non-current ID returns **409**
+`LEASE_REQUIRED`. Omitting `leaseId` while a lease is held returns **409**
+`LEASE_HELD`. A supplied empty, unknown, revoked, or non-current ID is rejected
+with `LEASE_REQUIRED` and never falls back to acquisition. A lease is required by
+`client.actions.hold-key`, `client.movement.waypoints`, screen clicks,
+rendered-tooltip capture, and inventory clicks. Each action checks ownership
+again on the client dispatch path, so queued work cannot outlive its lease.
+Input actions release pressed keys when their lease expires.
+
+Inventory clicks accept only `executionMode: "client-logic"`. A successful
+response means the click was dispatched; it does not confirm that the server
+applied the requested inventory change (`effectVerified: false`).
+
+Window mutations require the `client:settings` scope. Direct connections
+require `client:connect`, the current input lease, and the configured
+`client.connect.allowlist`. API-driven screen connections carry that policy
+through vanilla's resolver thread. The requested hostname and every DNS/SRV
+redirect target must have an exact allowlist entry. The final numeric address
+and exact port must independently have a literal IP entry, such as
+`play.example.net, 203.0.113.7:25565`; a hostname entry alone does not approve
+its resolved destinations. IPv6 literal entries use brackets, for example
+`[2001:db8::7]:25565`. Wildcards are not supported. Manual joins have no API
+authorization context and retain vanilla behavior.
+The API request's input lease is checked again when a connection starts and at
+each resolver and destination check, so expiration or revocation blocks a later
+redirect or server transfer.
+
 Jobs are inspectable via `GET /api/v1/jobs/{id}` (state, milestones,
 failure code) and terminate with `WORLD_UNLOADED` when their world session
 ends.
@@ -255,7 +312,7 @@ python3 scripts/mapi-client.py health --base http://127.0.0.1:25586
 
 ## What this API will never do
 
-No endpoints for command execution, file access, world mutation, player
-identities, chat, or source-code editing. Coding-agent interaction uses the
+No endpoints for file access, source-code editing, shell execution,
+reflection, or player identities/chat. Coding-agent interaction uses the
 developer's own authorized tools, never the mod's HTTP surface
 (`docs/llm-workflow.md`).

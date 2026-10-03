@@ -20,5 +20,11 @@
     "minecraft": "~26.2",
     "java": ">=25",
     "fabric-api": ">=0.160.0+26.2"
-  }
+  },
+  "mixins": [
+    {
+      "config": "mapi-fabric.client.mixins.json",
+      "environment": "client"
+    }
+  ]
 }

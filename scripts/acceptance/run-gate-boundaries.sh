@@ -20,10 +20,14 @@ for i in $(seq 1 "$ATTEMPTS"); do
   PX=$(echo "$BEFORE" | python3 -c "import json,sys; print(json.load(sys.stdin)['players'][0]['x'])" 2>/dev/null || echo "9999")
   PZ=$(echo "$BEFORE" | python3 -c "import json,sys; print(json.load(sys.stdin)['players'][0]['z'])" 2>/dev/null || echo "9999")
   sleep 1
+  LEASE=$(curl --fail -s --max-time 5 -X POST -H "$AUTH" -H "Content-Type: application/json" \
+    "$BASE/api/v1/client/control/lease" -d '{"owner":"boundary-probe","ttlSeconds":5}')
+  LEASE_ID=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["leaseId"])' <<< "$LEASE")
+  MOVE=$(python3 -c 'import json,sys; print(json.dumps({"leaseId":sys.argv[1],"waypoints":[{"yaw":45,"pitch":0,"ticks":10}]}))' "$LEASE_ID")
   # Dispatch a small move
-  curl -s --max-time 5 -X POST -H "$AUTH" -H "Content-Type: application/json" \
+  curl --fail -s --max-time 5 -X POST -H "$AUTH" -H "Content-Type: application/json" \
     "$BASE/api/v1/client/movement/waypoints" \
-    -d '{"waypoints": [{"yaw": 45, "pitch": 0, "ticks": 10}]}' > /dev/null 2>&1 || true
+    -d "$MOVE" > /dev/null
   sleep 3
   AFTER=$(curl -s --max-time 5 -H "$AUTH" "$BASE/api/v1/server/queries/players?max=1" 2>/dev/null)
   AX=$(echo "$AFTER" | python3 -c "import json,sys; print(json.load(sys.stdin)['players'][0]['x'])" 2>/dev/null || echo "0")

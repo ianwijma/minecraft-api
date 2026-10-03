@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -14,7 +15,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -33,6 +36,8 @@ public final class JobManager {
 
     /** Default number of terminal job views retained for inspection. */
     public static final int DEFAULT_RETENTION = 256;
+    /** Maximum number of submitted jobs waiting behind the serial worker. */
+    public static final int DEFAULT_MAX_PENDING = 128;
 
     private static final long WATCHDOG_PERIOD_MS = 50;
 
@@ -53,15 +58,29 @@ public final class JobManager {
      * @param completedRetention how many terminal job views are retained
      */
     public JobManager(int completedRetention) {
+        this(completedRetention, DEFAULT_MAX_PENDING);
+    }
+
+    /**
+     * Creates a manager with explicit completion retention and queue capacity.
+     *
+     * @param completedRetention how many terminal job views are retained
+     * @param maxPending maximum number of queued jobs, positive
+     */
+    public JobManager(int completedRetention, int maxPending) {
         if (completedRetention < 1) {
             throw new IllegalArgumentException("retention must be at least 1");
         }
+        if (maxPending < 1) {
+            throw new IllegalArgumentException("maxPending must be at least 1");
+        }
         this.retention = completedRetention;
-        this.worker = Executors.newSingleThreadExecutor(task -> {
+        this.worker = new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
+                new ArrayBlockingQueue<>(maxPending), task -> {
             Thread thread = new Thread(task, "mapi-jobs");
             thread.setDaemon(true);
             return thread;
-        });
+        }, new ThreadPoolExecutor.AbortPolicy());
         this.watchdog = Executors.newSingleThreadScheduledExecutor(task -> {
             Thread thread = new Thread(task, "mapi-jobs-watchdog");
             thread.setDaemon(true);
@@ -93,7 +112,12 @@ public final class JobManager {
         Entry entry = new Entry(id, kind, worldSessionId == null ? Optional.empty() : worldSessionId,
                 deadlineEpochMs, body);
         jobs.put(id, entry);
-        entry.future = worker.submit(() -> run(entry));
+        try {
+            entry.future = worker.submit(() -> run(entry));
+        } catch (RejectedExecutionException e) {
+            jobs.remove(id, entry);
+            throw new ProblemException(ProblemCode.SERVER_BUSY, "job queue is full or shutting down");
+        }
         return new JobHandle(this, id);
     }
 
@@ -194,9 +218,8 @@ public final class JobManager {
 
     private void watchdogTick() {
         try {
-            long now = System.currentTimeMillis();
             for (Entry entry : jobs.values()) {
-                entry.enforceDeadline(now);
+                entry.enforceDeadline();
             }
         } catch (RuntimeException ignored) {
             // The watchdog must never die; next tick retries.
@@ -218,6 +241,7 @@ public final class JobManager {
         private final String kind;
         private final Optional<String> worldSessionId;
         private final long deadlineEpochMs;
+        private final long deadlineAtNanos;
         private final JobBody<?> body;
         private final CountDownLatch done = new CountDownLatch(1);
         private final List<JobView.Milestone> milestones = new CopyOnWriteArrayList<>();
@@ -240,6 +264,11 @@ public final class JobManager {
             this.kind = kind;
             this.worldSessionId = worldSessionId;
             this.deadlineEpochMs = deadlineEpochMs;
+            long remainingMs = deadlineEpochMs <= 0
+                    ? Long.MAX_VALUE
+                    : Math.max(0, deadlineEpochMs - System.currentTimeMillis());
+            this.deadlineAtNanos = deadlineEpochMs <= 0 ? Long.MAX_VALUE
+                    : System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(remainingMs);
             this.body = body;
         }
 
@@ -252,18 +281,23 @@ public final class JobManager {
             return true;
         }
 
-        private void enforceDeadline(long nowEpochMs) {
-            if (deadlineEpochMs <= 0 || nowEpochMs < deadlineEpochMs) {
+        private synchronized void enforceDeadline() {
+            if (deadlineEpochMs <= 0 || System.nanoTime() < deadlineAtNanos) {
                 return;
             }
-            JobState current = snapshot().state();
-            if (current == JobState.PENDING) {
+            if (state == JobState.PENDING) {
                 deadlineMissed = true;
+                cancelRequested = true;
                 if (future != null) {
                     future.cancel(false);
                 }
-                finalizeFailure(ProblemCode.DEADLINE_EXCEEDED, "deadline elapsed before the job started");
-            } else if (current == JobState.RUNNING) {
+                state = JobState.FAILED;
+                failureCode = ProblemCode.DEADLINE_EXCEEDED;
+                failureMessage = "deadline elapsed before the job started";
+                endedAtEpochMs = System.currentTimeMillis();
+                done.countDown();
+                recordCompletion(this);
+            } else if (state == JobState.RUNNING) {
                 deadlineMissed = true;
                 cancelRequested = true;
             }
@@ -283,6 +317,7 @@ public final class JobManager {
                     failureCode = lifecycleCode;
                     endedAtEpochMs = System.currentTimeMillis();
                     done.countDown();
+                    recordCompletion(this);
                     return true;
                 }
                 if (state == JobState.RUNNING) {
@@ -368,7 +403,7 @@ public final class JobManager {
                     if (deadlineEpochMs <= 0) {
                         return Long.MAX_VALUE;
                     }
-                    return Math.max(0, deadlineEpochMs - System.currentTimeMillis());
+                    return Math.max(0, TimeUnit.NANOSECONDS.toMillis(deadlineAtNanos - System.nanoTime()));
                 }
 
                 @Override

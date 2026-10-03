@@ -4,24 +4,27 @@ A Minecraft Java Edition **26.2** mod development repository for the
 "Minecraft API" (MAPI) project, supporting **Fabric** and **NeoForge** from
 one shared codebase.
 
-**What the initial setup implements**
+**Implemented capabilities**
 
-- `common` — a small, documented, loader-neutral **public Java API**
-  (version/platform info, read-only server status snapshots, a thread-safe
-  extension/service registry) plus an optional **local HTTP API**
-  (`GET /api/v1/health`, `/api/v1/info`, `/api/v1/server/status`) that is
-  **disabled by default**, binds to loopback only, and requires a bearer
-  token.
-- `fabric` / `neoforge` — thin entrypoints and platform adapters; each
-  distributable jar contains the shared implementation exactly once with
-  correct loader metadata.
-- `example-consumer` — a consumer example that compiles against the public
-  API only and is excluded from all production jars.
-- Deterministic developer commands, tests (unit + HTTP contract), CI, and
-  LLM-friendly documentation (`AGENTS.md`, `docs/`).
+- `common` provides the loader-neutral public Java API, authenticated local
+  HTTP transport, jobs, leases, events, snapshots, and bounded game operations.
+- `fabric` and `neoforge` provide server and isolated client bridges for tick
+  control, world queries, commands, input, UI/inventory, screenshots, window
+  settings, world management, and connection setup. Capabilities are reported
+  by each running instance; implementation does not imply release acceptance.
+- `sdk` contains Java, Python, and generated TypeScript HTTP clients;
+  `runner` provides out-of-process automation utilities.
+- `e2e` contains the TypeScript visual harness and scenarios.
+  `example-consumer` demonstrates the public Java API and is excluded from mod jars.
 
-It is not a gameplay feature mod, a game-automation framework, or a remote
-coding agent.
+The HTTP API is disabled by default and binds only to loopback. When enabled,
+its mutation endpoints can control the game; configure scopes for the intended
+workload and follow [the security model](docs/security.md).
+
+The approved [product specification](docs/product-spec.md) defines the target
+product. [The execution plan](docs/execution-plan.md) separates implemented
+surfaces from remaining fixture, parity, and release acceptance work. The mod
+works independently of the runner, an LLM, or an IDE.
 
 ## Prerequisites
 

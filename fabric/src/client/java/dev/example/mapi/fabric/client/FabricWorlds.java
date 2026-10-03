@@ -1,19 +1,26 @@
 package dev.example.mapi.fabric.client;
 
 import dev.example.mapi.internal.client.ClientBridge;
+import dev.example.mapi.internal.client.DeferredClientOperation;
 import dev.example.mapi.internal.problem.ProblemCode;
 import dev.example.mapi.internal.problem.ProblemException;
 import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.storage.LevelStorageSource;
 import net.minecraft.world.level.storage.LevelSummary;
+import org.slf4j.LoggerFactory;
 
 /** Fabric worlds backend (list/load/delete over the level storage). */
 final class FabricWorlds implements ClientBridge.WorldsBackend {
+
+    private static final org.slf4j.Logger LOG = LoggerFactory.getLogger("mapi");
+    private final Set<String> pendingCreations = ConcurrentHashMap.newKeySet();
 
     private LevelStorageSource storage() {
         LevelStorageSource storage = Minecraft.getInstance().getLevelSource();
@@ -48,33 +55,45 @@ final class FabricWorlds implements ClientBridge.WorldsBackend {
 
     @Override
     public void createWorld(String levelId, String gamemode, Long seed) throws Exception {
-        if (levelId == null || levelId.isBlank()) {
-            throw new ProblemException(ProblemCode.BAD_REQUEST, "levelId is required");
-        }
-        if (Files.exists(Minecraft.getInstance().gameDirectory.toPath()
-                .resolve("saves").resolve(levelId))) {
-            throw new ProblemException(ProblemCode.BAD_REQUEST,
-                    "a world with this id already exists: " + levelId);
-        }
-        var gameType = gamemodeOf(gamemode == null ? "survival" : gamemode);
-        var settings = new net.minecraft.world.level.LevelSettings(
-                levelId,
-                gameType,
-                net.minecraft.world.level.LevelSettings.DifficultySettings.DEFAULT,
-                false,
-                net.minecraft.world.level.WorldDataConfiguration.DEFAULT);
-        var options = new net.minecraft.world.level.levelgen.WorldOptions(
-                seed == null ? net.minecraft.world.level.levelgen.WorldOptions.randomSeed()
-                        : seed,
-                true, false);
-        Minecraft.getInstance().createWorldOpenFlows().createFreshLevel(levelId,
-                settings, options,
-                registryAccess -> registryAccess.lookupOrThrow(
-                                net.minecraft.core.registries.Registries.WORLD_PRESET)
-                        .getOrThrow(net.minecraft.world.level.levelgen.presets.WorldPresets.NORMAL)
-                        .value()
-                        .createWorldDimensions(),
-                null);
+        Minecraft client = Minecraft.getInstance();
+        DeferredClientOperation.enqueue(() -> {
+            if (levelId == null || levelId.isBlank()) {
+                throw new ProblemException(ProblemCode.BAD_REQUEST, "levelId is required");
+            }
+            if (Files.exists(client.gameDirectory.toPath().resolve("saves").resolve(levelId))) {
+                throw new ProblemException(ProblemCode.BAD_REQUEST,
+                        "a world with this id already exists: " + levelId);
+            }
+            var gameType = gamemodeOf(gamemode == null ? "survival" : gamemode);
+            var settings = new net.minecraft.world.level.LevelSettings(
+                    levelId, gameType,
+                    net.minecraft.world.level.LevelSettings.DifficultySettings.DEFAULT,
+                    false, net.minecraft.world.level.WorldDataConfiguration.DEFAULT);
+            var options = new net.minecraft.world.level.levelgen.WorldOptions(
+                    seed == null ? net.minecraft.world.level.levelgen.WorldOptions.randomSeed()
+                            : seed, true, false);
+            if (!pendingCreations.add(levelId)) {
+                throw new ProblemException(ProblemCode.BAD_REQUEST,
+                        "world creation is already pending for id: " + levelId);
+            }
+            return () -> {
+                try {
+                    client.createWorldOpenFlows().createFreshLevel(levelId,
+                            settings, options,
+                            registryAccess -> registryAccess.lookupOrThrow(
+                                            net.minecraft.core.registries.Registries.WORLD_PRESET)
+                                    .getOrThrow(net.minecraft.world.level.levelgen.presets.WorldPresets.NORMAL)
+                                    .value()
+                                    .createWorldDimensions(),
+                            null);
+                } finally {
+                    pendingCreations.remove(levelId);
+                }
+            };
+        }, client::schedule, failure -> {
+            pendingCreations.remove(levelId);
+            LOG.error("Deferred world creation failed for id {}", levelId, failure);
+        });
     }
 
     @Override

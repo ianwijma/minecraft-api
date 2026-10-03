@@ -22,7 +22,7 @@ import org.slf4j.Logger;
  *   <tr><td>http.token</td><td>MAPI_HTTP_TOKEN</td><td>none</td><td>Bearer token; prefer the env var</td></tr>
  *   <tr><td>http.rateLimitPerMinute</td><td>MAPI_HTTP_RATE_LIMIT_PER_MINUTE</td><td>60</td><td>Requests per client per minute</td></tr>
  *   <tr><td>http.scopes</td><td>MAPI_HTTP_SCOPES</td><td>all</td><td>Comma-separated granted scopes (spec §14); absent/blank grants the full set</td></tr>
- *   <tr><td>client.connect.allowlist</td><td>MAPI_CLIENT_CONNECT_ALLOWLIST</td><td>empty (deny all)</td><td>Comma-separated host[:port] targets for direct connection (spec §9.2)</td></tr>
+ *   <tr><td>client.connect.allowlist</td><td>MAPI_CLIENT_CONNECT_ALLOWLIST</td><td>empty (deny all)</td><td>Exact requested names and explicit final IP:port pins, including bracketed IPv6 (spec §9.2)</td></tr>
  *   <tr><td>server.lan.enabled</td><td>MAPI_SERVER_LAN_ENABLED</td><td>false</td><td>Whether integrated-server LAN publication is permitted (spec §9.3)</td></tr>
  * </table>
  *
@@ -124,8 +124,8 @@ public record MapiConfig(
      * Validates raw resolved values (already merged from the loader-native
      * config source with environment overrides applied) and builds the
      * configuration. This is the single validation entry point shared by
-     * every loader config format; environment variables win over file
-     * values.
+     * every loader config format; environment variables win over file values
+     * for each supported key.
      *
      * @param enabled    whether the HTTP API is enabled
      * @param port       loopback port
@@ -158,6 +158,15 @@ public record MapiConfig(
         String envToken = env.get("MAPI_HTTP_TOKEN");
         if (envToken != null && !envToken.isBlank()) {
             token = envToken;
+        }
+        if (env.containsKey("MAPI_HTTP_SCOPES")) {
+            scopes = readScopes(new Properties(), env, logger);
+        }
+        Properties allowlistValues = new Properties();
+        allowlistValues.setProperty("client.connect.allowlist", String.join(",", allowlist));
+        allowlist = readAllowlist(allowlistValues, env, logger);
+        if (env.containsKey("MAPI_SERVER_LAN_ENABLED")) {
+            lanEnabled = readBooleanText(env.get("MAPI_SERVER_LAN_ENABLED"), "MAPI_SERVER_LAN_ENABLED");
         }
         if (port < 1 || port > 65535) {
             throw new MapiConfigException("http.port must be between 1 and 65535 (got " + port + ")");
@@ -273,9 +282,26 @@ public record MapiConfig(
             if (entry.isEmpty()) {
                 continue;
             }
-            if (!entry.matches("[A-Za-z0-9.\\-]+(:[0-9]{1,5})?")) {
+            if (!entry.matches("(?:[A-Za-z0-9.\\-]+|\\[[0-9A-Fa-f:.]+\\])(:[0-9]{1,5})?")) {
                 throw new MapiConfigException("client.connect.allowlist entry is not host[:port]: '"
                         + entry + "'");
+            }
+            int portSeparator = entry.lastIndexOf(':');
+            if (entry.startsWith("[")) {
+                int closingBracket = entry.indexOf(']');
+                portSeparator = closingBracket >= 0 && closingBracket + 1 < entry.length()
+                        ? closingBracket + 1 : -1;
+            }
+            if (portSeparator >= 0 && portSeparator < entry.length()) {
+                try {
+                    int port = Integer.parseInt(entry.substring(portSeparator + 1));
+                    if (port < 1 || port > 65535) {
+                        throw new NumberFormatException();
+                    }
+                } catch (NumberFormatException e) {
+                    throw new MapiConfigException("client.connect.allowlist port must be 1..65535: '"
+                            + entry + "'");
+                }
             }
             entries.add(entry);
         }

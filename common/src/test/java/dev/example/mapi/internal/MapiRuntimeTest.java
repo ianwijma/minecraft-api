@@ -88,6 +88,44 @@ public class MapiRuntimeTest {
     }
 
     @Test
+    void interruptedServerCallCannotMutateWhenQueueLaterDrains() {
+        TestPlatform platform = new TestPlatform(LOG);
+        MapiRuntime runtime = new MapiRuntime(platform);
+        var queued = new java.util.concurrent.atomic.AtomicReference<Runnable>();
+        AtomicInteger mutations = new AtomicInteger();
+        platform.listener.onServerStarting(new ServerHandle() {
+            @Override
+            public long startedAtEpochMs() {
+                return 1_000L;
+            }
+
+            @Override
+            public void executeOnServerThread(Runnable task) {
+                queued.set(task);
+            }
+
+            @Override
+            public Supplier<RawServerInfo> infoSupplier() {
+                return TestServerHandle.inline().infoSupplier();
+            }
+        });
+        Thread.currentThread().interrupt();
+        try {
+            assertThrows(dev.example.mapi.internal.problem.ProblemException.class,
+                    () -> runtime.callOnServerThread(mutations::incrementAndGet));
+            assertTrue(Thread.currentThread().isInterrupted());
+            queued.get().run();
+            assertEquals(0, mutations.get());
+        } finally {
+            Thread.interrupted();
+            platform.listener.onServerStopping();
+            platform.listener.onServerStopped();
+            runtime.jobs().shutdown();
+            runtime.leases().shutdown();
+        }
+    }
+
+    @Test
     void snapshotTimesOutWhenServerThreadIsBlocked() {
         TestPlatform platform = new TestPlatform(LOG);
         MapiRuntime runtime = new MapiRuntime(platform);
@@ -239,6 +277,11 @@ public class MapiRuntimeTest {
          */
         public ServerLifecycleListener lifecycleListener() {
             return listener;
+        }
+
+        /** @return the client lifecycle listener registered by the runtime */
+        public ClientLifecycleListener clientLifecycleListener() {
+            return clientListener;
         }
 
         @Override

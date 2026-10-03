@@ -4,7 +4,7 @@
  */
 import type { Ctx, Scenario } from '../harness/context.ts';
 import { Visual } from '../harness/visual.ts';
-import { prepareStage, setCamera, hideHud, NOON, type Pose }
+import { prepareStage, setCamera, hideHud, settleNearbyEntities, NOON, type Pose }
     from '../harness/stage.ts';
 
 // 📐 pin-once values — tuned on the first live run, then frozen.
@@ -58,9 +58,8 @@ export const scenario: Scenario = {
             updateBaselines: ctx.updateBaselines,
         });
 
-        await prepareStage(h, 0, 0);
+        await prepareStage(h, 0, 0, ctx.tick);
         await hideHud(h);
-        await h.command('kill @e[type=!minecraft:player]').catch(() => {});
 
         const pre = await h.snapshot('house-pre');
         for (const cmd of BUILD) await h.command(cmd);
@@ -79,11 +78,16 @@ export const scenario: Scenario = {
         await expectBlock(ctx, 0, 68, 0, 'glowstone');
         await expectBlock(ctx, -4, 67, 0, 'glass');
 
-        const entities = await h.entitiesAround(0, 64, 0, 32);
-        const nonPlayer = entities.filter(
-            e => !JSON.stringify(e).includes('player'));
-        report.expect(nonPlayer.length === 0, 'no entities near house',
-            `${nonPlayer.length} non-player entities in radius 32`);
+        const settled = await settleNearbyEntities(h, ctx.tick, 0, 64, 0, 32);
+        const nonPlayer = settled.entities;
+        report.expect(settled.stable && nonPlayer.length === 0, 'no entities near house',
+            `${nonPlayer.length} non-player entities in radius 32: `
+            + nonPlayer.map(e => `${e.typeId}@${Number(e.x).toFixed(1)},`
+                + `${Number(e.y).toFixed(1)},${Number(e.z).toFixed(1)}`).join(', ')
+            + `; stable=${settled.stable}; cleanupPasses=${settled.cleanupPasses}`
+            + `; stageTickets=${settled.tickets.added} added,`
+            + `${settled.tickets.preexisting} preexisting`
+            + `; cleanup=${settled.diagnostics.join(' || ')}`);
 
         for (const [name, pose] of Object.entries(PINS.poses)) {
             await setCamera(h, pose);

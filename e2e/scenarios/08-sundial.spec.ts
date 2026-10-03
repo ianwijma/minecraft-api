@@ -33,7 +33,7 @@ export const scenario: Scenario = {
             updateBaselines: ctx.updateBaselines,
         });
 
-        await prepareStage(h, 0, CZ);
+        await prepareStage(h, 0, CZ, ctx.tick);
         for (let x = -4; x <= 4; x++) {
             for (let z = -4; z <= 4; z++) {
                 const block = (x + z) % 2 === 0 ? 'white_concrete' : 'black_concrete';
@@ -51,7 +51,7 @@ export const scenario: Scenario = {
         // Negative control: pinned time + wall time must not move a single
         // pixel while the world idles under the frozen session lease.
         // (No tick stepping here: stepping simulation advances world time
-        // when doDaylightCycle is true — that is correct vanilla behavior,
+        // when advance_time is true — that is correct vanilla behavior,
         // not drift.)
         const a = await visual.capture({ name: 'sun-noon-a', expectedDayTime: NOON });
         await sleep(PINS.wallWaitMs);

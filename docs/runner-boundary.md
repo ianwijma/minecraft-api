@@ -46,9 +46,9 @@
   (create → load → use → save&quit → delete via API), inventory inspect
   (containerId, carriedCount, slot enumeration), character input dispatch
   (chat/screen path via charTyped), tooltip computed data.
-  Known issue: step job reports completed:0 because 26.2 advances the tick
-  counter asynchronously after stepGameIfPaused — stepping works (count
-  delta proves it). Inventory interaction cycle verified live: PICKUP
+  Tick-step jobs now wait off the server thread until 26.2's frozen-step
+  counter reaches zero, so their completed count reflects the requested
+  simulation ticks. Inventory interaction cycle verified live: PICKUP
   diamond from slot 36 (carried=64), tooltip for emptied slot (correctly
   empty), PICKUP again to place back (carried=0). Command dispatch live:
   give via player name works (spec §20: command context and feedback).

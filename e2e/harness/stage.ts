@@ -3,6 +3,7 @@
  * world, flat carved stages, charter gamerules, absolute time, exact camera.
  */
 import { Harness, KEYS } from './client.ts';
+import type { SessionTick } from './context.ts';
 import { MapiError } from '../../sdk/typescript/src/mapi-client.ts';
 import { assert, sleep } from './report.ts';
 
@@ -11,38 +12,38 @@ export const WORLD_SEED = 20260919;
 export const NOON = 6000;
 export const MIDNIGHT = 18000;
 
+interface StageChunkTickets {
+    added: { x: number; z: number }[];
+    preexisting: number;
+}
+
+const stageChunkTickets = new WeakMap<Harness, StageChunkTickets>();
+
 /**
- * Plan §1 charter. Two tiers, because of a mod bug found by this harness:
- * `gamerule`-family commands report a failure on both loaders (the deferred
- * command-chain callback never resolves) — they are best-effort OPTIONALs.
- * REQUIRED = proven-working commands; OPTIONAL = advisory on failure.
- *
- * Determinism itself does not depend on the gamerules: the charter freezes
- * the tick loop for the whole session (run.ts acquires one lease), which
- * locks daylight, mob spawning, crop growth, leaf decay, copper oxidation,
- * and farmland reversion — every source the gamerules would have covered.
+ * Plan §1 charter. REQUIRED commands establish the scenario state;
+ * OPTIONAL commands are idempotent setup. The tick lease pauses simulation
+ * during setup/building; controlled ticks settle entity deaths/removals while
+ * required mob-spawning rules prevent replacements.
  */
 export const CHARTER_REQUIRED: string[] = [
-    // every charter command is best-effort: vanilla flips idempotent
-    // setups to failures (kill with zero matches, 'already peaceful',
-    // gamerule chain-sticks); scenario assertions prove the real state.
     'gamemode creative @p',
     'weather clear',
-    'kill @e[type=!minecraft:player]',
+    'gamerule spawn_mobs false',
+    'gamerule spawn_wandering_traders false',
+    'gamerule spawn_patrols false',
+    'gamerule advance_time false',
+    'gamerule advance_weather false',
+    'gamerule immediate_respawn true',
+    'gamerule send_command_feedback false',
+    'gamerule show_death_messages false',
+    'gamerule random_tick_speed 0',
 ];
 
 export const CHARTER_OPTIONAL: string[] = [
-    // vanilla flips this one to a failure when already in the target mode.
+    // Vanilla reports a failed command when the world is already peaceful.
     'difficulty peaceful',
-    'gamerule doMobSpawning false',
-    'gamerule doTraderSpawning false',
-    'gamerule doPatrolSpawning false',
-    'gamerule doDaylightCycle false',
-    'gamerule doWeatherCycle false',
-    'gamerule doImmediateRespawn true',
-    'gamerule sendCommandFeedback false',
-    'gamerule showDeathMessages false',
-    'gamerule randomTickSpeed 0',
+    // No matching entities is a normal no-op; stage cleanup verifies state.
+    'kill @e[type=!minecraft:player]',
 ];
 
 /** Delete + recreate the fixed-seed world; wait until it is ACTIVE. */
@@ -85,7 +86,10 @@ export async function ensureWorld(h: Harness): Promise<void> {
 
 export async function applyCharter(h: Harness,
                                    advisory: (msg: string) => void): Promise<void> {
-    for (const cmd of [...CHARTER_REQUIRED, ...CHARTER_OPTIONAL]) {
+    for (const cmd of CHARTER_REQUIRED) {
+        await h.command(cmd);
+    }
+    for (const cmd of CHARTER_OPTIONAL) {
         try {
             await h.command(cmd);
         } catch (e) {
@@ -126,11 +130,10 @@ export async function dismissScreens(h: Harness): Promise<void> {
         if (screenId.toLowerCase().includes('onboarding')) {
             const cont = widgets.find(w => w.text === 'Continue');
             if (cont) {
-                const r = await h.api.post('/api/v1/client/actions/click', {
-                    x: cont.x + Math.floor((cont.width as number) / 2),
-                    y: cont.y + Math.floor((cont.height as number) / 2),
-                });
-                console.log(`  · dismissing ${screenId} via Continue click: consumed=${(r.body as any)?.consumed}`);
+                const body = await h.clickScreen(
+                    cont.x + Math.floor((cont.width as number) / 2),
+                    cont.y + Math.floor((cont.height as number) / 2));
+                console.log(`  · dismissing ${screenId} via Continue click: consumed=${body.consumed}`);
                 await sleep(500);
                 continue;
             }
@@ -155,22 +158,227 @@ async function tryCommand(h: Harness, cmd: string): Promise<void> {
  * The player is teleported over the stage first: vanilla /fill refuses to
  * place blocks in unloaded chunks, and chunk loading follows the player.
  */
-export async function prepareStage(h: Harness, cx: number, cz: number): Promise<void> {
+export async function prepareStage(
+    h: Harness, cx: number, cz: number, tick: SessionTick,
+): Promise<void> {
+    await holdStageChunkTickets(h, cx, cz);
     await h.command(`tp @p ${cx} 100 ${cz}`);
     await sleep(3000);
     for (let y = 65; y <= 95; y++) {
         await tryCommand(h, `fill ${cx - 48} ${y} ${cz - 48} ${cx + 48} ${y} ${cz + 48} air`);
     }
-    for (let y = 60; y <= 63; y++) {
-        await h.command(`fill ${cx - 48} ${y} ${cz - 48} ${cx + 48} ${y} ${cz + 48} stone`);
-    }
+    await constructStageFloor(h, cx, cz);
     await h.command(`fill ${cx - 48} 64 ${cz - 48} ${cx + 48} 64 ${cz + 48} grass_block`);
-    await h.command('kill @e[type=!minecraft:player]').catch(() => {});
+    await clearNonPlayerEntities(h, tick);
     // Mesh warm-up: the carve triggers a large chunk rebuild; two warm
     // captures give the client time to finish it before any checkpoint.
     await h.screenshot().catch(() => {});
     await sleep(2000);
     await h.screenshot().catch(() => {});
+}
+
+/**
+ * Settle entity cleanup while the required spawn gamerules are active. The
+ * first batch advances through vanilla's 20-tick living-entity death timer;
+ * the second kill removes drops/XP and one tick finalizes those removals.
+ */
+export async function clearNonPlayerEntities(
+    h: Harness, tick: SessionTick,
+): Promise<void> {
+    await h.command('kill @e[type=!minecraft:player]').catch(() => {});
+    await tick.stepTicks(21);
+    await h.command('kill @e[type=!minecraft:player]').catch(() => {});
+    await tick.stepTicks(1);
+}
+
+/** Replace each under-floor layer with air before filling it with stone. */
+export async function constructStageFloor(h: Harness, cx: number, cz: number): Promise<void> {
+    for (let y = 60; y <= 63; y++) {
+        await tryCommand(h, `fill ${cx - 48} ${y} ${cz - 48} ${cx + 48} ${y} ${cz + 48} air`);
+        await h.command(`fill ${cx - 48} ${y} ${cz - 48} ${cx + 48} ${y} ${cz + 48} stone`);
+    }
+}
+
+/** Force-load the bounded stage in entity-ticking mode, preserving prior tickets. */
+export async function holdStageChunkTickets(
+    h: Harness, cx: number, cz: number,
+): Promise<{ added: number; preexisting: number }> {
+    if (stageChunkTickets.has(h)) {
+        throw new Error('stage chunk tickets are already held for this harness');
+    }
+    const scope: StageChunkTickets = { added: [], preexisting: 0 };
+    try {
+        const minChunkX = Math.floor((cx - 48) / 16);
+        const maxChunkX = Math.floor((cx + 48) / 16);
+        const minChunkZ = Math.floor((cz - 48) / 16);
+        const maxChunkZ = Math.floor((cz + 48) / 16);
+        for (let chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+            for (let chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                // ForceLoadCommand takes block-column positions and rounds
+                // them to a chunk; use the center of each desired chunk.
+                const x = chunkX * 16 + 8;
+                const z = chunkZ * 16 + 8;
+                try {
+                    const query = await h.command(`forceload query ${x} ${z}`);
+                    if (Number(query.resultCode) < 1) {
+                        throw new Error(`forceload query ${x} ${z} did not confirm a ticket`);
+                    }
+                    scope.preexisting++;
+                } catch (error) {
+                    if (error instanceof MapiError) throw error;
+                    const result = await h.command(`forceload add ${x} ${z}`);
+                    if (Number(result.resultCode) < 1) {
+                        throw new Error(`forceload add ${x} ${z} did not add a ticket`);
+                    }
+                    scope.added.push({ x, z });
+                }
+            }
+        }
+        stageChunkTickets.set(h, scope);
+        return { added: scope.added.length, preexisting: scope.preexisting };
+    } catch (error) {
+        const cleanupFailures: string[] = [];
+        for (const { x, z } of scope.added) {
+            try {
+                await h.command(`forceload remove ${x} ${z}`);
+            } catch (cleanupError) {
+                cleanupFailures.push(`${x} ${z}: ${String(cleanupError)}`);
+            }
+        }
+        if (cleanupFailures.length > 0) {
+            throw new AggregateError([error, ...cleanupFailures],
+                `stage ticket acquisition failed; cleanup also failed: ${cleanupFailures.join('; ')}`);
+        }
+        throw error;
+    }
+}
+
+/** Release only the force-load tickets acquired by `holdStageChunkTickets`. */
+export async function releaseStageChunkTickets(h: Harness): Promise<void> {
+    const scope = stageChunkTickets.get(h);
+    if (!scope) return;
+    const failures: string[] = [];
+    const remaining: { x: number; z: number }[] = [];
+    for (const { x, z } of scope.added) {
+        try {
+            await h.command(`forceload remove ${x} ${z}`);
+        } catch (error) {
+            failures.push(`${x} ${z}: ${String(error)}`);
+            remaining.push({ x, z });
+        }
+    }
+    if (remaining.length > 0) {
+        stageChunkTickets.set(h, { added: remaining, preexisting: scope.preexisting });
+    } else {
+        stageChunkTickets.delete(h);
+    }
+    if (failures.length > 0) {
+        throw new Error(`could not release ${failures.length} stage chunk tickets: `
+            + failures.join('; '));
+    }
+}
+
+/**
+ * Wait for a stable empty observation around the stage. Chunk entity lists
+ * can arrive after initial cleanup, so each bounded non-empty pass repeats
+ * cleanup and requires several empty reads before accepting the result.
+ */
+export async function settleNearbyEntities(
+    h: Harness, tick: SessionTick, x: number, y: number, z: number, radius: number,
+    options: { maxCleanupPasses?: number; stablePolls?: number; pollMs?: number } = {},
+): Promise<{ entities: any[]; stable: boolean; cleanupPasses: number;
+             diagnostics: string[]; tickets: { added: number; preexisting: number } }> {
+    const maxCleanupPasses = options.maxCleanupPasses ?? 3;
+    const stablePolls = options.stablePolls ?? 3;
+    const pollMs = options.pollMs ?? 500;
+    const maxPolls = maxCleanupPasses * stablePolls + stablePolls;
+    let cleanupPasses = 0;
+    let consecutiveEmpty = 0;
+    let nonPlayer: any[] = [];
+    const diagnostics: string[] = [];
+    const heldTickets = stageChunkTickets.get(h);
+    const tickets = { added: heldTickets?.added.length ?? 0,
+        preexisting: heldTickets?.preexisting ?? 0 };
+
+    for (let poll = 0; poll < maxPolls; poll++) {
+        await sleep(pollMs);
+        const entities = await h.entitiesAround(x, y, z, radius);
+        nonPlayer = entities.filter(entity => entity.typeId !== 'minecraft:player');
+        if (nonPlayer.length === 0) {
+            consecutiveEmpty++;
+            if (consecutiveEmpty >= stablePolls) {
+                return { entities: nonPlayer, stable: true, cleanupPasses, diagnostics, tickets };
+            }
+            continue;
+        }
+
+        consecutiveEmpty = 0;
+        if (cleanupPasses >= maxCleanupPasses) {
+            return { entities: nonPlayer, stable: false, cleanupPasses, diagnostics, tickets };
+        }
+        cleanupPasses++;
+        try {
+            diagnostics.push(await clearNearbyEntities(h, tick, x, y, z, radius, nonPlayer));
+        } catch (error) {
+            diagnostics.push(`cleanup failed: ${String(error)}`);
+            return { entities: nonPlayer, stable: false, cleanupPasses, diagnostics, tickets };
+        }
+    }
+    return { entities: nonPlayer, stable: false, cleanupPasses, diagnostics, tickets };
+}
+
+async function clearNearbyEntities(
+    h: Harness, tick: SessionTick, x: number, y: number, z: number, radius: number,
+    observed: any[],
+): Promise<string> {
+    const selector = `execute positioned ${x} ${y} ${z} run kill `
+        + `@e[type=!minecraft:player,distance=..${radius}]`;
+    const initial = describeEntities(observed);
+    const first = await h.command(selector);
+    const firstKillCount = Number(first.resultCode ?? 0);
+    if (firstKillCount < observed.length) {
+        throw new Error(`kill selected ${firstKillCount} of ${observed.length} observed: ${initial}`);
+    }
+    const deathStep = await tick.stepTicks(21);
+    const deathTicksCompleted = completedTicks(deathStep);
+    if (deathTicksCompleted !== null && deathTicksCompleted < 21) {
+        throw new Error(`death step completed ${deathTicksCompleted} of 21 ticks; observed ${initial}`);
+    }
+    const afterDeath = (await h.entitiesAround(x, y, z, radius))
+        .filter(entity => entity.typeId !== 'minecraft:player');
+    let secondKillCount: number | null = null;
+    if (afterDeath.length > 0) {
+        const second = await h.command(selector);
+        secondKillCount = Number(second.resultCode ?? 0);
+        if (secondKillCount < afterDeath.length) {
+            throw new Error(`second kill selected ${secondKillCount} of `
+                + `${afterDeath.length} observed: ${describeEntities(afterDeath)}`);
+        }
+    }
+    const finalStep = await tick.stepTicks(1);
+    const finalTicksCompleted = completedTicks(finalStep);
+    if (finalTicksCompleted !== null && finalTicksCompleted < 1) {
+        throw new Error(`final cleanup step completed ${finalTicksCompleted} of 1 ticks`);
+    }
+    return `observed=${initial}; kill=${firstKillCount}; death-step=${deathTicksCompleted ?? 'unknown'}/21; `
+        + `after-death=${describeEntities(afterDeath)}; second-kill=${secondKillCount ?? 'skipped'}; `
+        + `final-step=${finalTicksCompleted ?? 'unknown'}/1`;
+}
+
+function completedTicks(job: any): number | null {
+    const stepped = Array.isArray(job?.milestones)
+        ? job.milestones.find((milestone: any) => milestone.name === 'stepped')?.details?.completed
+        : undefined;
+    return Number.isInteger(stepped) ? Number(stepped) : null;
+}
+
+function describeEntities(entities: any[]): string {
+    if (entities.length === 0) return 'none';
+    return entities.slice(0, 16).map(entity => {
+        const position = [entity.x, entity.y, entity.z]
+            .map(value => Number(value).toFixed(1)).join(',');
+        return `${entity.typeId}@${position}`;
+    }).join('|') + (entities.length > 16 ? `|…+${entities.length - 16}` : '');
 }
 
 /** §1.1 rule 1+3: set absolute time, then assert the world agrees. */

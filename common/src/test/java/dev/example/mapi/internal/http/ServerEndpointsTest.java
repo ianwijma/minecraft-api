@@ -368,7 +368,7 @@ class ServerEndpointsTest {
 
         @Override
         public State state() {
-            return new State(frozen, sprinting, rate, tickCount, Optional.empty());
+            return new State(frozen, sprinting, rate, tickCount, Optional.empty(), 0);
         }
 
         @Override

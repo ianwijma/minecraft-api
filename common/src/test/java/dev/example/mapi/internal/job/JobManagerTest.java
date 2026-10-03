@@ -1,6 +1,8 @@
 package dev.example.mapi.internal.job;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.example.mapi.internal.problem.ProblemCode;
@@ -208,6 +210,94 @@ class JobManagerTest {
         assertTrue(manager.isShutdown());
         assertTrue(manager.view(handle.id()).isPresent());
         release.countDown();
+    }
+
+    @Test
+    void queueSaturationRejectsAndRollsBackTheJobEntry() throws Exception {
+        manager.shutdown();
+        manager = new JobManager(3, 1);
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        JobHandle running = manager.submit("test.running", Optional.empty(), 0, context -> {
+            started.countDown();
+            release.await(5, TimeUnit.SECONDS);
+            return "done";
+        });
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+        manager.submit("test.pending", Optional.empty(), 0, context -> "queued");
+
+        ProblemException rejection = assertThrows(ProblemException.class,
+                () -> manager.submit("test.rejected", Optional.empty(), 0, context -> "never"));
+        assertEquals(ProblemCode.SERVER_BUSY, rejection.code());
+        assertFalse(manager.view("job-3").isPresent());
+        release.countDown();
+        assertEquals(JobState.SUCCEEDED, running.waitFor(2000).orElseThrow().state());
+    }
+
+    @Test
+    void cancelledPendingJobsParticipateInCompletionRetention() throws Exception {
+        manager.shutdown();
+        manager = new JobManager(2, 4);
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        JobHandle running = manager.submit("test.retention-block", Optional.empty(), 0, context -> {
+            started.countDown();
+            release.await(5, TimeUnit.SECONDS);
+            return "done";
+        });
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+        JobHandle cancelled = manager.submit("test.cancelled-pending", Optional.empty(), 0, context -> "never");
+        assertTrue(cancelled.cancel());
+        assertEquals(JobState.CANCELLED, cancelled.view().orElseThrow().state());
+        release.countDown();
+        assertEquals(JobState.SUCCEEDED, running.waitFor(2000).orElseThrow().state());
+        JobHandle later = manager.submit("test.retained", Optional.empty(), 0, context -> "done");
+        assertEquals(JobState.SUCCEEDED, later.waitFor(2000).orElseThrow().state());
+        assertTrue(manager.view(cancelled.id()).isEmpty());
+        assertTrue(manager.view(later.id()).isPresent());
+    }
+
+    @Test
+    void cancelRacingShutdownFinalizesPendingJobOnce() throws Exception {
+        CountDownLatch started = new CountDownLatch(1);
+        JobHandle running = manager.submit("test.shutdown-race-block", Optional.empty(), 0, context -> {
+            started.countDown();
+            new CountDownLatch(1).await();
+            return "never";
+        });
+        assertTrue(started.await(2, TimeUnit.SECONDS));
+        java.util.concurrent.atomic.AtomicBoolean bodyRan = new java.util.concurrent.atomic.AtomicBoolean();
+        JobHandle pending = manager.submit("test.shutdown-race-pending", Optional.empty(), 0, context -> {
+            bodyRan.set(true);
+            return "never";
+        });
+        CountDownLatch startRace = new CountDownLatch(1);
+        Thread cancelThread = new Thread(() -> {
+            try {
+                startRace.await();
+                pending.cancel();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        Thread shutdownThread = new Thread(() -> {
+            try {
+                startRace.await();
+                manager.shutdown();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        cancelThread.start();
+        shutdownThread.start();
+        startRace.countDown();
+        cancelThread.join(2000);
+        shutdownThread.join(2000);
+
+        assertEquals(JobState.CANCELLED, pending.waitFor(2000).orElseThrow().state());
+        assertFalse(bodyRan.get());
+        assertTrue(manager.view(pending.id()).isPresent());
+        assertEquals(JobState.CANCELLED, running.waitFor(2000).orElseThrow().state());
     }
 
     private static JobView awaitState(JobHandle handle, JobState target) throws InterruptedException {

@@ -15,6 +15,9 @@ HTTP API (disabled by default, loopback-only, bearer-token authenticated)
 for external tools.
 '''
 
+[[mixins]]
+config="mapi-neoforge.client.mixins.json"
+
 [[dependencies.${mod_id}]]
     modId="neoforge"
     type="required"

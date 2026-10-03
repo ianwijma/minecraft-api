@@ -1,8 +1,7 @@
 /**
- * Thin typed wrapper over the generated MapiClient. Uses the generic
- * get/post paths exclusively — several generated parameter methods are
- * broken (e.g. getJob references an undefined variable), so the harness
- * builds every URL itself, exactly like scripts/e2e-audit.ts.
+ * Thin typed wrapper over the generated MapiClient. The generic get/post
+ * helpers keep scenario paths readable while generated methods cover the
+ * contract for SDK consumers.
  */
 import { MapiClient, MapiError } from '../../sdk/typescript/src/mapi-client.ts';
 import { sleep, assert } from './report.ts';
@@ -33,6 +32,9 @@ export interface Capture {
 export class Harness {
     readonly api: MapiClient;
     readonly base: string;
+    private inputLeaseId: string | null = null;
+    private inputLeaseExpiresAt = 0;
+    private inputLeaseNeedsValidation = false;
 
     constructor(base: string, token: string) {
         this.base = base;
@@ -40,15 +42,30 @@ export class Harness {
     }
 
     async get(path: string): Promise<any> {
-        const r = await this.api.get(path);
+        const r = await this.withRequestContext('GET', path, () => this.api.get(path));
         if (!r.ok) throw new Error(`GET ${path} -> ${r.status}: ${JSON.stringify(r.body)}`);
         return r.body;
     }
 
     async post(path: string, body: unknown): Promise<any> {
-        const r = await this.api.post(path, body);
+        const r = await this.withRequestContext('POST', path, () => this.api.post(path, body));
         if (!r.ok) throw new Error(`POST ${path} -> ${r.status}: ${JSON.stringify(r.body)}`);
+        if (/^\/api\/v1\/client\/worlds\/(create|delete|load)$/.test(path)) {
+            this.inputLeaseNeedsValidation = true;
+        }
         return r.body;
+    }
+
+    private async withRequestContext<T>(method: 'GET' | 'POST', path: string,
+                                        request: () => Promise<T>): Promise<T> {
+        try {
+            return await request();
+        } catch (e) {
+            if (e instanceof MapiError) {
+                throw new MapiError(e.status, e.code, `${e.message} (${method} ${path})`);
+            }
+            throw e;
+        }
     }
 
     async healthWait(timeoutMs = 480_000, pollMs = 2_000): Promise<void> {
@@ -243,13 +260,61 @@ export class Harness {
         if (r.status !== 202) {
             throw new Error(`step -> ${r.status}: ${JSON.stringify(r.body)}`);
         }
-        return this.waitForJob(String((r.body as any).jobId));
+        const job = await this.waitForJob(String((r.body as any).jobId));
+        const result = job.result;
+        if (Number(result?.requested) !== ticks || Number(result?.completed) !== ticks) {
+            throw new Error(`step job did not complete ${ticks} simulation ticks: `
+                + JSON.stringify(result));
+        }
+        return job;
     }
 
     // -- client bridge --------------------------------------------------------
 
+    private async inputLease(): Promise<string> {
+        const acquire = async () => {
+            const body = await this.post('/api/v1/client/control/lease', { ttlSeconds: 300 });
+            this.inputLeaseId = String(body.leaseId);
+            this.inputLeaseExpiresAt = Number(body.expiresAtEpochMs);
+            this.inputLeaseNeedsValidation = false;
+        };
+        if (!this.inputLeaseId) {
+            await acquire();
+        } else if (this.inputLeaseNeedsValidation || Date.now() + 15_000 >= this.inputLeaseExpiresAt) {
+            try {
+                const body = await this.post('/api/v1/client/control/lease',
+                    { ttlSeconds: 300, leaseId: this.inputLeaseId });
+                this.inputLeaseExpiresAt = Number(body.expiresAtEpochMs);
+                this.inputLeaseNeedsValidation = false;
+            } catch (error) {
+                if (!(error instanceof MapiError) || error.code !== 'LEASE_REQUIRED') throw error;
+                this.inputLeaseId = null;
+                this.inputLeaseExpiresAt = 0;
+                this.inputLeaseNeedsValidation = false;
+                await acquire();
+            }
+        }
+        return this.inputLeaseId;
+    }
+
     async holdKey(keyCode: number, ticks: number): Promise<any> {
-        return this.post('/api/v1/client/actions/hold-key', { keyCode, ticks });
+        return this.post('/api/v1/client/actions/hold-key',
+            { keyCode, ticks, leaseId: await this.inputLease() });
+    }
+
+    async clickScreen(x: number, y: number): Promise<any> {
+        return this.post('/api/v1/client/actions/click',
+            { x, y, leaseId: await this.inputLease() });
+    }
+
+    async moveWaypoints(waypoints: { yaw: number; pitch: number; ticks: number }[]): Promise<any> {
+        return this.post('/api/v1/client/movement/waypoints',
+            { waypoints, leaseId: await this.inputLease() });
+    }
+
+    async captureRenderedTooltip(slot: number): Promise<any> {
+        return this.post('/api/v1/client/inventory/tooltip-rendered',
+            { slot, leaseId: await this.inputLease() });
     }
 
     async inventory(): Promise<any> {
@@ -258,7 +323,8 @@ export class Harness {
 
     async clickInventory(slot: number, button = 0, containerInput = 'PICKUP'): Promise<any> {
         return this.post('/api/v1/client/inventory/click',
-            { slot, button, containerInput });
+            { slot, button, containerInput, executionMode: 'client-logic',
+                leaseId: await this.inputLease() });
     }
 
     async snapshot(label: string): Promise<string> {

@@ -68,13 +68,13 @@ export const scenario: Scenario = {
             updateBaselines: ctx.updateBaselines,
         });
 
-        await prepareStage(h, CX, 0);
+        await prepareStage(h, CX, 0, ctx.tick);
         for (const lamp of LAMPS) {
             await h.command(`setblock ${lamp.x} ${lamp.y} ${lamp.z} redstone_lamp`);
         }
         await hideHud(h);
         await setCamera(h, { x: CX + 6.5, y: 70, z: 9.5, yaw: 180, pitch: -25 });
-        // Daytime moves with stepped ticks under a true doDaylightCycle;
+        // Daytime moves with stepped ticks under a true advance_time;
         // expectedDayTime = scenario-local baseline + steps taken since.
         const t0 = await h.dayTime();
         const s0 = ctx.tick.stepped;

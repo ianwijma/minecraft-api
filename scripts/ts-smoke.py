@@ -1,83 +1,90 @@
+#!/usr/bin/env python3
+"""Offline behavioral check for the generated TypeScript SDK (Node >= 18)."""
+
 import json
 import subprocess
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
+ROOT = Path(__file__).resolve().parent.parent
 TOKEN = "smoke-token-0123456789"
-state = {"world_phase": "NONE"}
+requests = []
 
 
 class Fake(BaseHTTPRequestHandler):
     def do_GET(self):
-        auth = self.headers.get("Authorization")
-        path = self.path
-        if auth != f"Bearer {TOKEN}":
-            status, body = 401, {"error": {"code": "UNAUTHORIZED", "message": "no"}}
-        elif path == "/api/v1/health":
-            status, body = 200, {"protocolVersion": 1, "status": "ok"}
-        elif path == "/api/v1/server/world":
-            status, body = 200, {"phase": state["world_phase"]}
-        else:
-            status, body = 404, {"error": {"code": "NOT_FOUND", "message": "unknown"}}
-        payload = json.dumps(body).encode()
-        self.send_response(status)
+        requests.append((self.path, self.headers.get("Authorization")))
+        if self.headers.get("Authorization") != f"Bearer {TOKEN}":
+            self.send_response(401)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"error":{"code":"UNAUTHORIZED","message":"no"}}')
+            return
+        if self.path.startswith("/api/v1/events/stream"):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            self.wfile.write(b":event-gap droppedUpTo=4\n\nid: 5\nevent: changed\ndata: {\"ok\":true}\n\n")
+            self.wfile.flush()
+            return
+        self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
-        self.wfile.write(payload)
+        self.wfile.write(b'{"ok":true}')
 
-    def log_message(self, *a):
+    def log_message(self, *_args):
         pass
 
 
 server = HTTPServer(("127.0.0.1", 0), Fake)
-port = server.server_port
 thread = threading.Thread(target=server.serve_forever, daemon=True)
 thread.start()
-
-NODE_SCRIPT = f"""
-import {{ MapiClient, MapiError }} from
-        '/home/ian/.t3/worktrees/minecraft-api/t3code-f47c6a6d/sdk/typescript/src/mapi-client.ts';
-const client = new MapiClient('http://127.0.0.1:{port}', '{TOKEN}');
-
+module_url = (ROOT / "sdk/typescript/src/mapi-client.ts").as_uri()
+script = f"""
+import {{ MapiClient, MapiError }} from {json.dumps(module_url)};
+const client = new MapiClient('http://127.0.0.1:{server.server_port}', '{TOKEN}');
 const health = await client.getHealth();
-if (health.status !== 200 || health.ok !== true
-    || health.body.status !== 'ok') {{
-  console.error('FAIL health', JSON.stringify(health));
-  process.exit(1);
+if (!health.ok || health.body.ok !== true) throw new Error('health request failed');
+await client.getJob('job a/x');
+await client.readLogs();
+await client.readLogs(0, 10);
+await client.queryRegistryEntries('minecraft:block');
+const events = [];
+for await (const event of client.streamEvents(7, ['world.phase', 'player.join'], 'test world', 5)) events.push(event);
+if (events.length !== 2 || !events[0].gap || events[0].droppedUpToSeq !== 4
+    || events[1].id !== '5' || events[1].event !== 'changed' || events[1].data.ok !== true) {{
+  throw new Error('SSE parsing failed: ' + JSON.stringify(events));
 }}
-
-const world = await client.getWorldInfo();
-console.log("world phase:", world.body.phase);
-if (world.body.phase !== 'NONE') {{
-  console.error('FAIL world', JSON.stringify(world));
-  process.exit(1);
-}}
-
 try {{
-  const bad = new MapiClient('http://127.0.0.1:{port}', 'wrong-token');
-  await bad.getHealth();
-  console.error('FAIL expected 401');
-  process.exit(1);
-}} catch (e) {{
-  if (!(e instanceof MapiError) || e.status !== 401
-      || e.code !== 'UNAUTHORIZED') {{
-    console.error('FAIL wrong error shape', e);
-    process.exit(1);
-  }}
+  await new MapiClient('http://127.0.0.1:{server.server_port}', 'wrong').getHealth();
+  throw new Error('expected MapiError');
+}} catch (error) {{
+  if (!(error instanceof MapiError) || error.status !== 401 || error.code !== 'UNAUTHORIZED') throw error;
 }}
-
-console.log('TS CLIENT SMOKE PASS');
+console.log('TS SDK offline smoke PASS');
 """
 
 try:
     result = subprocess.run(
-        [sys.executable.replace("python", "node") if False else "node",
-         "--experimental-strip-types", "--no-warnings", "-e", NODE_SCRIPT],
+        ["node", "--experimental-strip-types", "--no-warnings", "-e", script],
         capture_output=True, text=True, timeout=30)
     print(result.stdout, end="")
-    if result.returncode != 0:
+    if result.returncode:
         print(result.stderr, end="", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(result.returncode)
+    paths = [path for path, auth in requests if auth == f"Bearer {TOKEN}"]
+    expected = [
+        "/api/v1/health",
+        "/api/v1/jobs/job%20a%2Fx",
+        "/api/v1/logs",
+        "/api/v1/logs?cursor=0&limit=10",
+        "/api/v1/server/queries/registry?registryId=minecraft%3Ablock",
+        "/api/v1/events/stream?cursor=7&types=world.phase%2Cplayer.join&world=test+world&keepaliveSeconds=5",
+    ]
+    if paths[:len(expected)] != expected:
+        raise RuntimeError(f"unexpected requests: {paths!r}")
 finally:
     server.shutdown()
+    thread.join(timeout=2)
