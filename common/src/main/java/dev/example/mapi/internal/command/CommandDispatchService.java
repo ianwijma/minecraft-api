@@ -3,7 +3,6 @@ package dev.example.mapi.internal.command;
 import dev.example.mapi.internal.event.EventBus;
 import dev.example.mapi.internal.problem.ProblemCode;
 import dev.example.mapi.internal.problem.ProblemException;
-import dev.example.mapi.internal.query.ServerThreadRunner;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -17,6 +16,12 @@ import java.util.Optional;
  * <p>Authorization: command dispatch is an unrestricted/administrative
  * operation (spec §14 — arbitrary mod commands cannot be safely classified);
  * the HTTP layer enforces the {@code operations:unrestricted} grant.
+ *
+ * <p>Threading: the backend owns dispatch threading and must never park the
+ * server thread waiting for a command-chain callback (that deadlocks — the
+ * callback resolves on a later tick of that same thread). Routing through
+ * the bounded {@link dev.example.mapi.internal.query.ServerThreadRunner} is
+ * therefore deliberately NOT used here.
  */
 public final class CommandDispatchService {
 
@@ -24,17 +29,14 @@ public final class CommandDispatchService {
     public static final int MAX_COMMAND_LENGTH = 4096;
 
     private final CommandBackend backend;
-    private final ServerThreadRunner runner;
     private final EventBus events;
 
     /**
      * @param backend loader backend, never {@code null}
-     * @param runner  server-thread runner with bounded wait
      * @param events  event bus for dispatch notices
      */
-    public CommandDispatchService(CommandBackend backend, ServerThreadRunner runner, EventBus events) {
+    public CommandDispatchService(CommandBackend backend, EventBus events) {
         this.backend = Objects.requireNonNull(backend, "backend");
-        this.runner = Objects.requireNonNull(runner, "runner");
         this.events = Objects.requireNonNull(events, "events");
     }
 
@@ -73,7 +75,7 @@ public final class CommandDispatchService {
 
     private CommandBackend.CommandResult call(String command) {
         try {
-            return runner.call(() -> backend.execute(command));
+            return backend.execute(command);
         } catch (ProblemException e) {
             throw e;
         } catch (Exception e) {

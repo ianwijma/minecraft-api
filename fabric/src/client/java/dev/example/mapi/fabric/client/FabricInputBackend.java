@@ -53,7 +53,9 @@ final class FabricInputBackend implements ClientBridge.InputBackend {
     @Override
     public void pressKey(int keyCode) {
         InputConstants.Key key = InputConstants.Type.KEYSYM.getOrCreate(keyCode);
-        KeyMapping.set(key, true);
+        // click() = held state AND clickCount++ — KeyMapping.set() alone
+        // never starts click-consuming bindings (attack/use place/break).
+        KeyMapping.click(key);
         syntheticHeld.put(keyCode, true);
     }
 

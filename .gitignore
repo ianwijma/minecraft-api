@@ -58,3 +58,7 @@ Thumbs.db
 *.class
 hs_err_pid*.log
 replay_pid*.log
+
+# E2E harness artifacts (baselines are environment-specific; out/ is per-run)
+e2e/out/
+e2e/baselines/

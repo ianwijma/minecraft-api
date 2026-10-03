@@ -8,7 +8,6 @@ import dev.example.mapi.internal.event.EventBus;
 import dev.example.mapi.internal.event.EventFilter;
 import dev.example.mapi.internal.problem.ProblemCode;
 import dev.example.mapi.internal.problem.ProblemException;
-import dev.example.mapi.internal.query.ServerThreadRunner;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.Test;
@@ -70,11 +69,6 @@ class CommandDispatchServiceTest {
     private CommandDispatchService service(java.util.function.Function<String,
             CommandBackend.CommandResult> impl) {
         CommandBackend backend = command -> impl.apply(command);
-        return new CommandDispatchService(backend, new ServerThreadRunner() {
-            @Override
-            public <T> T call(java.util.function.Supplier<T> task) {
-                return task.get();
-            }
-        }, bus);
+        return new CommandDispatchService(backend, bus);
     }
 }

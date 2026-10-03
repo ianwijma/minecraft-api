@@ -120,7 +120,7 @@ public final class MapiRuntime implements Mapi {
                 var commandBackend = platform.serverBridge().commands();
                 commands = commandBackend
                         .map(b -> new dev.example.mapi.internal.command.CommandDispatchService(
-                                b, MapiRuntime.this::callOnServerThread, eventBus))
+                                b, eventBus))
                         .orElse(null);
                 worldLifecycle.beginLoad();
                 services.fireServerStart(handle, platform.logger());

@@ -75,6 +75,7 @@ Quick map:
 | Loader metadata | `fabric/src/main/resources/fabric.mod.json`, `neoforge/src/main/templates/META-INF/neoforge.mods.toml` |
 | Versions | `gradle/libs.versions.toml` (deps) and `gradle.properties` (project identity) |
 | Tests | `common/src/test/java/` (no Minecraft launch needed) |
+| E2E visual examples (TypeScript) | `e2e/` — harness + scenarios, see `docs/examples/e2e-visual-scenarios.md` |
 | Docs that must stay in sync | `docs/`, `README.md`, `project.manifest.json` |
 
 Hard rules:

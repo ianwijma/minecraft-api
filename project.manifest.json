@@ -154,6 +154,10 @@
       {
         "path": "docs/examples/mapi.json.example",
         "topic": "Fabric config example (JSON, auto-generated)"
+      },
+      {
+        "path": "docs/examples/e2e-visual-scenarios.md",
+        "topic": "Plan: repeatable TypeScript E2E examples validated by machine screenshot diffing"
       }
     ]
   },

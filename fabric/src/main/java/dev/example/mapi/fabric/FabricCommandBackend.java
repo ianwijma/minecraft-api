@@ -38,11 +38,16 @@ final class FabricCommandBackend implements CommandBackend {
                         completion.completeExceptionally(new CommandFailedException());
                     }
                 });
-        try {
-            server.getCommands().performPrefixedCommand(source, commandLine);
-        } catch (RuntimeException e) {
-            return new CommandResult(false, false, Optional.of(String.valueOf(e)), 0);
-        }
+        // Scheduling and waiting must not park the server thread: a deferred
+        // command-chain callback resolves on a later tick of that same
+        // thread, so parking it here deadlocked every dispatch.
+        server.execute(() -> {
+            try {
+                server.getCommands().performPrefixedCommand(source, commandLine);
+            } catch (RuntimeException e) {
+                completion.completeExceptionally(e);
+            }
+        });
         try {
             int resultCode = completion.get(COMPLETION_TIMEOUT_MS, TimeUnit.MILLISECONDS);
             return new CommandResult(true, true, Optional.empty(), resultCode);
