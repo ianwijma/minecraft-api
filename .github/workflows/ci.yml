@@ -257,7 +257,7 @@ jobs:
           mkdir -p build/api-coverage
           uname -a > build/api-coverage/rendering.txt
           dpkg-query -W xvfb libgl1-mesa-dri mesa-vulkan-drivers >> build/api-coverage/rendering.txt
-          driver_path=$(dpkg -L mesa-vulkan-drivers | rg '/lvp_icd[^/]*\.json$')
+          driver_path=$(dpkg -L mesa-vulkan-drivers | grep -E '/lvp_icd[^/]*\.json$')
           test "$(printf '%s\n' "$driver_path" | wc -l)" -eq 1
           test -f "$driver_path"
           echo "VK_ICD_FILENAMES=$driver_path" >> "$GITHUB_ENV"

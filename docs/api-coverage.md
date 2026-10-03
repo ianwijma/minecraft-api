@@ -90,7 +90,8 @@ runner’s verified package provenance (run 37134645012); Lavapipe is installed
 explicitly and its ICD is discovered from the package manifest. It records
 installed rendering package versions and the ICD digest;
 semantic assertions are primary functional evidence. The `Complete API coverage
-(required)` aggregate must be made a required branch-protection check. It fails
+(required)` aggregate is enforced by branch protection on `develop`, including
+administrator merges. It fails
 when the repository variable `MAPI_ACCEPT_EULA` is absent, a prerequisite job
 fails, a game job is skipped, evidence is incomplete, or fixture reports fail.
 Configure that variable as `true` under the owner's standing acceptance.
