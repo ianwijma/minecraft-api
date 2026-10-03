@@ -30,3 +30,4 @@
 | [`openapi.yaml`](openapi.yaml) | OpenAPI 3.1 description of the HTTP API |
 | [`../project.manifest.json`](../project.manifest.json) | Machine-readable module/command/doc map (validated by `./gradlew validateManifest`) |
 | [`examples/mapi.properties.example`](examples/mapi.properties.example) | Placeholder-only config example |
+| [`examples/e2e-visual-scenarios.md`](examples/e2e-visual-scenarios.md) | Plan: repeatable TypeScript E2E examples validated by machine screenshot diffing |

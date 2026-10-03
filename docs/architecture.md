@@ -38,6 +38,9 @@ minecraft-api/
 ├── fabric/            Fabric entrypoint + platform adapter + metadata
 ├── neoforge/          NeoForge entrypoint + platform adapter + mods.toml
 ├── example-consumer/  Consumer example (public API only; never shipped)
+├── runner/            Reference out-of-process runner (Java; public HTTP API only)
+├── sdk/               Java + TypeScript + Python SDK clients
+├── e2e/               TypeScript E2E harness + visual scenarios (not a Gradle module)
 └── docs/, scripts/, .github/
 ```
 
