@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
 import { decodePng, encodePng, cropImage, type RgbaImage } from '../harness/png.ts';
 import { diffImages, renderDiffImage } from '../harness/diff.ts';
@@ -21,6 +22,17 @@ import { applyCharter, clearNonPlayerEntities, constructStageFloor,
     holdStageChunkTickets, releaseStageChunkTickets, settleNearbyEntities }
     from '../harness/stage.ts';
 import type { SessionTick } from '../harness/context.ts';
+
+test('both CI loaders ship all five house reference PNGs at the profile dimensions', () => {
+    const root = fileURLToPath(new URL('../baselines/', import.meta.url));
+    for (const loader of ['fabric', 'neoforge']) {
+        for (const checkpoint of ['house-se', 'house-sw', 'house-nw', 'house-ne', 'house-interior']) {
+            const png = decodePng(fs.readFileSync(path.join(root, `linux-ci-${loader}`, 'house', `${checkpoint}.png`)));
+            assert.equal(png.width, 1280, `${loader}/${checkpoint} width`);
+            assert.equal(png.height, 720, `${loader}/${checkpoint} height`);
+        }
+    }
+});
 
 test('visual baselines require explicit updates and remain unchanged on divergence', async t => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mapi-baselines-'));

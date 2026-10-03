@@ -5,6 +5,10 @@ CI compares the house checkpoints against committed PNGs in
 the GitHub Actions Ubuntu/Xvfb renderer and the `mapi-window-smoke` profile
 (1280 × 720 framebuffer, GUI scale 2). Keep loader references separate.
 
+Initial references were captured by [CI run 37126285659](https://github.com/ianwijma/minecraft-api/actions/runs/37126285659)
+from commit `8a8be6b`, with Minecraft 26.2 and MAPI 0.1.0. All packaged-smoke
+checks passed for both loaders before the reference artifacts were imported.
+
 Normal runs fail if a reference is missing and never modify it. Failures
 upload actual and diff PNGs with the packaged-smoke acceptance reports.
 
