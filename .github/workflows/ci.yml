@@ -224,6 +224,9 @@ jobs:
     name: API corpus (${{ matrix.loader }}, ${{ matrix.sdk }})
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      MAPI_MESA_VERSION: "25.2.8-0ubuntu0.24.04.2"
+      MAPI_XVFB_VERSION: "2:21.1.12-1ubuntu1.8"
     if: ${{ vars.MAPI_ACCEPT_EULA == 'true' }}
     strategy:
       fail-fast: false
@@ -243,6 +246,10 @@ jobs:
         with:
           python-version: "3.12"
       - uses: gradle/actions/setup-gradle@v4
+      - name: Install pinned software rendering environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends "mesa-vulkan-drivers=$MAPI_MESA_VERSION" "libgl1-mesa-dri=$MAPI_MESA_VERSION" "xvfb=$MAPI_XVFB_VERSION"
       - name: Build release artifacts and acceptance fixtures
         run: ./gradlew :${{ matrix.loader }}:build :fixture-fabric:jar :fixture-neoforge:jar :sdk:apiWorkerJar --console=plain
       - name: Record rendering environment
@@ -250,15 +257,17 @@ jobs:
           mkdir -p build/api-coverage
           uname -a > build/api-coverage/rendering.txt
           dpkg-query -W xvfb libgl1-mesa-dri mesa-vulkan-drivers >> build/api-coverage/rendering.txt
-          test -f /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
-          sha256sum /usr/share/vulkan/icd.d/lvp_icd.x86_64.json >> build/api-coverage/rendering.txt
+          driver_path=$(dpkg -L mesa-vulkan-drivers | rg '/lvp_icd[^/]*\.json$')
+          test "$(printf '%s\n' "$driver_path" | wc -l)" -eq 1
+          test -f "$driver_path"
+          echo "VK_ICD_FILENAMES=$driver_path" >> "$GITHUB_ENV"
+          sha256sum "$driver_path" >> build/api-coverage/rendering.txt
       - name: Run complete corpus against fresh packaged games
         run: node --experimental-strip-types --no-warnings e2e/api/run.ts --loader ${{ matrix.loader }} --sdk ${{ matrix.sdk }}
         env:
           MAPI_ACCEPT_EULA: "true"
           MAPI_USE_XVFB: "true"
           LIBGL_ALWAYS_SOFTWARE: "true"
-          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
       - name: Upload first-attempt evidence and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -289,14 +298,16 @@ jobs:
           test "$VERIFY_RESULT" = success
           test "$SDK_RESULT" = success
       - uses: actions/download-artifact@v4
+        if: always()
         with:
           pattern: api-coverage-*
           path: build/api-coverage
       - name: Verify six complete behavior reports
+        if: always()
         run: node --experimental-strip-types --no-warnings e2e/api/aggregate.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: api-coverage-matrix
           path: build/api-coverage/matrix.json
-          if-no-files-found: warn
+          if-no-files-found: error

@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { reserveOutput } from '../api/output.ts';
 import { Suite } from '../api/suite.ts';
 import { metadata } from '../api/corpus.ts';
 import { manifest } from '../api/manifest.ts';
@@ -10,6 +12,27 @@ import { loadContract, missingCoverage, validateSchema } from '../api/coverage.t
 import { verifyFixture, verifyReport } from '../api/report.ts';
 
 const contract = loadContract();
+test('diagnostic reruns preserve first-attempt evidence', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mapi-first-attempt-'));
+    const output = path.join(root, 'fabric-java');
+    try {
+        reserveOutput(output);
+        fs.writeFileSync(path.join(output, 'coverage.json'), 'original failure');
+        assert.throws(() => reserveOutput(output), /first-attempt/);
+        assert.equal(fs.readFileSync(path.join(output, 'coverage.json'), 'utf8'), 'original failure');
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
+test('missing corpora fail with a diagnostic matrix artifact', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mapi-missing-corpora-'));
+    try {
+        const result = spawnSync(process.execPath, ['--experimental-strip-types', '--no-warnings',
+            new URL('../api/aggregate.ts', import.meta.url).pathname, root], { encoding: 'utf8' });
+        assert.equal(result.status, 1);
+        const matrix = JSON.parse(fs.readFileSync(path.join(root, 'matrix.json'), 'utf8'));
+        assert.equal(matrix.status, 'failed');
+        assert.equal(matrix.missing.length, 6);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});
 test('every operation has an executable live case', () => {
     const sources = ['corpus.ts', 'run.ts'].map(file => fs.readFileSync(new URL(`../api/${file}`, import.meta.url), 'utf8')).join('\n');
     const cases = [...sources.matchAll(/\.case\('([^']+)'/g)].map(match => match[1]);

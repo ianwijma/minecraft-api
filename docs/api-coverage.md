@@ -74,7 +74,8 @@ acceptance prompt is required. `--loader` and `--sdk` default to `all` and run
 sequential fresh corpora. An operation filter selects diagnostic evidence;
 fixture preparation and dependent actions still run. Filtered runs carry
 `full: false` and cannot satisfy CI. Use a fresh output directory for each
-attempt; old reports are diagnostic evidence, never automatic retries.
+attempt; the runner refuses to overwrite existing evidence. Old reports are
+diagnostic evidence, never automatic retries.
 
 Each corpus provisions isolated packaged client and dedicated-server processes,
 uses fixed seeds and prepared blocks/entities/inventory, exercises both server
@@ -84,7 +85,10 @@ that tick freeze pauses input, rendering, or network traffic. Live screenshots
 are evidence; this suite never creates visual baselines automatically.
 
 `api-e2e` runs all six SDK/loader combinations on every PR with Ubuntu 24.04,
-Xvfb, and software rendering. It records installed rendering package versions;
+Xvfb, and software rendering. Mesa and Xvfb versions are pinned from the CI
+runner’s verified package provenance (run 37134645012); Lavapipe is installed
+explicitly and its ICD is discovered from the package manifest. It records
+installed rendering package versions and the ICD digest;
 semantic assertions are primary functional evidence. The `Complete API coverage
 (required)` aggregate must be made a required branch-protection check. It fails
 when the repository variable `MAPI_ACCEPT_EULA` is absent, a prerequisite job
@@ -94,7 +98,8 @@ Configure that variable as `true` under the owner's standing acceptance.
 Artifacts include JSON/JUnit, request traces, coverage matrices, runtime
 provenance, requested/effective profiles, lifecycle reports, logs, and failure
 screenshots. Traces and logs redact process credentials. The aggregate checks
-six unique reports from one revision and canonical contract, and validates
+six unique reports from one revision and canonical contract (matching
+`GITHUB_SHA` on CI), emits a diagnostic matrix even for missing corpora, and validates
 successful request evidence as well as behavior assertions. It never converts
 a failed first attempt into success using diagnostic retries.
 

@@ -11,6 +11,7 @@ import { metadata, readiness, prepareWorld, serverCorpus, clientCorpus } from '.
 import { startDedicated, startApiClient, cleanup, waitForExit, artifactHash, type GameProcess } from './supervisor.ts';
 import { verifyFixture, verifyReport, junit } from './report.ts';
 import type { Sdk } from './adapters.ts';
+import { reserveOutput } from './output.ts';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 function option(name: string, fallback: string): string {
@@ -29,7 +30,7 @@ let failed = false;
 
 for (const loader of loaders as ('fabric' | 'neoforge')[]) for (const sdk of sdks as Sdk[]) {
     const outDir = path.join(output, `${loader}-${sdk}`);
-    fs.mkdirSync(outDir, { recursive: true });
+    reserveOutput(outDir);
     const suites: Suite[] = [];
     const games: GameProcess[] = [];
     const fixtures: Record<string, any> = {};
