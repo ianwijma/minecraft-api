@@ -103,6 +103,13 @@ World-session and capability status: `phase`
 bridge id, sorted `capabilities`, booleans `tickControl`/`worldQueries`/
 `commands`, and the named-clock registry (`clocks`, spec §4.1).
 
+`POST /api/v1/client/worlds/create` validates the world id and options before
+admission, then queues vanilla world initialization on the client thread and
+returns **202** without waiting for data loading to finish. Poll
+`GET /api/v1/server/world` for `phase: ACTIVE`. A creation failure after admission is reported by the
+game's normal error screen/logging; the initial 202 confirms queue admission,
+not successful world creation.
+
 ### `GET /api/v1/server/ticks`
 
 Tick-control state: `available:false` when the bridge lacks tick control;

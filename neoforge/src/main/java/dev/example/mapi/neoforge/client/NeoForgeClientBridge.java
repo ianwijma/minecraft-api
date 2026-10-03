@@ -18,6 +18,7 @@ public final class NeoForgeClientBridge implements ClientBridge {
 
     private volatile Minecraft current;
     private final NeoForgeInputBackend inputBackend = new NeoForgeInputBackend();
+    private final NeoForgeWorlds worldsBackend = new NeoForgeWorlds();
 
     public NeoForgeClientBridge() {
         ConnectionHookVerifier.requireActive();
@@ -71,7 +72,7 @@ public final class NeoForgeClientBridge implements ClientBridge {
 
     @Override
     public Optional<ClientBridge.WorldsBackend> worlds() {
-        return Optional.of(new NeoForgeWorlds());
+        return Optional.of(worldsBackend);
     }
 
     @Override

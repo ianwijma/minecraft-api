@@ -25,6 +25,7 @@ final class FabricClientBridge implements ClientBridge {
 
     private final AtomicLong windowRevision = new AtomicLong();
     private final FabricInputBackend inputBackend = new FabricInputBackend();
+    private final FabricWorlds worldsBackend = new FabricWorlds();
 
     @Override
     public String bridgeId() {
@@ -65,7 +66,7 @@ final class FabricClientBridge implements ClientBridge {
 
     @Override
     public Optional<WorldsBackend> worlds() {
-        return Optional.of(new FabricWorlds());
+        return Optional.of(worldsBackend);
     }
 
     @Override
