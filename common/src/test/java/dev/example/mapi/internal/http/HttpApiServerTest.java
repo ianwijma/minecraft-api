@@ -123,6 +123,66 @@ class HttpApiServerTest {
     // ------------------------------------------------------------------
 
     @Test
+    void everyRegisteredRouteRejectsMissingAndWrongAuthentication() throws Exception {
+        startServer(new MapiConfig(true, freePort(), TOKEN, 100_000));
+        var routes = new java.util.LinkedHashMap<String, String>();
+        server.getRoutePaths().forEach(path -> routes.put(path, "GET"));
+        server.postRoutePaths().forEach(path -> routes.put(path, "POST"));
+        routes.put("/api/v1/jobs/job-missing", "GET");
+        for (var route : routes.entrySet()) {
+            for (String token : java.util.List.of("", "wrong-token")) {
+                var request = HttpRequest.newBuilder()
+                        .uri(URI.create("http://127.0.0.1:" + port + route.getKey()))
+                        .timeout(Duration.ofSeconds(5))
+                        .method(route.getValue(), route.getValue().equals("POST")
+                                ? HttpRequest.BodyPublishers.ofString("{}")
+                                : HttpRequest.BodyPublishers.noBody());
+                if (!token.isEmpty()) request.header("Authorization", "Bearer " + token);
+                var response = client.send(request.build(), HttpResponse.BodyHandlers.ofString());
+                assertEquals(401, response.statusCode(), route.toString());
+                assertTrue(response.body().contains("UNAUTHORIZED"), route.toString());
+            }
+        }
+    }
+
+    @Test
+    void everyPostRejectsMalformedObjectsBeforeDispatch() throws Exception {
+        startServer(new MapiConfig(true, freePort(), TOKEN, 100_000));
+        for (String path : server.postRoutePaths()) {
+            for (String body : java.util.List.of("{", "[]", "null")) {
+                var response = client.send(HttpRequest.newBuilder()
+                        .uri(URI.create("http://127.0.0.1:" + port + path))
+                        .timeout(Duration.ofSeconds(5))
+                        .header("Authorization", "Bearer " + TOKEN)
+                        .POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                        HttpResponse.BodyHandlers.ofString());
+                assertEquals(400, response.statusCode(), path + " " + body);
+                assertTrue(response.body().contains("BAD_REQUEST"), response.body());
+            }
+        }
+    }
+
+    @Test
+    void everyPostRejectsUndeclaredExecutionModesWithoutDispatch() throws Exception {
+        startServer(new MapiConfig(true, freePort(), TOKEN, 100_000));
+        for (var route : server.postRouteOperations().entrySet()) {
+            var descriptor = server.operations().find(route.getValue()).orElseThrow().toMap();
+            var supported = (java.util.List<?>) descriptor.get("supportedExecutionModes");
+            for (String mode : java.util.List.of("raw-input", "client-logic", "privileged")) {
+                if (supported.contains(mode)) continue;
+                var response = client.send(HttpRequest.newBuilder()
+                        .uri(URI.create("http://127.0.0.1:" + port + route.getKey()))
+                        .timeout(Duration.ofSeconds(5))
+                        .header("Authorization", "Bearer " + TOKEN)
+                        .POST(HttpRequest.BodyPublishers.ofString("{\"confirm\":true,\"executionMode\":\"" + mode + "\"}"))
+                        .build(), HttpResponse.BodyHandlers.ofString());
+                assertEquals(422, response.statusCode(), route.getKey() + " " + mode);
+                assertTrue(response.body().contains("EXECUTION_MODE_UNSUPPORTED"), response.body());
+            }
+        }
+    }
+
+    @Test
     void requiresBearerTokenOnEveryEndpoint() throws Exception {
         startServer(enabledConfig());
         for (String path : new String[] {"/api/v1/health", "/api/v1/info", "/api/v1/server/status"}) {

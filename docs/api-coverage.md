@@ -23,3 +23,11 @@ Implementation proceeds through contract/evidence infrastructure, deterministic
 contracts, a cross-loader consumer fixture, the live corpus, and SDK/CI wiring.
 The 300-run reliability, 100-cycle lifecycle, performance, and parallel
 campaigns remain separate acceptance gates.
+
+The deterministic HTTP suite enumerates the actual route table for missing
+and wrong authentication, malformed object bodies, and every undeclared
+execution mode. These tests cannot silently omit a newly registered route.
+Input deadline tests inject tick, epoch, and monotonic clocks and boundary
+waits; they require no sleeping and confirm cleanup even after an epoch-clock
+jump. Existing job, snapshot, lease, event, world-lifecycle, and dispatch tests
+retain their focused failure and race checks.

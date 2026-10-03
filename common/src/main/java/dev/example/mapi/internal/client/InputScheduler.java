@@ -30,13 +30,29 @@ public final class InputScheduler {
     }
 
     private final LongSupplier clientTick;
+    private final LongSupplier epochMillis;
+    private final LongSupplier monotonicNanos;
+    private final InterruptibleWait waitBoundary;
+
+    @FunctionalInterface
+    interface InterruptibleWait {
+        void await() throws InterruptedException;
+    }
 
     /**
      * @param clientTick the client-tick boundary counter (spec §4.1), never
      *                   {@code null}
      */
     public InputScheduler(LongSupplier clientTick) {
+        this(clientTick, System::currentTimeMillis, System::nanoTime, () -> Thread.sleep(5));
+    }
+
+    InputScheduler(LongSupplier clientTick, LongSupplier epochMillis,
+            LongSupplier monotonicNanos, InterruptibleWait waitBoundary) {
         this.clientTick = java.util.Objects.requireNonNull(clientTick, "clientTick");
+        this.epochMillis = java.util.Objects.requireNonNull(epochMillis, "epochMillis");
+        this.monotonicNanos = java.util.Objects.requireNonNull(monotonicNanos, "monotonicNanos");
+        this.waitBoundary = java.util.Objects.requireNonNull(waitBoundary, "waitBoundary");
     }
 
     /**
@@ -72,9 +88,9 @@ public final class InputScheduler {
             throw new ProblemException(ProblemCode.BAD_REQUEST, "ticks must be between 1 and 3600");
         }
         java.util.Objects.requireNonNull(requireControl, "requireControl");
-        long remainingMs = Math.max(0, deadlineEpochMs - System.currentTimeMillis());
+        long remainingMs = Math.max(0, deadlineEpochMs - epochMillis.getAsLong());
         long budgetNanos = java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(remainingMs);
-        long startedNanos = System.nanoTime();
+        long startedNanos = monotonicNanos.getAsLong();
         requireControl.run();
         if (remainingMs == 0) {
             throw new ProblemException(ProblemCode.DEADLINE_EXCEEDED,
@@ -92,12 +108,12 @@ public final class InputScheduler {
                     held++;
                     last = now;
                 }
-                if (System.nanoTime() - startedNanos >= budgetNanos) {
+                if (monotonicNanos.getAsLong() - startedNanos >= budgetNanos) {
                     throw new ProblemException(ProblemCode.DEADLINE_EXCEEDED,
                             "client ticks did not advance within the deadline",
                             java.util.Map.of("heldTicks", held, "requestedTicks", ticks));
                 }
-                Thread.sleep(5);
+                waitBoundary.await();
             }
             return new HoldResult(keyCode, ticks, held, startBoundary, clientTick.getAsLong());
         } finally {
