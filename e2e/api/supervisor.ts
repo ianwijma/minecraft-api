@@ -69,7 +69,7 @@ export async function startApiClient(repoRoot: string, loader: 'fabric' | 'neofo
     try {
         const client = await startClient({ repoRoot, loader, token, outDir, mode: 'release', fixture: true,
             profilePath: path.join(repoRoot, 'e2e/profiles/client/window-smoke.json'),
-            options: { maxFps: 30, enableVsync: false, renderDistance: 2, simulationDistance: 2, pauseOnLostFocus: false },
+            options: { maxFps: 30, enableVsync: false, renderDistance: 2, simulationDistance: 5, pauseOnLostFocus: false },
             env: { MAPI_HTTP_RATE_LIMIT_PER_MINUTE: '100000', MAPI_FIXTURE_REPORT: fixtureReport, MAPI_HTTP_SCOPES: '', MAPI_SERVER_LAN_ENABLED: 'true',
                 MAPI_CLIENT_CONNECT_ALLOWLIST: `127.0.0.1:${server.gamePort}` },
         });

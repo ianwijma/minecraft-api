@@ -104,8 +104,8 @@ six unique reports from one revision and canonical contract (matching
 successful request evidence as well as behavior assertions. It never converts
 a failed first attempt into success using diagnostic retries.
 
-The client fixture limits software rendering to 30 FPS and two-chunk render
-and simulation distances, disables Vsync and focus pausing, and records and
+The client fixture limits software rendering to 30 FPS, two-chunk rendering,
+and five-chunk simulation (Minecraft 26.2's normal minimum), disables Vsync and focus pausing, and records and
 verifies the saved options after shutdown. API dispatch deadlines remain
 unchanged. Step-and-observe captures within the completion server-thread pass;
 its result and milestone use the actual retained observation boundary, avoiding
@@ -116,3 +116,29 @@ long-lived SSE connections occupied both core threads while normal requests
 queued behind them. The bounded worker pool now reserves ordinary-request
 capacity alongside the maximum eight streams; a real-listener JVM test holds
 all eight streams open and requires the health endpoint to remain responsive.
+
+## Wrap-up checkpoint — 2026-10-04
+
+Implementation is pushed on `codex/complete-api-coverage` in draft PR #7.
+`./gradlew verify apiHarnessTest` passed (40 offline harness tests), and the
+latest fixture minimum correction passed `./gradlew verify`. The original
+six-corpus local matrix passed at revision `0fb14f5`, with 48 operations per
+SDK/loader, 444 successful environment cases, and 120 capability rejections;
+its evidence is in `build/api-coverage-complete`.
+
+Subsequent CI exposed a completion/snapshot boundary race (fixed with a JVM
+regression assertion) and 500 ms busy reads under default software-rendering
+load. The client now uses bounded rendering settings and verifies saved
+options. A rerun correctly rejected the initial simulation-distance setting
+of 2: Minecraft 26.2's Options bytecode confirms the normal minimum is 5.
+That correction is committed, but a passing full matrix on the final revision
+has not yet been established. The interrupted local rerun remains under
+`build/api-coverage-final` and earns no complete coverage.
+
+Resume by inspecting the latest PR/push CI runs, including all six corpora and
+the required aggregate. Verify the corrected saved options and completion
+boundary in a fresh local output directory if further diagnosis is needed.
+Investigate any remaining `SERVER_BUSY` or packaged visual-smoke failures;
+keep the first failure reports and do not loosen assertions or count retries
+as success. Update PR validation once final-revision CI passes. The separate
+reliability/lifecycle/performance/isolation campaigns remain outstanding.
