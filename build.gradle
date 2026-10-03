@@ -121,7 +121,13 @@ tasks.register('publishLocal', Task) {
 tasks.register('verify', Task) {
     group = 'verification'
     description = 'Core verification: formatting, tests, packaging, and manifest checks.'
-    dependsOn tasks.named('formatCheck'), tasks.named('testAll'), tasks.named('verifyDistributions'), tasks.named('validateManifest')
+    dependsOn tasks.named('formatCheck'), tasks.named('testAll'), tasks.named('verifyDistributions'), tasks.named('validateManifest'), tasks.named('apiCoverageCheck')
+}
+
+tasks.register('apiCoverageCheck', Exec) {
+    group = 'verification'
+    description = 'Checks canonical OpenAPI against exhaustive API behavior definitions (requires Node 22).'
+    commandLine 'node', '--experimental-strip-types', '--no-warnings', 'e2e/api/check.ts'
 }
 
 tasks.register('doctor', Exec) {

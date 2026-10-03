@@ -1,0 +1,62 @@
+import type { CaseDefinition, Environment } from './coverage.ts';
+
+const define = (environments: Environment[], assertion: string,
+    prerequisites: string[] = [], negativeCases = ['missing-auth', 'wrong-auth']): CaseDefinition =>
+    ({ environments, assertion, prerequisites, negativeCases });
+const server: Environment[] = ['integrated', 'dedicated'];
+const world = ['active-world', 'prepared-fixture'];
+const tick = [...world, 'tick-control-lease'];
+const input = [...world, 'input-lease'];
+
+export const manifest: Record<string, CaseDefinition> = {
+    getHealth: define(['menu', 'dedicated'], 'status is ok and protocol is 1'),
+    getInfo: define(['menu', 'dedicated'], 'loader, Minecraft version, and packaged JAR digest match'),
+    streamEvents: define(server, 'correlated command event is delivered, filtered, and resumed', world),
+    listOperations: define(['menu', 'dedicated'], 'all POST authorization descriptors match OpenAPI'),
+    getWorldInfo: define(server, 'active session identity and required clocks are present', world),
+    getTickState: define(server, 'state reflects freeze, rate, and simulation progress', tick),
+    acquireClientControlLease: define(['menu'], 'acquisition and renewal preserve ownership', [],
+        ['missing-auth', 'wrong-auth', 'invalid-ttl', 'lease-conflict', 'stale-renewal']),
+    acquireTickLease: define(server, 'exclusive lease has an identity and future expiry', world,
+        ['missing-auth', 'wrong-auth', 'invalid-ttl', 'lease-conflict']),
+    freezeTicks: define(server, 'readback confirms frozen simulation', tick),
+    unfreezeTicks: define(server, 'readback confirms resumed simulation', tick),
+    setTickRate: define(server, 'effective rate is the requested bounded rate', tick),
+    stepTicks: define(server, 'job completes every requested simulation step', tick),
+    stepAndObserve: define(server, 'completed steps produce a retained snapshot at the completion boundary', tick),
+    sprintTicks: define(server, 'bounded sprint advances the server and terminates', tick),
+    stopTickWork: define(server, 'active sprint is stopped and remains stopped', tick),
+    queryPlayers: define(server, 'known player inventory is returned; dedicated result is bounded', world),
+    queryEntities: define(server, 'known fixture entity is returned within the requested bound', world),
+    queryBlock: define(server, 'known block and typed block-entity data are returned', world),
+    listRegistries: define(server, 'block registry exists and has entries', world),
+    queryRegistryEntries: define(server, 'known block entry exists in sorted bounded results', world),
+    captureSnapshot: define(server, 'snapshot has an identity, boundary, and fixture observation', world),
+    diffSnapshots: define(server, 'intentional entity change produces a bounded structural diff', world),
+    dispatchCommand: define(server, 'command changes a block confirmed through a query', world),
+    getClientInfo: define(['menu'], 'client bridge advertises the required capabilities'),
+    getWindowState: define(['menu'], 'dimensions and GUI scale match effective settings'),
+    captureScreenshot: define(['menu'], 'PNG decodes and matches reported framebuffer dimensions'),
+    holdKey: define(['integrated'], 'inventory key opens the player inventory', input),
+    setWindowed: define(['menu'], 'requested window dimensions appear in readback'),
+    setFullscreen: define(['menu'], 'fullscreen toggles on and off in readback'),
+    setGuiScale: define(['menu'], 'GUI scale changes in readback'),
+    moveWaypoints: define(['integrated'], 'raw movement changes player position on a prepared lane', input),
+    publishLan: define(['integrated'], 'published game port accepts a connection', tick),
+    unpublishLan: define(['integrated'], 'unpublished game port refuses new connections', tick),
+    inspectInventory: define(['integrated'], 'known fixture stack appears in the correct menu slot', input),
+    clickInventory: define(['integrated'], 'click moves a stack and server inventory confirms the destination', input),
+    getTooltip: define(['integrated'], 'computed tooltip contains the fixture item name', input),
+    captureRenderedTooltip: define(['integrated'], 'rendered PNG is valid and tooltip lines agree with computed data', input),
+    inspectScreen: define(['menu'], 'title screen contains actionable semantic widgets'),
+    clickScreen: define(['menu'], 'widget click causes the expected screen transition', ['input-lease']),
+    listWorlds: define(['menu'], 'created world appears and deleted world disappears'),
+    loadWorld: define(['integrated'], 'saved world reloads with a new session and retained fixture block', ['saved-world']),
+    createWorld: define(['integrated'], 'admitted creation reaches ACTIVE with the requested world', ['input-lease']),
+    deleteWorld: define(['menu'], 'confirmed deletion removes only the disposable test world', ['unloaded-test-world']),
+    connectServer: define(['multiplayer'], 'client joins and server API observes the same authoritative player', ['input-lease', 'dedicated-server', 'loopback-allowlist']),
+    readLogs: define(['menu', 'dedicated'], 'bounded records and resume cursor are returned'),
+    requestShutdown: define(['menu', 'dedicated'], 'accepted shutdown exits the game and completes fixture reports'),
+    getJob: define(server, 'step job exposes ordered milestones and successful terminal result', tick),
+    getServerStatus: define(server, 'running status has bounded player counts and advancing tick metrics', world),
+};
