@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
 from typing import Any, Callable, Iterator, Optional
@@ -108,7 +109,9 @@ class MapiClient:
 
     def stream(self, path: str = "/api/v1/events/stream",
                cursor: Optional[int] = None, types: Optional[list] = None,
-               world: Optional[str] = None) -> Iterator[SseEvent]:
+               world: Optional[str] = None,
+               on_open: Optional[Callable[[Any], None]] = None,
+               on_gap: Optional[Callable[[int], None]] = None) -> Iterator[SseEvent]:
         """Yields parsed SSE events; resumes from `cursor` and reports gaps.
 
         The caller can establish a cursor (`client.latest_cursor()`) before
@@ -116,20 +119,28 @@ class MapiClient:
         anti-race pattern. A `:event-gap` comment raises StopIteration with
         the gap carried on the iterator (see `last_gap`).
         """
-        params = []
+        params = {"keepaliveSeconds": 1}
         if cursor is not None:
-            params.append(f"cursor={cursor}")
+            params["cursor"] = cursor
         if types:
-            params.append("types=" + ",".join(types))
+            params["types"] = ",".join(types)
         if world:
-            params.append(f"world={world}")
-        url = self._base + path + ("?" + "&".join(params) if params else "")
+            params["world"] = world
+        url = self._base + path + ("?" + urllib.parse.urlencode(params) if params else "")
         req = urllib.request.Request(url)
         req.add_header("Authorization", f"Bearer {self._token}")
         req.add_header("Host", "127.0.0.1")
         self.last_gap: Optional[int] = None
-        with urllib.request.urlopen(req, timeout=self._timeout) as resp:
-            yield from self._parse_sse(resp)
+        try:
+            with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+                if on_open:
+                    on_open(resp)
+                yield from self._parse_sse(resp, on_gap)
+        except urllib.error.HTTPError as error:
+            body = json.loads(error.read().decode("utf-8"))
+            problem = body.get("error", {})
+            raise MapiError(error.code, problem.get("code", "STREAM_FAILED"),
+                            problem.get("message", "stream rejected")) from error
 
     last_gap: Optional[int] = None
 
@@ -141,7 +152,8 @@ class MapiClient:
             return int(body["cursor"])  # type: ignore[arg-type]
         return None
 
-    def _parse_sse(self, resp: Any) -> Iterator[SseEvent]:
+    def _parse_sse(self, resp: Any,
+                   on_gap: Optional[Callable[[int], None]] = None) -> Iterator[SseEvent]:
         event_id, event_type, data_lines = "", "message", []
         for raw in resp:
             line = raw.decode("utf-8").rstrip("\r\n")
@@ -151,6 +163,8 @@ class MapiClient:
                     # explicit gap: dropped-up-to=N (spec §13.2)
                     _, _, value = comment.partition("droppedUpTo=")
                     self.last_gap = int(value) if value.isdigit() else None
+                    if self.last_gap is not None and on_gap:
+                        on_gap(self.last_gap)
                 continue
             if not line:
                 if data_lines or event_type != "message" or event_id:

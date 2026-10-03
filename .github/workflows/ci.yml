@@ -31,6 +31,13 @@ jobs:
         run: /tmp/mapi-sdk-venv/bin/python scripts/generate-sdks.py --check
       - name: Exercise TypeScript SDK against a loopback fake API
         run: /tmp/mapi-sdk-venv/bin/python scripts/ts-smoke.py
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build Java SDK worker
+        run: ./gradlew :sdk:apiWorkerJar --console=plain
       - name: Run offline E2E harness tests
         working-directory: e2e
         run: npm test
@@ -45,6 +52,9 @@ jobs:
           distribution: temurin
           java-version: "25"
       - uses: gradle/actions/setup-gradle@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
       - name: Run core verification
         run: ./gradlew verify --stacktrace --console=plain
       - name: Upload test and verification reports

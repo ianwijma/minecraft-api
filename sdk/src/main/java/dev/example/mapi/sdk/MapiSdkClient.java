@@ -145,6 +145,31 @@ public final class MapiSdkClient {
     // -- convenience operations (spec §6/§4.4) -------------------------------
 
     /**
+     * Opens a bounded authenticated event stream with optional resume/filter parameters.
+     *
+     * @param cursor resume strictly after this sequence, or empty for latest
+     * @param types event type filter, empty for all events
+     * @param world world-session filter, empty for all worlds
+     * @param lifetime maximum stream lifetime, positive
+     * @return closeable SSE stream; never null
+     * @throws java.io.IOException on connection or streaming transport failure
+     */
+    public MapiEventStream streamEvents(Optional<Long> cursor, java.util.List<String> types,
+            Optional<String> world, Duration lifetime) throws java.io.IOException {
+        var query = new java.util.ArrayList<String>();
+        query.add("keepaliveSeconds=1");
+        cursor.ifPresent(value -> query.add("cursor=" + value));
+        if (!types.isEmpty()) query.add("types=" + encodeQuery(String.join(",", types)));
+        world.ifPresent(value -> query.add("world=" + encodeQuery(value)));
+        return new MapiEventStream(URI.create(base + "/api/v1/events/stream"
+                + (query.isEmpty() ? "" : "?" + String.join("&", query))), token, lifetime);
+    }
+
+    private static String encodeQuery(String value) {
+        return java.net.URLEncoder.encode(value, StandardCharsets.UTF_8);
+    }
+
+    /**
      * Waits until the world session phase is ACTIVE (spec §6, §4.4: bounded
      * by a wall-clock deadline).
      *

@@ -196,7 +196,8 @@
       "publishLocal": "publishLocal",
       "llmContext": "llmContext",
       "validateManifest": "validateManifest",
-      "apiCoverageCheck": "apiCoverageCheck"
+      "apiCoverageCheck": "apiCoverageCheck",
+      "apiHarnessTest": "apiHarnessTest"
     },
     "scripts": {
       "doctor": "scripts/doctor.sh",

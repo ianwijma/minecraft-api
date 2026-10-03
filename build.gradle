@@ -131,6 +131,14 @@ tasks.register('apiCoverageCheck', Exec) {
     commandLine 'node', '--experimental-strip-types', '--no-warnings', 'e2e/api/check.ts'
 }
 
+tasks.register('apiHarnessTest', Exec) {
+    group = 'verification'
+    description = 'Runs offline API/SDK and visual harness tests (requires Node 22 and Python 3).'
+    dependsOn ':sdk:apiWorkerJar'
+    workingDir 'e2e'
+    commandLine 'npm', 'test'
+}
+
 tasks.register('doctor', Exec) {
     group = 'help'
     description = 'Diagnoses the local development environment (JDK, wrapper, network).'

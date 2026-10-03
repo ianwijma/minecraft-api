@@ -45,6 +45,8 @@ export async function startClient(opts: {
     profilePath: string;
     outDir: string;
     mode?: 'dev' | 'release';
+    fixture?: boolean;
+    env?: Record<string, string>;
 }): Promise<SupervisedClient> {
     const mode = opts.mode ?? 'dev';
     const runRoot = createRunRoot(opts.repoRoot, opts.loader);
@@ -82,6 +84,7 @@ export async function startClient(opts: {
     const log = fs.openSync(logFile, 'w');
     const task = mode === 'release' ? `:${opts.loader}:runReleaseClient` : `:${opts.loader}:runClient`;
     const launchArgs = [task, `-PmapiClientRunDir=${runDir}`];
+    if (opts.fixture) launchArgs.push('-PmapiFixture=true');
     if (mode === 'release' && process.env['MAPI_USE_XVFB'] === 'true') {
         launchArgs.push('-PmapiUseXvfb=true');
     }
@@ -99,7 +102,8 @@ export async function startClient(opts: {
             MAPI_HTTP_ENABLED: 'true',
             MAPI_HTTP_TOKEN: opts.token,
             MAPI_HTTP_RATE_LIMIT_PER_MINUTE: '3600',
-            ...(process.env['MAPI_CLIENT_CONNECT_ALLOWLIST']
+            ...opts.env,
+            ...(!opts.env?.MAPI_CLIENT_CONNECT_ALLOWLIST && process.env['MAPI_CLIENT_CONNECT_ALLOWLIST']
                 ? { MAPI_CLIENT_CONNECT_ALLOWLIST: process.env['MAPI_CLIENT_CONNECT_ALLOWLIST'] }
                 : {}),
         },
@@ -135,7 +139,7 @@ function readVersion(repoRoot: string): string {
     return match[1].trim();
 }
 
-function java25(repoRoot: string): string {
+export function java25(repoRoot: string): string {
     const candidates = [
         process.env['JAVA_HOME'] ? path.join(process.env['JAVA_HOME'], 'bin', 'java') : '',
         ...(fs.existsSync(path.join(os.homedir(), '.gradle', 'jdks'))

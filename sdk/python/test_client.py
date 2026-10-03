@@ -73,7 +73,7 @@ class MapiClientTest(unittest.TestCase):
                          ("5", "changed", {"ok": True}))
         self.assertEqual(self.client.last_gap, 4)
         path, auth = FakeApi.requests[-1]
-        self.assertEqual(path, "/stream?cursor=7&types=changed&world=world-1")
+        self.assertEqual(path, "/stream?keepaliveSeconds=1&cursor=7&types=changed&world=world-1")
         self.assertEqual(auth, f"Bearer {TOKEN}")
 
 
