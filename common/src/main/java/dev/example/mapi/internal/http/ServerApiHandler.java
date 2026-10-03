@@ -113,8 +113,28 @@ final class ServerApiHandler {
 
         var job = server.runtime.jobs().submit(observe ? "ticks.step-and-observe" : "ticks.step",
                 java.util.Optional.ofNullable(worldSessionId), deadline, context -> {
-                    var result = server.runtime.callOnServerThread(
+                    var operation = server.runtime.callOnServerThread(
                             () -> service.step(lease, stepTicks), 30_000);
+                    var scheduled = operation.scheduled();
+                    dev.example.mapi.internal.tick.TickControlBackend.StepResult result;
+                    boolean completed = false;
+                    try {
+                        result = dev.example.mapi.internal.tick.TickStepWaiter.await(scheduled, context,
+                                () -> server.runtime.callOnServerThread(
+                                        () -> service.stepState(lease, operation), 5_000));
+                        server.runtime.callOnServerThread(() -> {
+                            service.completeStep(lease, operation);
+                            return null;
+                        }, 5_000);
+                        completed = true;
+                    } finally {
+                        if (!completed) {
+                            server.runtime.callOnServerThread(() -> {
+                                service.cancelStep(lease, operation);
+                                return null;
+                            }, 5_000);
+                        }
+                    }
                     context.milestone("stepped", Map.of(
                             "requested", result.requested(),
                             "completed", result.completed(),

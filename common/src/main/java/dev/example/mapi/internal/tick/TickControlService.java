@@ -12,12 +12,16 @@ import java.util.Objects;
 import java.util.Optional;
 
 /**
- * Exclusive, lease-owned tick control (spec §5). Operations run on the server
+ * Exclusive, lease-owned tick control (spec §5). Mutations run on the server
  * thread via {@link TickControlBackend}; ownership is enforced with an
  * exclusive lease on the {@code tick-control} topic; automatic restoration on
  * lease expiry is configurable and never overwrites later manual changes.
  */
 public final class TickControlService {
+
+    /** A server-thread-admitted step request and its identity for later polling. */
+    public record StepOperation(long generation, TickControlBackend.StepResult scheduled) {
+    }
 
     /** Lease topic owned by tick-control users. */
     public static final String LEASE_TOPIC = "tick-control";
@@ -30,6 +34,9 @@ public final class TickControlService {
     private final float maxTickRate;
     private volatile boolean restoreOnExpiry;
     private volatile ControlLease lease;
+    private String activeStepLeaseId;
+    private long stepGeneration;
+    private long activeStepGeneration;
 
     /**
      * @param backend       loader backend, never {@code null}
@@ -74,6 +81,11 @@ public final class TickControlService {
      */
     public ControlLease acquireLease(String owner, long ttlMs) {
         ControlLease acquired = leases.acquire(LEASE_TOPIC, owner, ttlMs);
+        if (activeStepLeaseId != null && !activeStepLeaseId.equals(acquired.id())) {
+            backend.stopStepping();
+            activeStepLeaseId = null;
+            activeStepGeneration = 0;
+        }
         this.lease = acquired;
         return acquired;
     }
@@ -149,6 +161,7 @@ public final class TickControlService {
      */
     public TickControlBackend.State unfreeze(ControlLease lease) {
         requireOwnership(lease);
+        stopActiveStep();
         backend.unfreeze();
         var after = backend.state();
         progress.observe(observation(after));
@@ -191,18 +204,59 @@ public final class TickControlService {
     }
 
     /**
-     * Steps the simulation a bounded number of ticks (job body helper).
+     * Admits a bounded simulation step; the job worker observes completion
+     * through {@link #stepState(ControlLease, StepOperation)}.
      *
      * @param lease caller's tick-control lease
      * @param ticks ticks to step, 1..10000
-     * @return the step result
+     * @return the scheduled operation and its identity
      */
-    public TickControlBackend.StepResult step(ControlLease lease, int ticks) {
+    public StepOperation step(ControlLease lease, int ticks) {
         requireOwnership(lease);
         if (ticks < 1 || ticks > 10_000) {
             throw new ProblemException(ProblemCode.BAD_REQUEST, "ticks must be between 1 and 10000");
         }
-        return backend.step(ticks);
+        if (activeStepLeaseId != null) {
+            throw new ProblemException(ProblemCode.SERVER_BUSY,
+                    "a tick step is already active");
+        }
+        TickControlBackend.StepResult result = backend.step(ticks);
+        long generation = ++stepGeneration;
+        if (result.completed() < result.requested()) {
+            activeStepLeaseId = lease.id();
+            activeStepGeneration = generation;
+        }
+        return new StepOperation(generation, result);
+    }
+
+    /** Returns state only while this admitted step remains active and lease-owned. */
+    public TickControlBackend.State stepState(ControlLease lease, StepOperation operation) {
+        requireOwnership(lease);
+        if (operation == null || operation.generation() != activeStepGeneration
+                || !lease.id().equals(activeStepLeaseId)) {
+            throw new ProblemException(ProblemCode.SERVER_PAUSED,
+                    "the admitted tick step was stopped or replaced before completion");
+        }
+        return backend.state();
+    }
+
+    /** Clears an asynchronously completed step owned by {@code lease}. */
+    public void completeStep(ControlLease lease, StepOperation operation) {
+        if (lease != null && operation != null && operation.generation() == activeStepGeneration
+                && lease.id().equals(activeStepLeaseId)) {
+            activeStepLeaseId = null;
+            activeStepGeneration = 0;
+        }
+    }
+
+    /** Stops and clears an incomplete step previously admitted for {@code lease}. */
+    public void cancelStep(ControlLease lease, StepOperation operation) {
+        if (lease != null && operation != null && operation.generation() == activeStepGeneration
+                && lease.id().equals(activeStepLeaseId)) {
+            backend.stopStepping();
+            activeStepLeaseId = null;
+            activeStepGeneration = 0;
+        }
     }
 
     /**
@@ -229,7 +283,12 @@ public final class TickControlService {
      */
     public boolean stopStepping(ControlLease lease) {
         requireOwnership(lease);
-        return backend.stopStepping();
+        boolean stopped = backend.stopStepping();
+        if (activeStepLeaseId != null) {
+            activeStepLeaseId = null;
+            activeStepGeneration = 0;
+        }
+        return stopped;
     }
 
     /**
@@ -254,5 +313,13 @@ public final class TickControlService {
     private dev.example.mapi.internal.serverstate.TickObservation observation(TickControlBackend.State state) {
         return new dev.example.mapi.internal.serverstate.TickObservation(
                 System.currentTimeMillis(), state.tickCount(), state.frozen(), state.sprinting());
+    }
+
+    private void stopActiveStep() {
+        if (activeStepLeaseId != null) {
+            backend.stopStepping();
+            activeStepLeaseId = null;
+            activeStepGeneration = 0;
+        }
     }
 }

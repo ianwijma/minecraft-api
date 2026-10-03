@@ -260,7 +260,13 @@ export class Harness {
         if (r.status !== 202) {
             throw new Error(`step -> ${r.status}: ${JSON.stringify(r.body)}`);
         }
-        return this.waitForJob(String((r.body as any).jobId));
+        const job = await this.waitForJob(String((r.body as any).jobId));
+        const result = job.result;
+        if (Number(result?.requested) !== ticks || Number(result?.completed) !== ticks) {
+            throw new Error(`step job did not complete ${ticks} simulation ticks: `
+                + JSON.stringify(result));
+        }
+        return job;
     }
 
     // -- client bridge --------------------------------------------------------

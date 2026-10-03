@@ -367,7 +367,7 @@ async function clearNearbyEntities(
 
 function completedTicks(job: any): number | null {
     const stepped = Array.isArray(job?.milestones)
-        ? job.milestones.find((milestone: any) => milestone.name === 'stepped')?.data?.completed
+        ? job.milestones.find((milestone: any) => milestone.name === 'stepped')?.details?.completed
         : undefined;
     return Number.isInteger(stepped) ? Number(stepped) : null;
 }

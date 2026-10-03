@@ -5,14 +5,15 @@ import java.util.Optional;
 /**
  * Loader-neutral backend for tick control (spec §5), implemented per loader
  * against the vanilla tick-rate manager. Methods must be called on the
- * server thread. Every method reports what it actually did; unsupported
+ * server thread. A step call only admits the request; completion is observed
+ * asynchronously through {@link State#frozenTicksToRun()}. Every method reports what it actually did; unsupported
  * operations return empty rather than pretending (spec §3.3, §5).
  */
 public interface TickControlBackend {
 
     /** Current tick-control state snapshot. */
     record State(boolean frozen, boolean sprinting, float tickRate, long tickCount,
-            Optional<Integer> sprintTicksRemaining) {
+            Optional<Integer> sprintTicksRemaining, int frozenTicksToRun) {
     }
 
     /** Result of a step/sprint request. */
@@ -40,7 +41,8 @@ public interface TickControlBackend {
      * frozen (stepping advances a frozen server).
      *
      * @param ticks number of ticks to step, at least 1
-     * @return requested vs completed counts and the completion boundary
+     * @return the admitted request with zero completed ticks until later
+     *     state observations confirm execution
      */
     StepResult step(int ticks);
 

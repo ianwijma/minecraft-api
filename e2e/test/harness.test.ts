@@ -20,6 +20,27 @@ import { applyCharter, clearNonPlayerEntities, constructStageFloor,
     from '../harness/stage.ts';
 import type { SessionTick } from '../harness/context.ts';
 
+test('tick stepping rejects successful jobs with incomplete simulation progress', async () => {
+    const originalFetch = globalThis.fetch;
+    let completed = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+        const isStep = new URL(String(input)).pathname.endsWith('/ticks/step');
+        return new Response(JSON.stringify(isStep ? { jobId: 'step-test' } : {
+            state: 'SUCCEEDED', result: { requested: 21, completed, boundary: 99 },
+        }), { status: isStep ? 202 : 200,
+            headers: { 'Content-Type': 'application/json' } });
+    }) as typeof fetch;
+    try {
+        const h = new Harness('http://127.0.0.1:1', 'test-token');
+        await assert.rejects(h.stepTicks('lease', 21), /did not complete 21 simulation ticks/);
+        completed = 21;
+        const job = await h.stepTicks('lease', 21);
+        assert.equal(job.result.completed, 21);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
 test('supervisor creates its isolated run root from a clean build directory', () => {
     const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mapi-e2e-root-'));
     try {
@@ -196,7 +217,7 @@ test('house entity settling cleans late arrivals and requires stable empty reads
         command: async () => { killCommands++; return { resultCode: 1 }; },
     } as unknown as Harness;
     const tick = { stepTicks: async () => ({ milestones: [
-        { name: 'stepped', data: { requested: 21, completed: 21 } },
+        { name: 'stepped', details: { requested: 21, completed: 21 } },
     ] }) } as SessionTick;
 
     const result = await settleNearbyEntities(h, tick, 0, 64, 0, 32, {
@@ -216,7 +237,7 @@ test('house entity settling remains failed when entities persist through bounded
         command: async () => ({ resultCode: 1 }),
     } as unknown as Harness;
     const tick = { stepTicks: async () => ({ milestones: [
-        { name: 'stepped', data: { requested: 21, completed: 21 } },
+        { name: 'stepped', details: { requested: 21, completed: 21 } },
     ] }) } as SessionTick;
 
     const result = await settleNearbyEntities(h, tick, 0, 64, 0, 32, {

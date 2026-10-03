@@ -133,6 +133,12 @@ Tick-freeze limitation (spec §5): vanilla's freeze excludes players and
 ridden entities — freezing is not freezing all game state, and `stepAndObserve`
 is a scoped synchronization primitive, not global determinism.
 
+Step jobs complete only after vanilla reports that all requested frozen ticks
+have run. The server-thread request is admitted without waiting there; the job
+worker polls the remaining-step counter. Cancellation, an explicit stop,
+unfreezing, lease loss, or the job deadline stops an incomplete step and does
+not report it as successful.
+
 Every tick operation validates that `leaseId` is the current holder of the
 `tick-control` topic before handler dispatch. LAN publish and unpublish also
 require this lease and recheck it on the client thread.
