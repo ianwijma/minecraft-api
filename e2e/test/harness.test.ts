@@ -15,6 +15,8 @@ import { MAP, bfsPath, legsFromPath } from '../scenarios/04-hedge-maze.spec.ts';
 import { Harness } from '../harness/client.ts';
 import { MapiError } from '../../sdk/typescript/src/mapi-client.ts';
 import { createRunRoot } from '../harness/supervisor.ts';
+import { applyCharter, clearNonPlayerEntities } from '../harness/stage.ts';
+import type { SessionTick } from '../harness/context.ts';
 
 test('supervisor creates its isolated run root from a clean build directory', () => {
     const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mapi-e2e-root-'));
@@ -43,6 +45,68 @@ test('HTTP errors retain their route context and MapiError type', async () => {
     } finally {
         globalThis.fetch = originalFetch;
     }
+});
+
+test('stage cleanup waits for death removal then clears drops and XP', async () => {
+    const calls: string[] = [];
+    let deathTicks = 0;
+    let corpse = false;
+    let drops = 0;
+    let killCount = 0;
+    const h = {
+        command: async (command: string) => {
+            calls.push(command);
+            killCount++;
+            if (killCount === 1) corpse = true;
+            else drops = 0;
+        },
+    } as unknown as Harness;
+    const tick = {
+        stepTicks: async (ticks: number) => {
+            calls.push(`step:${ticks}`);
+            for (let i = 0; i < ticks; i++) {
+                if (corpse && ++deathTicks >= 20) {
+                    corpse = false;
+                    drops++;
+                }
+            }
+        },
+    } as SessionTick;
+
+    await clearNonPlayerEntities(h, tick);
+
+    assert.deepEqual(calls, [
+        'kill @e[type=!minecraft:player]', 'step:21',
+        'kill @e[type=!minecraft:player]', 'step:1',
+    ]);
+    assert.ok(deathTicks >= 20, 'vanilla death timer completed');
+    assert.equal(corpse, false);
+    assert.equal(drops, 0);
+});
+
+test('charter requires gamerule application but tolerates idempotent no-ops', async () => {
+    const rejectedCommands: string[] = [];
+    const rejectedHarness = {
+        command: async (command: string) => {
+            rejectedCommands.push(command);
+            if (command.startsWith('gamerule ')) throw new Error('invalid gamerule');
+        },
+    } as unknown as Harness;
+    await assert.rejects(applyCharter(rejectedHarness, () => {}), /invalid gamerule/);
+    assert.ok(rejectedCommands.at(-1)?.startsWith('gamerule '));
+
+    const advisories: string[] = [];
+    const idempotentHarness = {
+        command: async (command: string) => {
+            if (command === 'difficulty peaceful'
+                || command === 'kill @e[type=!minecraft:player]') {
+                throw new Error('already in requested state');
+            }
+        },
+        dayTime: async () => 6000,
+    } as unknown as Harness;
+    await applyCharter(idempotentHarness, message => advisories.push(message));
+    assert.equal(advisories.length, 2);
 });
 
 function image(width: number, height: number,

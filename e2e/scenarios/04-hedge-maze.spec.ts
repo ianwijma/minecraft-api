@@ -110,7 +110,7 @@ export const scenario: Scenario = {
             updateBaselines: ctx.updateBaselines,
         });
 
-        await prepareStage(h, CX, 0);
+        await prepareStage(h, CX, 0, ctx.tick);
         for (let r = 0; r < MAP.length; r++) {
             let c = 0;
             while (c < MAP[r].length) {

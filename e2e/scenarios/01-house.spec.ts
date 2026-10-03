@@ -58,9 +58,8 @@ export const scenario: Scenario = {
             updateBaselines: ctx.updateBaselines,
         });
 
-        await prepareStage(h, 0, 0);
+        await prepareStage(h, 0, 0, ctx.tick);
         await hideHud(h);
-        await h.command('kill @e[type=!minecraft:player]').catch(() => {});
 
         const pre = await h.snapshot('house-pre');
         for (const cmd of BUILD) await h.command(cmd);
@@ -80,10 +79,10 @@ export const scenario: Scenario = {
         await expectBlock(ctx, -4, 67, 0, 'glass');
 
         const entities = await h.entitiesAround(0, 64, 0, 32);
-        const nonPlayer = entities.filter(
-            e => !JSON.stringify(e).includes('player'));
+        const nonPlayer = entities.filter(e => e.typeId !== 'minecraft:player');
         report.expect(nonPlayer.length === 0, 'no entities near house',
-            `${nonPlayer.length} non-player entities in radius 32`);
+            `${nonPlayer.length} non-player entities in radius 32: `
+            + nonPlayer.map(e => e.typeId).join(', '));
 
         for (const [name, pose] of Object.entries(PINS.poses)) {
             await setCamera(h, pose);

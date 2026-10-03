@@ -1,6 +1,6 @@
 /**
  * Scenario 7 — The Garden (plan §5.7): tilling and planting a 7×5 field via
- * the use verb (not attack). Dry farmland persists under randomTickSpeed 0;
+ * the use verb (not attack). Dry farmland persists under random_tick_speed 0;
  * stage-0 wheat never advances, so the final frame is stable forever.
  */
 import type { Ctx, Scenario } from '../harness/context.ts';
@@ -48,7 +48,7 @@ export const scenario: Scenario = {
             updateBaselines: ctx.updateBaselines,
         });
 
-        await prepareStage(h, CX, 0);
+        await prepareStage(h, CX, 0, ctx.tick);
         await h.command(
             `fill ${FIELD.x1} 64 ${FIELD.z1} ${FIELD.x2} 64 ${FIELD.z2} dirt`);
         await hideHud(h);

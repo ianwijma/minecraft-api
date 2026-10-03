@@ -10,7 +10,7 @@ import type { Report } from './report.ts';
 export interface SessionTick {
     leaseId: string;
     /** Total ticks stepped through this lease (daytime advances by this
-     *  much under a true doDaylightCycle — use for expectedDayTime math). */
+     *  much under a true advance_time — use for expectedDayTime math). */
     readonly stepped: number;
     freeze(): Promise<void>;
     unfreeze(): Promise<void>;

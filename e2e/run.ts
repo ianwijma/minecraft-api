@@ -227,10 +227,8 @@ async function main(): Promise<number> {
             await ensureWorld(h);
         }
         await h.waitForServerReady();
-        // The single session tick lease: frozen for the entire run — the
-        // determinism charter, independent of broken gamerule commands.
-        // Acquired FIRST so a true doDaylightCycle can't drift while the
-        // ~50s of best-effort optional commands are attempted.
+        // The single session tick lease pauses the world by default; all
+        // scenario advancement, including entity cleanup, uses exact step jobs.
         let leaseId: string;
         try {
             leaseId = await h.acquireTickLease(3600);

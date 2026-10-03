@@ -32,13 +32,13 @@ scenario applies it through shared harness helpers (§3).
 | World generation | Fixed seed `20260919`, single world id `mapi-e2e`, deleted and re-created each session | `worlds/delete` (destructive grant) → `worlds/create` → poll `/server/world` until `ACTIVE` |
 | Non-flat vanilla terrain | "Stage" carving: a 97×97 column per scenario is `/fill`ed to air above a floor slab at Y=64 — visually indistinguishable from superflat inside render distance (fog hides the horizon), without needing a world-type preset (see §4) | `/fill` via `POST /server/commands` |
 | Hostile mobs | Off | `/difficulty peaceful` |
-| Passive mobs (incl. wandering trader, patrols — these have **separate** gamerules) | Off | `doMobSpawning false`, `doTraderSpawning false`, `doPatrolSpawning false`, `/kill @e[type=!player]` per scenario |
-| Daylight drift / changing shades | **Lighting and time contract, §1.1** — absolute time sets only, cycle always off, per-checkpoint assertion | `doDaylightCycle false` + `/time set <t>` + `/time query daytime` |
-| Weather (rain darkens sky light) | Fixed | `doWeatherCycle false` + `/weather clear` |
+| Passive mobs (incl. wandering trader, patrols — these have **separate** gamerules) | Off | `spawn_mobs false`, `spawn_wandering_traders false`, `spawn_patrols false`, `/kill @e[type=!minecraft:player]` per stage |
+| Daylight drift / changing shades | **Lighting and time contract, §1.1** — absolute time sets only, cycle always off, per-checkpoint assertion | `advance_time false` + `/time set <t>` + `/time query daytime` |
+| Weather (rain darkens sky light) | Fixed | `advance_weather false` + `/weather clear` |
 | Simulation timing | Tick lease + freeze; advance only by exact `step` jobs | `/server/ticks/*` (spec §5); receipts + job milestones recorded |
-| Random-tick systems (grass spread, crop growth, leaf decay, copper oxidation, fire spread, farmland drying/reversion) | Off | `randomTickSpeed 0` gamerule (+ `persistent=true` leaves as belt-and-braces) |
+| Random-tick systems (grass spread, crop growth, leaf decay, copper oxidation, fire spread, farmland drying/reversion) | Off | `random_tick_speed 0` gamerule (+ `persistent=true` leaves as belt-and-braces) |
 | Camera | Exact pose via teleport (privileged; there is deliberately no camera endpoint today) | `/tp @p X Y Z YAW PITCH` |
-| HUD/hand/crosshair in frame | Hidden | F1 toggle via `hold-key` (⚙ verify-26.2 GLFW key code), `sendCommandFeedback false` |
+| HUD/hand/crosshair in frame | Hidden | F1 toggle via `hold-key` (⚙ verify-26.2 GLFW key code), `send_command_feedback false` |
 | Attack/use/pick are mouse-bound by default; `hold-key` is keyboard-only | Rebound to free keyboard keys in the E2E profile so `hold-key` drives the normal keybinding path (tick-aware, spec §3.5) | `options.txt` key remaps (⚙ verify-26.2 format) |
 | Window/GUI geometry | Fixed | `set-windowed 1280×720`, `set-gui-scale 2`, `set-fullscreen false`; assert the **effective** `WindowStateResponse` (OS may adjust — spec §9.1) |
 | Smooth lighting / brightness (change shading globally) | Pinned | client profile `options.txt` (⚙ verify-26.2 keys) |
@@ -64,7 +64,7 @@ The user's requirement, made precise. Enforced four ways, plus profile pins:
    that happened before — world load, earlier scenarios, long tick steps —
    irrelevant.
 2. **The daylight cycle stays off for the whole session**
-   (`doDaylightCycle false` in the charter gamerules). Then tick freezes,
+   (`advance_time false` in the charter gamerules). Then tick freezes,
    steps, sprints, and long wall-clock walks cannot move the sun at all —
    e.g. the furnace scenario's 1600 stepped ticks would otherwise shift
    shading by 80 in-game seconds mid-scenario.
@@ -174,11 +174,13 @@ re-reading the file pre-launch.
    (destructive chain honored: scope + grant + intent).
 2. `worlds/create {levelId:"mapi-e2e", seed:20260919, gamemode:"creative"}`;
    poll `/server/world` until `phase:"ACTIVE"` (bounded, 120 s).
-3. Apply charter gamerules (§1 incl. `randomTickSpeed 0`), absolute
+3. Apply charter gamerules (§1 incl. `random_tick_speed 0`), absolute
    `/time set 6000`, `/weather clear`, `/difficulty peaceful` via
    `/server/commands`.
 4. `prepareStage(cx, cz)`: `/fill` air `y=65..95` and floor `y=60..63 stone,
-   y=64 grass_block` over `[cx±48, cz±48]`; `/kill @e[type=!player]`.
+   y=64 grass_block` over `[cx±48, cz±48]`; `/kill @e[type=!minecraft:player]`
+   then step 21 controlled ticks for vanilla's death timer, kill dropped
+   items/XP, and step one more tick before snapshots.
 5. `setTimeAbsolute(t)` = `/time set t` then `assertDayTime(t)` =
    `/time query daytime` compared against `t` (result value ⚙ verify-26.2).
 6. `setCamera(x,y,z,yaw,pitch)` = `/tp @p …`; hides HUD via F1 on first use.
@@ -294,7 +296,7 @@ command block updates are immediate; freeze comes later for the captures):
 | Door (south, closed) | `/setblock 0 65 3 oak_door[half=lower,facing=south]`, `/setblock 0 66 3 oak_door[half=upper,facing=south]` |
 | Roof (1-block overhang) | `/fill -5 69 -4 5 69 4 oak_planks`; corners `stone_bricks` |
 | Interior light | `/setblock 0 68 0 glowstone` (no torches — flame particles are random) |
-| Cleanup | `/kill @e[type=!player]` |
+| Cleanup | Kill non-player entities, step 21 ticks for death removal, kill drops/XP, then step one tick |
 
 **Checkpoints** (camera via `/tp @p`, F1 hidden, time pinned at 6000,
 weather clear, ticks frozen during the shoot to pin any accidental state):
@@ -423,7 +425,7 @@ design — no silent teleport fallback, spec §3.3).
 
 **Stage:** center `(-512,0)`. Maze = 11×11 cells, cell width 2, walls
 `oak_leaves[persistent=true]` (persistent — random-tick decay would
-otherwise delete walls non-deterministically; `randomTickSpeed 0` already
+otherwise delete walls non-deterministically; `random_tick_speed 0` already
 stops decay, this is belt-and-braces), floor grass. Built by `/fill` from
 this versioned ASCII map in the spec file:
 
@@ -565,7 +567,7 @@ format (⚙, then pinned).
 **Intent.** A second gameplay verb: *using* an item on a block (not
 attacking). Tilling and planting through the rebound use key exercises the
 "player-faithful at the gameplay level" claim (spec §3.1) on a completely
-different mechanic — and leans on `randomTickSpeed 0` for persistence.
+different mechanic — and leans on `random_tick_speed 0` for persistence.
 
 **Stage:** center `(-1024,0)`. A 7×5 dirt rectangle at `y=64`
 (`/fill -1027 64 -2 -1021 64 2 dirt` over the stage floor).
@@ -575,7 +577,7 @@ different mechanic — and leans on `randomTickSpeed 0` for persistence.
 1. Checkpoint `garden-dirt`.
 2. Give `iron_hoe` + `wheat_seeds`; hotbar-select the hoe; till all 35
    cells via the use key over a pinned aim grid 📐 (dry farmland persists
-   indefinitely because `randomTickSpeed 0` — no hydration needed, and no
+   indefinitely because `random_tick_speed 0` — no hydration needed, and no
    animated water enters the frame).
 3. Checkpoint `garden-tilled`; pair-diff vs `garden-dirt` must confine all
    change to the field rectangle.
@@ -592,8 +594,8 @@ different mechanic — and leans on `randomTickSpeed 0` for persistence.
   player-faithful; nothing was thrown).
 
 **Risks:** farmland reversion and trampling — neutralized by
-`randomTickSpeed 0` and no jumping; seeds never advance past stage 0 under
-`randomTickSpeed 0`, so the final frame is stable forever.
+`random_tick_speed 0` and no jumping; seeds never advance past stage 0 under
+`random_tick_speed 0`, so the final frame is stable forever.
 
 ---
 

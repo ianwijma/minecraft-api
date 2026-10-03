@@ -3,6 +3,7 @@
  * world, flat carved stages, charter gamerules, absolute time, exact camera.
  */
 import { Harness, KEYS } from './client.ts';
+import type { SessionTick } from './context.ts';
 import { MapiError } from '../../sdk/typescript/src/mapi-client.ts';
 import { assert, sleep } from './report.ts';
 
@@ -12,37 +13,30 @@ export const NOON = 6000;
 export const MIDNIGHT = 18000;
 
 /**
- * Plan §1 charter. Two tiers, because of a mod bug found by this harness:
- * `gamerule`-family commands report a failure on both loaders (the deferred
- * command-chain callback never resolves) — they are best-effort OPTIONALs.
- * REQUIRED = proven-working commands; OPTIONAL = advisory on failure.
- *
- * Determinism itself does not depend on the gamerules: the charter freezes
- * the tick loop for the whole session (run.ts acquires one lease), which
- * locks daylight, mob spawning, crop growth, leaf decay, copper oxidation,
- * and farmland reversion — every source the gamerules would have covered.
+ * Plan §1 charter. REQUIRED commands establish the scenario state;
+ * OPTIONAL commands are idempotent setup. The tick lease pauses simulation
+ * during setup/building; controlled ticks settle entity deaths/removals while
+ * required mob-spawning rules prevent replacements.
  */
 export const CHARTER_REQUIRED: string[] = [
-    // every charter command is best-effort: vanilla flips idempotent
-    // setups to failures (kill with zero matches, 'already peaceful',
-    // gamerule chain-sticks); scenario assertions prove the real state.
     'gamemode creative @p',
     'weather clear',
-    'kill @e[type=!minecraft:player]',
+    'gamerule spawn_mobs false',
+    'gamerule spawn_wandering_traders false',
+    'gamerule spawn_patrols false',
+    'gamerule advance_time false',
+    'gamerule advance_weather false',
+    'gamerule immediate_respawn true',
+    'gamerule send_command_feedback false',
+    'gamerule show_death_messages false',
+    'gamerule random_tick_speed 0',
 ];
 
 export const CHARTER_OPTIONAL: string[] = [
-    // vanilla flips this one to a failure when already in the target mode.
+    // Vanilla reports a failed command when the world is already peaceful.
     'difficulty peaceful',
-    'gamerule doMobSpawning false',
-    'gamerule doTraderSpawning false',
-    'gamerule doPatrolSpawning false',
-    'gamerule doDaylightCycle false',
-    'gamerule doWeatherCycle false',
-    'gamerule doImmediateRespawn true',
-    'gamerule sendCommandFeedback false',
-    'gamerule showDeathMessages false',
-    'gamerule randomTickSpeed 0',
+    // No matching entities is a normal no-op; stage cleanup verifies state.
+    'kill @e[type=!minecraft:player]',
 ];
 
 /** Delete + recreate the fixed-seed world; wait until it is ACTIVE. */
@@ -85,7 +79,10 @@ export async function ensureWorld(h: Harness): Promise<void> {
 
 export async function applyCharter(h: Harness,
                                    advisory: (msg: string) => void): Promise<void> {
-    for (const cmd of [...CHARTER_REQUIRED, ...CHARTER_OPTIONAL]) {
+    for (const cmd of CHARTER_REQUIRED) {
+        await h.command(cmd);
+    }
+    for (const cmd of CHARTER_OPTIONAL) {
         try {
             await h.command(cmd);
         } catch (e) {
@@ -154,7 +151,9 @@ async function tryCommand(h: Harness, cmd: string): Promise<void> {
  * The player is teleported over the stage first: vanilla /fill refuses to
  * place blocks in unloaded chunks, and chunk loading follows the player.
  */
-export async function prepareStage(h: Harness, cx: number, cz: number): Promise<void> {
+export async function prepareStage(
+    h: Harness, cx: number, cz: number, tick: SessionTick,
+): Promise<void> {
     await h.command(`tp @p ${cx} 100 ${cz}`);
     await sleep(3000);
     for (let y = 65; y <= 95; y++) {
@@ -164,12 +163,26 @@ export async function prepareStage(h: Harness, cx: number, cz: number): Promise<
         await h.command(`fill ${cx - 48} ${y} ${cz - 48} ${cx + 48} ${y} ${cz + 48} stone`);
     }
     await h.command(`fill ${cx - 48} 64 ${cz - 48} ${cx + 48} 64 ${cz + 48} grass_block`);
-    await h.command('kill @e[type=!minecraft:player]').catch(() => {});
+    await clearNonPlayerEntities(h, tick);
     // Mesh warm-up: the carve triggers a large chunk rebuild; two warm
     // captures give the client time to finish it before any checkpoint.
     await h.screenshot().catch(() => {});
     await sleep(2000);
     await h.screenshot().catch(() => {});
+}
+
+/**
+ * Settle entity cleanup while the required spawn gamerules are active. The
+ * first batch advances through vanilla's 20-tick living-entity death timer;
+ * the second kill removes drops/XP and one tick finalizes those removals.
+ */
+export async function clearNonPlayerEntities(
+    h: Harness, tick: SessionTick,
+): Promise<void> {
+    await h.command('kill @e[type=!minecraft:player]').catch(() => {});
+    await tick.stepTicks(21);
+    await h.command('kill @e[type=!minecraft:player]').catch(() => {});
+    await tick.stepTicks(1);
 }
 
 /** §1.1 rule 1+3: set absolute time, then assert the world agrees. */
