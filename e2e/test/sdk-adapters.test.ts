@@ -43,7 +43,8 @@ for (const sdk of ['typescript', 'python', 'java'] as Sdk[]) {
                     parameters[parameter.name] = parameter.schema?.type === 'integer' ? 7
                         : parameter.schema?.type === 'number' ? 1.5 : parameter.schema?.type === 'boolean' ? true : 'test a/é';
                 }
-                const body = { label: 'test "quoted" café', nested: { count: 7 } };
+                const body = { label: 'test "quoted" café', nested: { count: 7 },
+                    ...(operation.operationId === 'diffSnapshots' ? { firstId: 'first', secondId: 'second', maxChanges: 7 } : {}) };
                 assert.equal((await adapter.request(operation, parameters, body)).status, 200);
                 const recorded = calls.at(-1)!;
                 assert.equal(recorded.method, operation.method);

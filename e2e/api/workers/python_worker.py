@@ -69,8 +69,13 @@ for line in sys.stdin:
             emit({"id": request["id"], "status": 200, "body": {"closed": True}})
         else:
             client = MapiClient(request["base"], request["token"], request.get("timeoutMs", 30000) / 1000)
-            result = client.get(request["path"]) if request["method"] == "GET" else client.post(
-                request["path"], request.get("body", {}))
+            if request["operationId"] == "diffSnapshots" and all(
+                    key in request.get("body", {}) for key in ("firstId", "secondId")):
+                arguments = dict(request.get("body", {}))
+                result = client.snapshot_diff(arguments.pop("firstId"), arguments.pop("secondId"), **arguments)
+            else:
+                result = client.get(request["path"]) if request["method"] == "GET" else client.post(
+                    request["path"], request.get("body", {}))
             emit({"id": request["id"], "status": result.status, "body": result.body})
     except Exception as error:
         failure(request, error)

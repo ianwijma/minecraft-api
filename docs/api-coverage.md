@@ -44,7 +44,7 @@ class loader and does not modify the running test suite's facade.
 
 The SDK matrix uses a shared TypeScript orchestrator, generated TypeScript
 operation methods, and Python/Java JSON-lines worker adapters using their SDK
-request core. `./gradlew apiHarnessTest` builds the Java worker and exercises
+request core and named helpers where available. `./gradlew apiHarnessTest` builds the Java worker and exercises
 every operation's wire serialization plus authentication, fragmented UTF-8
 multiline SSE, gap notices, and resource cleanup against offline loopback
 servers. No Minecraft instance is needed.
