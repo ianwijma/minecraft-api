@@ -101,6 +101,33 @@ public final class MovementService {
      */
     public Map<String, Object> executeWaypoints(java.util.List<Waypoint> waypoints,
             java.util.Set<Scope> grantedScopes, long deadlineEpochMs) throws Exception {
+        return executeWaypoints(waypoints, grantedScopes, deadlineEpochMs, () -> {});
+    }
+
+    /**
+     * Executes a path while checking ownership at every input dispatch and hold.
+     *
+     * @param waypoints ordered legs, 1..64
+     * @param grantedScopes caller scopes
+     * @param deadlineEpochMs deadline for the whole path
+     * @param requireControl check that throws when control has expired or been revoked
+     * @return the receipt and completed legs
+     * @throws Exception when dispatch or the bounded path fails
+     */
+    public Map<String, Object> executeWaypoints(java.util.List<Waypoint> waypoints,
+            java.util.Set<Scope> grantedScopes, long deadlineEpochMs,
+            Runnable requireControl) throws Exception {
+        Objects.requireNonNull(requireControl, "requireControl");
+        var input = bridge.input().orElseThrow(() -> new ProblemException(
+                ProblemCode.CAPABILITY_UNAVAILABLE, "input backend unavailable"));
+        synchronized (input) {
+            return executeWaypointsWithControl(waypoints, grantedScopes, deadlineEpochMs, requireControl);
+        }
+    }
+
+    private Map<String, Object> executeWaypointsWithControl(java.util.List<Waypoint> waypoints,
+            java.util.Set<Scope> grantedScopes, long deadlineEpochMs,
+            Runnable requireControl) throws Exception {
         Objects.requireNonNull(waypoints, "waypoints");
         if (waypoints.isEmpty() || waypoints.size() > 64) {
             throw new ProblemException(ProblemCode.BAD_REQUEST, "waypoints must be 1..64");
@@ -118,6 +145,7 @@ public final class MovementService {
             public void lookDelta(double yawDelta, double pitchDelta) {
                 try {
                     bridge.onClientThread(() -> {
+                        requireControl.run();
                         backend.mouseDelta(yawDelta, pitchDelta);
                         return null;
                     });
@@ -131,15 +159,21 @@ public final class MovementService {
             @Override
             public void forward(boolean held) {
                 try {
-                    bridge.onClientThread(() -> {
+                    java.util.function.Supplier<Void> dispatch = () -> {
                         // W (GLFW_KEY_W) through the raw key path.
                         if (held) {
+                            requireControl.run();
                             backend.pressKey(87);
                         } else {
                             backend.releaseKey(87);
                         }
                         return null;
-                    });
+                    };
+                    if (held) {
+                        bridge.onClientThread(dispatch);
+                    } else {
+                        bridge.onClientThreadCleanup(dispatch);
+                    }
                 } catch (RuntimeException e) {
                     throw e;
                 } catch (Exception e) {
@@ -189,7 +223,7 @@ public final class MovementService {
                                 raw.forward(false);
                             }
                         },
-                        87, waypoint.ticks(), deadline);
+                        87, waypoint.ticks(), deadline, requireControl);
                 legs.add(new LegResult(i, waypoint.yaw(), waypoint.pitch(),
                         waypoint.ticks(), hold.heldTicks(),
                         hold.startBoundary(), hold.endBoundary()));

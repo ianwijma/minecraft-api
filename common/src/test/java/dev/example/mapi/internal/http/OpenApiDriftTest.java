@@ -64,6 +64,31 @@ class OpenApiDriftTest {
                 .contains("\n    " + method + ":");
     }
 
+    private static String metadataOperation(String yaml, String path) {
+        int at = yaml.indexOf("\n  " + path + ":\n");
+        if (at < 0) return null;
+        int nextPath = yaml.indexOf("\n  /api/v1/", at + 1);
+        if (nextPath < 0) nextPath = yaml.length();
+        String block = yaml.substring(at, nextPath);
+        Matcher marker = Pattern.compile("\\n      x-mapi-operation: ([^\\n]+)").matcher(block);
+        return marker.find() ? marker.group(1).trim() : null;
+    }
+
+    private static java.util.Map<String, Object> securityMetadata(String yaml, String path) {
+        int at = yaml.indexOf("\n  " + path + ":\n");
+        if (at < 0) return null;
+        int nextPath = yaml.indexOf("\n  /api/v1/", at + 1);
+        if (nextPath < 0) nextPath = yaml.length();
+        Matcher marker = Pattern.compile("\\n      x-mapi-security: (\\{[^\\n]+\\})")
+                .matcher(yaml.substring(at, nextPath));
+        if (!marker.find()) return null;
+        Object parsed = dev.example.mapi.internal.json.JsonReader.parse(marker.group(1));
+        if (!(parsed instanceof java.util.Map<?, ?> raw)) return null;
+        java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+        raw.forEach((key, value) -> result.put(String.valueOf(key), value));
+        return result;
+    }
+
     @Test
     void specAndRoutesAgree() throws IOException {
         assertTrue(Files.isRegularFile(OPENAPI),
@@ -98,7 +123,25 @@ class OpenApiDriftTest {
             for (String path : server.postRoutePaths()) {
                 assertTrue(hasMethod(yaml, path, "post"),
                         "spec declares no POST for " + path);
+                String operationId = server.postRouteOperations().get(path);
+                assertTrue(operationId != null,
+                        "POST route has no authorization metadata: " + path);
+                assertTrue(server.operations().find(operationId).isPresent(),
+                        "POST route refers to unregistered operation metadata: " + path + " -> " + operationId);
+                assertEquals(operationId, metadataOperation(yaml, path),
+                        "POST route contract must reference its authorization descriptor: " + path);
+                var metadata = securityMetadata(yaml, path);
+                assertTrue(metadata != null,
+                        "POST route contract must declare its authorization metadata: " + path);
+                var descriptor = server.operations().find(operationId).orElseThrow().toMap();
+                for (String key : java.util.List.of("requiredScopes", "destructive", "sideEffectClass",
+                        "requiresLease", "supportedExecutionModes")) {
+                    assertEquals(descriptor.get(key), metadata.get(key),
+                            "OpenAPI authorization metadata drift for " + path + " field " + key);
+                }
             }
+            assertEquals(server.postRoutePaths(), server.postRouteOperations().keySet(),
+                    "every POST route must have exactly one authorization descriptor mapping");
         } finally {
             server.stop();
         }

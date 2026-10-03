@@ -23,14 +23,17 @@ access, synchronization, and bounded execution), (2) the API contract
 reference automation runner used only out of process. The mod must work
 without the runner, MCP, an LLM, or an IDE.
 
-Currently implemented layers (the foundation the spec builds on):
+Currently implemented layers:
 
 1. A documented, loader-neutral **public Java API** for other mods
    (`common/src/main/java/dev/example/mapi/api`).
 2. An **optional local HTTP API** (disabled by default, loopback-only,
    bearer-token authenticated) for external tools
    (`common/src/main/java/dev/example/mapi/internal/http`, documented in
-   `docs/http-api.md`) — at present a read-only status surface.
+   `docs/http-api.md`) — status, observation, and bounded mutation operations.
+   Shared runtime services include jobs, leases, events, and snapshots; loader
+   bridges provide server and isolated client capabilities. SDKs, the runner,
+   and the E2E visual harness are also present; release acceptance remains separate.
 3. This repository's **LLM-facing documentation and commands** (this file,
    `docs/llm-workflow.md`, `./gradlew llmContext`).
 
@@ -50,7 +53,7 @@ Fabric API. Fabric API is a *dependency* of the Fabric artifact only.
 
 1. `AGENTS.md` (this file)
 2. `docs/product-spec.md` — approved target product definition (scope,
-   contracts, acceptance targets); ADRs pending, see §1
+   contracts, acceptance targets); ADRs approved, see §1
 3. `docs/toolchain.md` — pinned versions; never change versions without
    re-verification
 4. `docs/architecture.md` — module boundaries and data flow
@@ -82,8 +85,8 @@ Hard rules:
 
 - **No Fabric/NeoForge imports in `common`.** The only loader seam is the
   `MapiPlatform` interface (`common/src/main/java/dev/example/mapi/internal/MapiPlatform.java`).
-- **No client-only code exists**; do not add any without isolating it per
-  `docs/architecture.md`.
+- **Client-only code must remain isolated** per `docs/architecture.md`: Fabric
+  uses its client source set; NeoForge uses Dist-guarded client registration.
 - Public API code must not import `dev.example.mapi.internal` types in its
   signatures.
 - Never bundle Minecraft classes or unnecessary dependencies (slf4j is
@@ -109,6 +112,10 @@ All commands run from the repository root and require **JDK 25**
 ./gradlew :fabric:runServer      # Fabric dev server  (run dir: fabric/run/server)
 ./gradlew :neoforge:runClient    # NeoForge dev client (run dir: neoforge/run/client)
 ./gradlew :neoforge:runServer    # NeoForge dev server (run dir: neoforge/run/server)
+./gradlew :fabric:runReleaseClient   # packaged mod, isolated client run dir override supported
+./gradlew :neoforge:runReleaseClient
+./gradlew :fabric:runReleaseServer   # packaged mod, explicit EULA acceptance still required
+./gradlew :neoforge:runReleaseServer
 ./gradlew :example-consumer:build -PmapiConsumerUseMavenLocal=true   # after publishLocal
 MAPI_ACCEPT_EULA=true scripts/server-smoke.sh fabric    # see docs/development.md (EULA!)
 MAPI_ACCEPT_EULA=true scripts/server-smoke.sh neoforge
@@ -152,8 +159,11 @@ On Windows use `gradlew.bat` (same task names) and Git Bash for `scripts/*.sh`.
 4. Tests: use the fakes in `MapiRuntimeTest` (no Minecraft needed).
 
 **Adding an HTTP endpoint**
-1. Add the route in `HttpApiServer.route()` — GET only, auth already enforced
-   upstream.
+1. Add the route in `HttpApiRoutes` and its descriptor in
+   `HttpApiOperationMetadata`; `HttpApiServer` enforces centralized authorization.
+   Endpoint bodies belong in `ClientApiHandler` or `ServerApiHandler`.
+   Authentication is enforced upstream. Mutation routes must
+   enforce declared scopes, lease ownership, intent, and execution modes.
 2. Return stable JSON via `JsonWriter` with a documented schema.
 3. Update `docs/openapi.yaml`, `docs/http-api.md` (schema, status codes,
    errors) and `docs/security.md` if exposure changes.

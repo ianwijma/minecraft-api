@@ -104,8 +104,7 @@ export const scenario: Scenario = {
         // the two paths must agree (spec §10.2).
         const computed = await h.get(
             `/api/v1/client/inventory/tooltip?slot=${SLOT.TABLE}`);
-        const rendered = await h.post(
-            '/api/v1/client/inventory/tooltip-rendered', { slot: SLOT.TABLE });
+        const rendered = await h.captureRenderedTooltip(SLOT.TABLE);
         report.expect(
             JSON.stringify(computed.lines) === JSON.stringify(rendered.lines),
             'computed tooltip == rendered tooltip',

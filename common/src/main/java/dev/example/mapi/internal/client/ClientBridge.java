@@ -214,6 +214,21 @@ public interface ClientBridge {
     <T> T onClientThread(java.util.function.Supplier<T> task) throws Exception;
 
     /**
+     * Runs cleanup on the client thread with a bounded wait. Implementations
+     * should leave dispatched cleanup scheduled after a timeout or
+     * interruption so held state can still be released when the client thread
+     * resumes. The default preserves behavior for loader-neutral test bridges.
+     *
+     * @param task cleanup task, never {@code null}
+     * @param <T> result type
+     * @return the task result
+     * @throws Exception on timeout or failure
+     */
+    default <T> T onClientThreadCleanup(java.util.function.Supplier<T> task) throws Exception {
+        return onClientThread(task);
+    }
+
+    /**
      * Synthetic input backend (spec §3.5). Character input is separate from
      * key presses; raw deltas apply at a defined input/frame boundary.
      */

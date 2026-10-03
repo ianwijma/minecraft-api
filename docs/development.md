@@ -46,7 +46,7 @@ an explicit operator decision (see below).
 
 1. refuses to run unless `MAPI_ACCEPT_EULA=true` is set — accepting Mojang's
    EULA is the operator's decision and is never done silently;
-2. uses an isolated temporary run directory (`build/smoke/<loader>/run`;
+2. uses an isolated, unique run directory (`build/smoke/<loader>/run-<id>/run`;
    absolute paths are used because Loom/ModDevGradle resolve relative run
    dirs against their own module);
 3. starts the loader's `runServer` with a timeout, greps the log for
@@ -62,6 +62,49 @@ MAPI_ACCEPT_EULA=true scripts/server-smoke.sh neoforge
 ```
 
 Never commit `eula.txt` or anything inside run directories.
+
+Concurrent Fabric and NeoForge smoke runs use separate directories. If HTTP
+probing is enabled, the probe reports status and JSON validity only; response
+bodies and bearer tokens are not printed.
+
+To test the packaged dedicated-server JAR, set
+`MAPI_SMOKE_LAUNCH_MODE=release`, `MAPI_HTTP_ENABLED=true`, and
+`MAPI_HTTP_TOKEN` as well as the EULA acknowledgement. The script runs the
+loader's `runReleaseServer` task, checks that `/api/v1/info` reports the same
+SHA-256 as the exact distributable JAR for `mapiVersion`, and writes JSON
+under `build/acceptance/server-smoke/<loader>/`. It binds the disposable game
+server to loopback on a unique port. HTTP and game ports can be overridden
+with `MAPI_HTTP_PORT` and `MAPI_SMOKE_GAME_PORT` when running parallel jobs.
+Fabric's release task uses Loom's production server runtime. NeoForge reuses
+the pinned ModDevGradle runtime while loading MAPI only from its distributable
+JAR.
+
+## Release client smoke
+
+`scripts/acceptance/release-client-smoke.sh <fabric|neoforge>` launches a
+disposable client through the loader's production-run task with the built
+distributable JAR, performs the `house` E2E scenario, and verifies that the
+runtime-reported JAR SHA-256 matches the artifact in that loader's `build/libs`.
+It uses a fresh run directory and writes `report.json` under
+`build/acceptance/release-client/<loader>/<run-id>/`. The command requires a
+display or `xvfb-run`; Xvfb is selected automatically when present. This is a
+bounded client smoke check, not the release acceptance campaign: dedicated
+server and integrated-server full-suite packaged-artifact checks, 300-run
+reliability, 100-cycle leak, and parallel-isolation gates remain unimplemented.
+The E2E house run records the five captures on a first run; those first-use
+captures create environment baselines, so they verify the scenario's
+functional assertions and capture flow without comparing against reviewed,
+pinned images.
+
+`scripts/acceptance/connection-policy-smoke.sh <fabric|neoforge>` runs two
+fresh release clients against passive loopback TCP sinks. The deny case
+allows `localhost` by name, submits a connection under an input lease, and
+checks that the resolved numeric destination never reaches the sink. The
+allow case additionally pins the exact sink `host:port` for IPv4 and IPv6 and
+checks that the IPv4 sink accepts the connection. Each first attempt has an
+E2E JSON report; an aggregate `summary.json` records both reports and the
+first failing case. This verifies connection admission only; it does not
+complete an authenticated multiplayer login or exercise SRV redirects.
 
 ## Manual client smoke test (when graphics are unavailable)
 

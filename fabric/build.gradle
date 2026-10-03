@@ -17,12 +17,14 @@ dependencies {
     minecraft "com.mojang:minecraft:${minecraftVersion}"
     implementation libs.fabric.loader
     implementation libs.fabric.api
+    productionRuntimeMods libs.fabric.api
     implementation project(':common')
 }
 
 // Development run directories are kept separate per environment. The server
 // run dir can be overridden (e.g. by scripts/server-smoke.sh):
 def serverRunDir = providers.gradleProperty('mapiServerRunDir').getOrElse('run/server')
+def clientRunDir = providers.gradleProperty('mapiClientRunDir').getOrElse('run/client')
 
 loom {
     // Split main (both sides) from client-only code so dedicated servers
@@ -37,7 +39,7 @@ loom {
     runs {
         client {
             client()
-            runDir 'run/client'
+            runDir clientRunDir
         }
         server {
             server()
@@ -65,4 +67,28 @@ tasks.named('jar', Jar).configure {
 
 tasks.withType(JavaCompile).configureEach {
     options.release = 25
+}
+
+// Loom's production runner loads the distributable and Fabric API as JARs.
+tasks.register('runReleaseClient', net.fabricmc.loom.task.prod.ClientProductionRunTask) {
+    group = 'verification'
+    description = 'Run the packaged Fabric mod in an isolated client instance.'
+    runDir = layout.dir(providers.provider {
+        project.file(providers.gradleProperty('mapiClientRunDir').getOrElse('build/release/client'))
+    })
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+    useXVFB = providers.gradleProperty('mapiUseXvfb').map { it.toBoolean() }.orElse(false)
+}
+
+tasks.register('runReleaseServer', net.fabricmc.loom.task.prod.ServerProductionRunTask) {
+    group = 'verification'
+    description = 'Run the packaged Fabric mod in an isolated dedicated server instance.'
+    runDir = layout.dir(providers.provider {
+        project.file(providers.gradleProperty('mapiServerRunDir').getOrElse('build/release/server'))
+    })
+    javaLauncher = javaToolchains.launcherFor {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
 }

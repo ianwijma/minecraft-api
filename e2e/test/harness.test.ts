@@ -1,7 +1,7 @@
 /**
  * Offline unit tests for the visual harness core (plan §7 step 1): PNG
  * codec and diff engine, synthetic images only — no game required.
- * Run: node --experimental-strip-types --no-warnings --test e2e/test/
+ * Run: cd e2e && npm test
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,6 +9,7 @@ import { deflateSync } from 'node:zlib';
 import { decodePng, encodePng, cropImage, type RgbaImage } from '../harness/png.ts';
 import { diffImages, renderDiffImage } from '../harness/diff.ts';
 import { MAP, bfsPath, legsFromPath } from '../scenarios/04-hedge-maze.spec.ts';
+import { Harness } from '../harness/client.ts';
 
 function image(width: number, height: number,
                fill: [number, number, number, number]): RgbaImage {
@@ -164,4 +165,100 @@ test('maze: legs group into same-yaw runs within the 64-leg contract', () => {
     }
     const cells = legs.reduce((s, l) => s + l.cells, 0);
     assert.equal(cells, bfsPath(MAP).length - 1);
+});
+
+test('input mutations acquire and reuse a 300-second control lease', async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: { path: string; body: any }[] = [];
+    let acquisitions = 0;
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input));
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+        requests.push({ path: url.pathname, body });
+        let result: any;
+        let status = 200;
+        if (url.pathname === '/api/v1/client/control/lease' && body.leaseId) {
+            status = 409;
+            result = { error: { code: 'LEASE_REQUIRED', message: 'lease expired' } };
+        } else if (url.pathname === '/api/v1/client/control/lease') {
+            acquisitions++;
+            result = {
+                leaseId: `input-lease-${acquisitions}`,
+                expiresAtEpochMs: Date.now() + (acquisitions === 1 ? 5_000 : 300_000),
+            };
+        } else {
+            result = { accepted: true };
+        }
+        return new Response(JSON.stringify(result), {
+            status, headers: { 'Content-Type': 'application/json' },
+        });
+    }) as typeof fetch;
+    try {
+        const h = new Harness('http://127.0.0.1:1', 'test-token');
+        await h.holdKey(69, 1);
+        await h.clickScreen(10, 20);
+        await h.post('/api/v1/client/worlds/load', { levelId: 'world' });
+        await h.clickInventory(3);
+        await h.moveWaypoints([{ yaw: 90, pitch: 0, ticks: 20 }]);
+        await h.captureRenderedTooltip(4);
+
+        const leases = requests.filter(r => r.path === '/api/v1/client/control/lease');
+        assert.equal(leases.length, 5);
+        assert.deepEqual(leases[0].body, { ttlSeconds: 300 });
+        assert.deepEqual(leases[1].body, { ttlSeconds: 300, leaseId: 'input-lease-1' });
+        assert.deepEqual(leases[2].body, { ttlSeconds: 300 });
+        assert.deepEqual(leases[3].body, { ttlSeconds: 300, leaseId: 'input-lease-2' });
+        assert.deepEqual(leases[4].body, { ttlSeconds: 300 });
+        const mutations = requests.filter(r => ['/api/v1/client/actions/hold-key',
+            '/api/v1/client/actions/click', '/api/v1/client/inventory/click',
+            '/api/v1/client/movement/waypoints',
+            '/api/v1/client/inventory/tooltip-rendered'].includes(r.path));
+        assert.equal(mutations.length, 5);
+        assert.deepEqual(mutations.map(r => r.body.leaseId), [
+            'input-lease-1', 'input-lease-2', 'input-lease-3', 'input-lease-3', 'input-lease-3',
+        ]);
+        assert.equal(mutations.filter(r => r.path.endsWith('/hold-key')).length, 1,
+            'a failed lease renewal must not replay the input mutation');
+        assert.equal(mutations.find(r => r.path.endsWith('/inventory/click'))?.body.executionMode,
+            'client-logic');
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test('world transitions revalidate and reuse a still-held input lease', async () => {
+    const originalFetch = globalThis.fetch;
+    const requests: { path: string; body: any }[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = new URL(String(input));
+        const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+        requests.push({ path: url.pathname, body });
+        let result: any;
+        if (url.pathname === '/api/v1/client/control/lease') {
+            result = body.leaseId
+                ? { leaseId: body.leaseId, expiresAtEpochMs: Date.now() + 300_000 }
+                : { leaseId: 'kept-lease', expiresAtEpochMs: Date.now() + 300_000 };
+        } else {
+            result = { accepted: true };
+        }
+        return new Response(JSON.stringify(result), {
+            status: 200, headers: { 'Content-Type': 'application/json' },
+        });
+    }) as typeof fetch;
+    try {
+        const h = new Harness('http://127.0.0.1:1', 'test-token');
+        await h.holdKey(69, 1);
+        await h.post('/api/v1/client/worlds/load', { levelId: 'world' });
+        await h.clickInventory(3);
+        const leases = requests.filter(r => r.path === '/api/v1/client/control/lease');
+        assert.deepEqual(leases.map(r => r.body), [
+            { ttlSeconds: 300 },
+            { ttlSeconds: 300, leaseId: 'kept-lease' },
+        ]);
+        const actions = requests.filter(r => r.path.endsWith('/hold-key')
+            || r.path.endsWith('/inventory/click'));
+        assert.deepEqual(actions.map(r => r.body.leaseId), ['kept-lease', 'kept-lease']);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
 });

@@ -126,11 +126,10 @@ export async function dismissScreens(h: Harness): Promise<void> {
         if (screenId.toLowerCase().includes('onboarding')) {
             const cont = widgets.find(w => w.text === 'Continue');
             if (cont) {
-                const r = await h.api.post('/api/v1/client/actions/click', {
-                    x: cont.x + Math.floor((cont.width as number) / 2),
-                    y: cont.y + Math.floor((cont.height as number) / 2),
-                });
-                console.log(`  · dismissing ${screenId} via Continue click: consumed=${(r.body as any)?.consumed}`);
+                const body = await h.clickScreen(
+                    cont.x + Math.floor((cont.width as number) / 2),
+                    cont.y + Math.floor((cont.height as number) / 2));
+                console.log(`  · dismissing ${screenId} via Continue click: consumed=${body.consumed}`);
                 await sleep(500);
                 continue;
             }

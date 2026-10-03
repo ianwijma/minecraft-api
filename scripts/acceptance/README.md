@@ -36,3 +36,13 @@ it (see the table). Rules that apply to all gates:
 
 `run-gate.sh <gate>` exists as the stable entrypoint; unimplemented gates
 exit non-zero with `NOT IMPLEMENTED` rather than reporting success.
+
+Bounded live release checks available now:
+
+- With `MAPI_SMOKE_LAUNCH_MODE=release`, `MAPI_ACCEPT_EULA=true`, `MAPI_HTTP_ENABLED=true`, and an operator-generated `MAPI_HTTP_TOKEN`, `scripts/server-smoke.sh <loader>` runs the packaged dedicated server, verifies `/api/v1/{health,info,server/status}` auth behavior, and checks runtime JAR SHA-256 against the versioned distributable. Fabric uses Loom's production runtime; NeoForge uses its pinned ModDevGradle runtime with only MAPI supplied from the distributable JAR.
+- `scripts/acceptance/release-client-smoke.sh <loader>` runs the packaged client through the `house` integrated-server scenario.
+- `scripts/acceptance/connection-policy-smoke.sh <loader>` runs hostname-only final-IP rejection and exact loopback IP:port admission checks against a passive socket.
+
+Each command preserves first-attempt outcomes as per-run JSON. These bounded
+checks do not complete the full 300-run, 100-cycle, parallel-isolation, or
+all-scenario release campaigns.

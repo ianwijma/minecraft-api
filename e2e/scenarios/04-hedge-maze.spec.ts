@@ -141,10 +141,9 @@ export const scenario: Scenario = {
         await setCamera(h, { x: start.x, y: 65, z: start.z, yaw: legs[0].yaw, pitch: 0 });
         for (let i = 0; i < legs.length; i++) {
             const leg = legs[i];
-            const r = await h.api.post('/api/v1/client/movement/waypoints', {
-                waypoints: [{ yaw: leg.yaw, pitch: 0, ticks: leg.cells * TICKS_PER_CELL }],
-            });
-            if (!r.ok) throw new Error(`waypoints -> ${r.status}: ${JSON.stringify(r.body)}`);
+            await h.moveWaypoints([
+                { yaw: leg.yaw, pitch: 0, ticks: leg.cells * TICKS_PER_CELL },
+            ]);
             const target = cellCenter(leg.end);
             const pos = await h.playerPos();
             const dist = Math.hypot(pos.x - target.x, pos.z - target.z);

@@ -25,7 +25,27 @@
 6. The fresh-profile test suite and the documented bootstrap workflow for
    onboarding states that cannot be set via supported settings (spec §8.1).
 
-## Current state
+## Current implementation
 
-Not yet implemented. `docs/examples/mapi.properties.example` documents the
-API's own configuration only; no test-profile system exists.
+The supervised E2E client path copies the versioned JSON profile
+`e2e/profiles/client/window-smoke.json` into a fresh, ignored run directory.
+Before launching Minecraft it builds the reference runner and runs that
+runner's `preflight` command against the copied profile. A rejected profile
+fails the E2E run and retains the preflight report and logs in the run output.
+The preflight checks profile structure and supported values; it does not claim
+the broader readiness, identity-conflict, permission, or onboarding checks in
+the contract above.
+
+The harness applies the requested window size and GUI scale through the live
+client API and records the requested profile and API responses in
+`profile-effective.json`. This is an observation of responses, not an
+independent readback of every effective operating-system or game setting.
+The current profile contains only the window dimensions and GUI scale. Server
+profiles, fresh-profile onboarding coverage, and the remaining client settings
+in the contract are not implemented.
+
+Both development and release client launches use per-run directories under
+`build/e2e/`; release acceptance output is under `build/acceptance/`. The
+supervisor terminates only the process group it started. It never accepts the
+Minecraft EULA automatically; any future supervised server profile must
+require `MAPI_ACCEPT_EULA=true` from the operator.

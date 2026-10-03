@@ -47,7 +47,9 @@ public final class LeaseManager {
     /**
      * Registers a listener invoked when a lease expires or is revoked by the
      * watchdog or by {@link #revokeAll(String)}. Listeners must be fast and
-     * must not call back into the manager for the same lease.
+     * must not call back into the manager for the same topic. Expiry listeners
+     * run inside the topic's atomic update so cleanup finishes before a new
+     * lease can be installed there.
      *
      * @param listener expiry listener, never {@code null}
      */
@@ -78,19 +80,23 @@ public final class LeaseManager {
         if (ttlMs <= 0) {
             throw new IllegalArgumentException("ttlMs must be positive");
         }
-        ControlLease current = held.get(topic);
-        if (current != null && current.held(System.currentTimeMillis())) {
-            throw new ProblemException(ProblemCode.LEASE_HELD, "topic is exclusively held",
-                    Map.of("topic", topic, "owner", current.owner(),
-                            "expiresAtEpochMs", current.expiresAtEpochMs()));
-        }
         String id;
         synchronized (idLock) {
             id = "lease-" + (++idCounter);
         }
-        ControlLease lease = new ControlLease(id, topic, owner,
-                System.currentTimeMillis() + ttlMs);
-        held.put(topic, lease);
+        long now = System.currentTimeMillis();
+        ControlLease lease = new ControlLease(id, topic, owner, now + ttlMs);
+        held.compute(topic, (key, current) -> {
+            if (current != null && current.heldNow()) {
+                throw new ProblemException(ProblemCode.LEASE_HELD, "topic is exclusively held",
+                        Map.of("topic", topic, "owner", current.owner(),
+                                "expiresAtEpochMs", current.expiresAtEpochMs()));
+            }
+            if (current != null) {
+                revokeAndNotify(current, now);
+            }
+            return lease;
+        });
         return lease;
     }
 
@@ -107,12 +113,18 @@ public final class LeaseManager {
         if (ttlMs <= 0) {
             throw new IllegalArgumentException("ttlMs must be positive");
         }
-        ControlLease current = held.get(lease.topic());
-        if (current != lease || !current.held(System.currentTimeMillis())) {
+        long now = System.currentTimeMillis();
+        boolean renewed = held.computeIfPresent(lease.topic(), (topic, current) -> {
+            if (current != lease || !current.heldNow()) {
+                return current;
+            }
+            current.extend(now + ttlMs, ttlMs);
+            return current;
+        }) == lease && lease.heldNow();
+        if (!renewed) {
             throw new ProblemException(ProblemCode.LEASE_REQUIRED, "lease is no longer held",
                     Map.of("topic", lease.topic(), "leaseId", lease.id()));
         }
-        current.extend(System.currentTimeMillis() + ttlMs);
     }
 
     /**
@@ -125,10 +137,13 @@ public final class LeaseManager {
         if (lease == null) {
             return;
         }
-        ControlLease current = held.remove(lease.topic());
-        if (current == lease && !lease.revoked()) {
-            lease.revoke(System.currentTimeMillis());
-        }
+        held.computeIfPresent(lease.topic(), (topic, current) -> {
+            if (current == lease) {
+                revokeAndNotify(current, System.currentTimeMillis());
+                return null;
+            }
+            return current;
+        });
     }
 
     /**
@@ -136,12 +151,33 @@ public final class LeaseManager {
      * @return the current holder, if the topic is held
      */
     public Optional<ControlLease> holderOf(String topic) {
-        ControlLease lease = held.get(topic);
-        if (lease != null && !lease.held(System.currentTimeMillis())) {
-            revokeNow(lease);
-            return Optional.empty();
-        }
-        return Optional.ofNullable(lease);
+        Objects.requireNonNull(topic, "topic");
+        ControlLease[] current = new ControlLease[1];
+        held.computeIfPresent(topic, (key, lease) -> {
+            if (!lease.heldNow()) {
+                revokeAndNotify(lease, System.currentTimeMillis());
+                return null;
+            }
+            current[0] = lease;
+            return lease;
+        });
+        return Optional.ofNullable(current[0]);
+    }
+
+    /** Returns whether {@code leaseId} currently holds {@code topic}. */
+    public boolean heldBy(String topic, String leaseId) {
+        Objects.requireNonNull(topic, "topic");
+        Objects.requireNonNull(leaseId, "leaseId");
+        boolean[] matches = {false};
+        held.computeIfPresent(topic, (key, lease) -> {
+            if (!lease.heldNow()) {
+                revokeAndNotify(lease, System.currentTimeMillis());
+                return null;
+            }
+            matches[0] = lease.id().equals(leaseId);
+            return lease;
+        });
+        return matches[0];
     }
 
     /**
@@ -149,8 +185,7 @@ public final class LeaseManager {
      *     reliability gate, spec §18)
      */
     public List<ControlLease> activeLeases() {
-        long now = System.currentTimeMillis();
-        return held.values().stream().filter(lease -> lease.held(now)).toList();
+        return held.values().stream().filter(ControlLease::heldNow).toList();
     }
 
     /**
@@ -163,11 +198,18 @@ public final class LeaseManager {
     public int revokeAll(String reason) {
         Objects.requireNonNull(reason, "reason");
         int count = 0;
-        for (String topic : held.keySet().toArray(String[]::new)) {
-            ControlLease lease = held.remove(topic);
-            if (lease != null && !lease.revoked()) {
-                lease.revoke(System.currentTimeMillis());
-                notifyExpiry(lease);
+        for (Map.Entry<String, ControlLease> entry : held.entrySet()) {
+            ControlLease lease = entry.getValue();
+            boolean[] removed = {false};
+            held.computeIfPresent(entry.getKey(), (topic, current) -> {
+                if (current == lease) {
+                    removed[0] = true;
+                    revokeAndNotify(current, System.currentTimeMillis());
+                    return null;
+                }
+                return current;
+            });
+            if (removed[0]) {
                 count++;
             }
         }
@@ -185,12 +227,19 @@ public final class LeaseManager {
     public int revokeTopicPrefix(String topicPrefix) {
         Objects.requireNonNull(topicPrefix, "topicPrefix");
         int count = 0;
-        for (String topic : held.keySet().toArray(String[]::new)) {
-            if (topic.startsWith(topicPrefix)) {
-                ControlLease lease = held.remove(topic);
-                if (lease != null && !lease.revoked()) {
-                    lease.revoke(System.currentTimeMillis());
-                    notifyExpiry(lease);
+        for (Map.Entry<String, ControlLease> entry : held.entrySet()) {
+            if (entry.getKey().startsWith(topicPrefix)) {
+                ControlLease lease = entry.getValue();
+                boolean[] removed = {false};
+                held.computeIfPresent(entry.getKey(), (topic, current) -> {
+                    if (current == lease) {
+                        removed[0] = true;
+                        revokeAndNotify(current, System.currentTimeMillis());
+                        return null;
+                    }
+                    return current;
+                });
+                if (removed[0]) {
                     count++;
                 }
             }
@@ -206,9 +255,8 @@ public final class LeaseManager {
 
     private void watchdogTick() {
         try {
-            long now = System.currentTimeMillis();
             for (Map.Entry<String, ControlLease> e : held.entrySet()) {
-                if (!e.getValue().held(now)) {
+                if (!e.getValue().heldNow()) {
                     revokeNow(e.getValue());
                 }
             }
@@ -218,8 +266,17 @@ public final class LeaseManager {
     }
 
     private void revokeNow(ControlLease lease) {
-        if (held.remove(lease.topic(), lease) && !lease.revoked()) {
-            lease.revoke(System.currentTimeMillis());
+        held.computeIfPresent(lease.topic(), (topic, current) -> {
+            if (current == lease) {
+                revokeAndNotify(current, System.currentTimeMillis());
+                return null;
+            }
+            return current;
+        });
+    }
+
+    private void revokeAndNotify(ControlLease lease, long nowEpochMs) {
+        if (lease.revoke(nowEpochMs)) {
             notifyExpiry(lease);
         }
     }

@@ -1,6 +1,7 @@
 package dev.example.mapi.neoforge.client;
 
 import dev.example.mapi.internal.client.ClientBridge;
+import dev.example.mapi.internal.client.ClientThreadCall;
 import dev.example.mapi.internal.command.CommandBackend;
 import dev.example.mapi.internal.query.WorldQueryBackend;
 import dev.example.mapi.internal.tick.TickControlBackend;
@@ -16,6 +17,12 @@ import net.minecraft.client.Minecraft;
 public final class NeoForgeClientBridge implements ClientBridge {
 
     private volatile Minecraft current;
+    private final NeoForgeInputBackend inputBackend = new NeoForgeInputBackend();
+
+    public NeoForgeClientBridge() {
+        ConnectionHookVerifier.requireActive();
+        inputBackend.registerTickCounter();
+    }
 
     void onServerStarting(Minecraft server) {
         this.current = server;
@@ -39,7 +46,7 @@ public final class NeoForgeClientBridge implements ClientBridge {
 
     @Override
     public Optional<ClientBridge.InputBackend> input() {
-        return Optional.of(new NeoForgeInputBackend());
+        return Optional.of(inputBackend);
     }
 
     @Override
@@ -80,37 +87,13 @@ public final class NeoForgeClientBridge implements ClientBridge {
     @Override
     public <T> T onClientThread(java.util.function.Supplier<T> task) {
         Minecraft client = Minecraft.getInstance();
-        if (client.isSameThread()) {
-            return task.get();
-        }
-        var future = new java.util.concurrent.CompletableFuture<T>();
-        client.execute(() -> {
-            try {
-                future.complete(task.get());
-            } catch (RuntimeException e) {
-                future.completeExceptionally(e);
-            }
-        });
-        try {
-            return future.get(5, java.util.concurrent.TimeUnit.SECONDS);
-        } catch (java.util.concurrent.TimeoutException e) {
-            future.cancel(false);
-            throw new dev.example.mapi.internal.problem.ProblemException(
-                    dev.example.mapi.internal.problem.ProblemCode.SERVER_BUSY,
-                    "client thread busy; work did not complete within 5000 ms");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new dev.example.mapi.internal.problem.ProblemException(
-                    dev.example.mapi.internal.problem.ProblemCode.SERVER_BUSY, "interrupted");
-        } catch (java.util.concurrent.ExecutionException e) {
-            Throwable cause = e.getCause() == null ? e : e.getCause();
-            if (cause instanceof dev.example.mapi.internal.problem.ProblemException pe) {
-                throw pe;
-            }
-            throw new dev.example.mapi.internal.problem.ProblemException(
-                    dev.example.mapi.internal.problem.ProblemCode.INTERNAL,
-                    "client-thread work failed: " + cause);
-        }
+        return ClientThreadCall.call(client::isSameThread, client::execute, task);
+    }
+
+    @Override
+    public <T> T onClientThreadCleanup(java.util.function.Supplier<T> task) {
+        Minecraft client = Minecraft.getInstance();
+        return ClientThreadCall.callCleanup(client::isSameThread, client::execute, task);
     }
 
     /** Window backend (verified 26.2 Window APIs). */

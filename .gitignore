@@ -59,6 +59,10 @@ Thumbs.db
 hs_err_pid*.log
 replay_pid*.log
 
+# Python tool caches
+__pycache__/
+*.pyc
+
 # E2E harness artifacts (baselines are environment-specific; out/ is per-run)
 e2e/out/
 e2e/baselines/

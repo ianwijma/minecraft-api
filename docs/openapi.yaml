@@ -105,8 +105,34 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/TickStateResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/v1/client/control/lease:
+    post:
+      x-mapi-operation: client.control.lease
+      x-mapi-security: {"requiredScopes":[],"destructive":false,"sideEffectClass":"local","requiresLease":false,"supportedExecutionModes":[]}
+      operationId: acquireClientControlLease
+      summary: Acquire or renew the exclusive client input lease
+      description: Omit leaseId to acquire; supply the currently held input leaseId to renew it. A stale or other lease ID is rejected.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                leaseId: { type: string, description: Current input lease ID to renew }
+                ttlSeconds: { type: integer, minimum: 1, maximum: 300, default: 60 }
+      responses:
+        "200":
+          description: Lease acquired or renewed
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LeaseResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/LeaseRequired" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/server/ticks/lease:
     post:
+      x-mapi-operation: server.ticks.lease
+      x-mapi-security: {"requiredScopes":["server:tick-control"],"destructive":false,"sideEffectClass":"local","requiresLease":false,"supportedExecutionModes":["privileged"]}
       operationId: acquireTickLease
       summary: Acquire the exclusive tick-control lease
       requestBody:
@@ -124,6 +150,8 @@ paths:
         "403": { $ref: "#/components/responses/InsufficientScope" }
   /api/v1/server/ticks/freeze:
     post:
+      x-mapi-operation: server.ticks.freeze
+      x-mapi-security: {"requiredScopes":["server:tick-control"],"destructive":false,"sideEffectClass":"game","requiresLease":true,"supportedExecutionModes":["privileged"]}
       operationId: freezeTicks
       summary: Freeze the tick loop (lease-required, spec §5)
       requestBody:
@@ -141,6 +169,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/server/ticks/unfreeze:
     post:
+      x-mapi-operation: server.ticks.unfreeze
+      x-mapi-security: {"requiredScopes":["server:tick-control"],"destructive":false,"sideEffectClass":"game","requiresLease":true,"supportedExecutionModes":["privileged"]}
       operationId: unfreezeTicks
       summary: Unfreeze the tick loop (lease-required)
       requestBody:
@@ -158,6 +188,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/server/ticks/rate:
     post:
+      x-mapi-operation: server.ticks.rate
+      x-mapi-security: {"requiredScopes":["server:tick-control"],"destructive":false,"sideEffectClass":"game","requiresLease":true,"supportedExecutionModes":["privileged"]}
       operationId: setTickRate
       summary: Set the tick rate within configured bounds (lease-required)
       requestBody:
@@ -176,6 +208,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/server/ticks/step:
     post:
+      x-mapi-operation: server.ticks.step
+      x-mapi-security: {"requiredScopes":["server:tick-control"],"destructive":false,"sideEffectClass":"game","requiresLease":true,"supportedExecutionModes":["privileged"]}
       operationId: stepTicks
       summary: Step a bounded number of simulation ticks (202 + job)
       requestBody:
@@ -194,6 +228,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/server/ticks/step-and-observe:
     post:
+      x-mapi-operation: server.ticks.step-and-observe
+      x-mapi-security: {"requiredScopes":["server:tick-control"],"destructive":false,"sideEffectClass":"game","requiresLease":true,"supportedExecutionModes":["privileged"]}
       operationId: stepAndObserve
       summary: Step ticks and capture a snapshot at the completion boundary (202 + job)
       requestBody:
@@ -212,6 +248,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/server/ticks/sprint:
     post:
+      x-mapi-operation: server.ticks.sprint
+      x-mapi-security: {"requiredScopes":["server:tick-control"],"destructive":false,"sideEffectClass":"game","requiresLease":true,"supportedExecutionModes":["privileged"]}
       operationId: sprintTicks
       summary: Request a bounded sprint (asynchronous in vanilla; poll tick state)
       requestBody:
@@ -230,6 +268,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/server/ticks/stop:
     post:
+      x-mapi-operation: server.ticks.stop
+      x-mapi-security: {"requiredScopes":["server:tick-control"],"destructive":false,"sideEffectClass":"game","requiresLease":true,"supportedExecutionModes":["privileged"]}
       operationId: stopTickWork
       summary: Stop stepping/sprinting (lease-required)
       requestBody:
@@ -328,6 +368,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/server/snapshots:
     post:
+      x-mapi-operation: server.snapshots.capture
+      x-mapi-security: {"requiredScopes":[],"destructive":false,"sideEffectClass":"read-only","requiresLease":false,"supportedExecutionModes":[]}
       operationId: captureSnapshot
       summary: Capture and retain a bounded observation at the current boundary (spec §12)
       requestBody:
@@ -345,6 +387,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/server/snapshot-diffs:
     post:
+      x-mapi-operation: server.snapshots.diff
+      x-mapi-security: {"requiredScopes":[],"destructive":false,"sideEffectClass":"read-only","requiresLease":false,"supportedExecutionModes":[]}
       operationId: diffSnapshots
       summary: Bounded path-level diff between two retained snapshots
       requestBody:
@@ -367,6 +411,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/server/commands:
     post:
+      x-mapi-operation: server.commands.dispatch
+      x-mapi-security: {"requiredScopes":["operations:unrestricted"],"destructive":false,"sideEffectClass":"unrestricted","requiresLease":false,"supportedExecutionModes":["privileged"]}
       operationId: dispatchCommand
       summary: >
         Dispatch a server command in the console context. Administrative
@@ -424,6 +470,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/actions/hold-key:
     post:
+      x-mapi-operation: client.actions.hold-key
+      x-mapi-security: {"requiredScopes":[],"destructive":false,"sideEffectClass":"local","requiresLease":true,"supportedExecutionModes":["raw-input"]}
       operationId: holdKey
       summary: >
         Hold a key for N client ticks (raw-input only, spec §3.4/§4.2).
@@ -450,6 +498,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/window/set-windowed:
     post:
+      x-mapi-operation: client.window.set-windowed
+      x-mapi-security: {"requiredScopes":["client:settings"],"destructive":false,"sideEffectClass":"local","requiresLease":false,"supportedExecutionModes":[]}
       operationId: setWindowed
       summary: Set windowed dimensions (OS may adjust; effective values returned, spec §9.1)
       requestBody:
@@ -472,6 +522,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/window/set-fullscreen:
     post:
+      x-mapi-operation: client.window.set-fullscreen
+      x-mapi-security: {"requiredScopes":["client:settings"],"destructive":false,"sideEffectClass":"local","requiresLease":false,"supportedExecutionModes":[]}
       operationId: setFullscreen
       summary: >
         Request fullscreen on/off. 26.2 exposes no public setter on the
@@ -496,6 +548,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/window/set-gui-scale:
     post:
+      x-mapi-operation: client.window.set-gui-scale
+      x-mapi-security: {"requiredScopes":["client:settings"],"destructive":false,"sideEffectClass":"local","requiresLease":false,"supportedExecutionModes":[]}
       operationId: setGuiScale
       summary: Set GUI scale (0 = auto, 1..4)
       requestBody:
@@ -517,6 +571,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/movement/waypoints:
     post:
+      x-mapi-operation: client.movement.waypoints
+      x-mapi-security: {"requiredScopes":[],"destructive":false,"sideEffectClass":"local","requiresLease":true,"supportedExecutionModes":["raw-input"]}
       operationId: moveWaypoints
       summary: >
         Execute straight-line waypoints (raw-input; required mod, spec §16).
@@ -542,6 +598,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/server/lan:
     post:
+      x-mapi-operation: server.lan.publish
+      x-mapi-security: {"requiredScopes":["server:publish"],"destructive":false,"sideEffectClass":"game","requiresLease":true,"supportedExecutionModes":["privileged"]}
       operationId: publishLan
       summary: >
         Publish the integrated server to LAN (spec §9.3; network exposure,
@@ -550,7 +608,10 @@ paths:
       requestBody:
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/LanPublishRequest" }
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/LeaseIdRequest"
+                - $ref: "#/components/schemas/LanPublishRequest"
       responses:
         "200":
           description: Published
@@ -564,8 +625,15 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/server/lan/stop:
     post:
+      x-mapi-operation: server.lan.publish
+      x-mapi-security: {"requiredScopes":["server:publish"],"destructive":false,"sideEffectClass":"game","requiresLease":true,"supportedExecutionModes":["privileged"]}
       operationId: unpublishLan
-      summary: Unpublish LAN (spec §9.3; 26.2 supports unpublish without world unload)
+      summary: Unpublish LAN (spec §9.3; requires the tick-control lease)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LeaseIdRequest" }
       responses:
         "200":
           description: Unpublish result
@@ -591,18 +659,22 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/inventory/click:
     post:
+      x-mapi-operation: client.inventory.click
+      x-mapi-security: {"requiredScopes":[],"destructive":false,"sideEffectClass":"game","requiresLease":true,"supportedExecutionModes":["client-logic"]}
       operationId: clickInventory
       summary: >
         Container click (client-logic mode, §3.1/§10.3): dispatches through
-        the game's server flow for server-confirmed postconditions. Verify
-        via GET /server/queries/players (inventory field).
+        client logic. The response reports dispatch acceptance; it does not
+        verify the resulting server state.
       requestBody:
         content:
           application/json:
             schema:
               type: object
-              required: [slot]
+              required: [slot, leaseId, executionMode]
               properties:
+                leaseId: { type: string }
+                executionMode: { type: string, enum: [client-logic], default: client-logic }
                 slot: { type: integer, minimum: 0, description: "0=result, 1-4=craft, 5-8=armor, 9-44=main, 45=offhand" }
                 button: { type: integer, minimum: 0, maximum: 2, default: 0 }
                 containerInput: { type: string, enum: [PICKUP, QUICK_MOVE, SWAP, CLONE, THROW, QUICK_CRAFT, PICKUP_ALL], default: PICKUP }
@@ -635,6 +707,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/inventory/tooltip-rendered:
     post:
+      x-mapi-operation: client.inventory.tooltip-rendered
+      x-mapi-security: {"requiredScopes":[],"destructive":false,"sideEffectClass":"local","requiresLease":true,"supportedExecutionModes":[]}
       operationId: captureRenderedTooltip
       summary: >
         Rendered tooltip capture (§10.2): opens the inventory, hovers over
@@ -646,8 +720,9 @@ paths:
           application/json:
             schema:
               type: object
-              required: [slot]
+              required: [slot, leaseId]
               properties:
+                leaseId: { type: string }
                 slot: { type: integer, minimum: 0 }
       responses:
         "200":
@@ -674,17 +749,21 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/actions/click:
     post:
+      x-mapi-operation: client.ui.click
+      x-mapi-security: {"requiredScopes":[],"destructive":false,"sideEffectClass":"local","requiresLease":true,"supportedExecutionModes":["client-logic"]}
       operationId: clickScreen
       summary: >
-        Click the active screen at GUI coordinates through its own event
-        routing (screen dispatch). Returns consumed flag.
+        Click the active screen at GUI coordinates through client logic.
+        Requires the exclusive input lease; returns dispatch and consumed state.
       requestBody:
         content:
           application/json:
             schema:
               type: object
-              required: [x, y]
+              required: [x, y, leaseId, executionMode]
               properties:
+                leaseId: { type: string }
+                executionMode: { type: string, enum: [client-logic], default: client-logic }
                 x: { type: integer, minimum: 0 }
                 y: { type: integer, minimum: 0 }
       responses:
@@ -694,6 +773,7 @@ paths:
             application/json:
               schema: { type: object, additionalProperties: true }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/LeaseRequired" }
         "503": { $ref: "#/components/responses/CapabilityUnavailable" }
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/worlds:
@@ -710,6 +790,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/worlds/load:
     post:
+      x-mapi-operation: client.worlds.load
+      x-mapi-security: {"requiredScopes":[],"destructive":false,"sideEffectClass":"game","requiresLease":false,"supportedExecutionModes":[]}
       operationId: loadWorld
       summary: >
         Load a saved world (202; loads asynchronously — poll
@@ -733,6 +815,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/worlds/create:
     post:
+      x-mapi-operation: client.worlds.create
+      x-mapi-security: {"requiredScopes":[],"destructive":false,"sideEffectClass":"game","requiresLease":false,"supportedExecutionModes":[]}
       operationId: createWorld
       summary: >
         Create a fresh world with vanilla defaults and a NORMAL preset
@@ -759,6 +843,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/worlds/delete:
     post:
+      x-mapi-operation: client.worlds.delete
+      x-mapi-security: {"requiredScopes":["operations:destructive"],"destructive":true,"sideEffectClass":"game","requiresLease":false,"supportedExecutionModes":[]}
       operationId: deleteWorld
       summary: >
         Delete a saved world (destructive: requires operations:destructive
@@ -785,6 +871,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/client/connect:
     post:
+      x-mapi-operation: client.connect
+      x-mapi-security: {"requiredScopes":["client:connect"],"destructive":false,"sideEffectClass":"game","requiresLease":true,"supportedExecutionModes":["privileged"]}
       operationId: connectServer
       summary: >
         Join a server through the vanilla connect flow (§9.2; requires
@@ -795,9 +883,10 @@ paths:
           application/json:
             schema:
               type: object
-              required: [address]
+              required: [address, leaseId]
               properties:
                 address: { type: string, description: "host[:port]" }
+                leaseId: { type: string, description: Current input lease ID }
       responses:
         "202":
           description: Connection started
@@ -825,6 +914,8 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
   /api/v1/process/shutdown:
     post:
+      x-mapi-operation: process.shutdown
+      x-mapi-security: {"requiredScopes":["operations:unrestricted"],"destructive":false,"sideEffectClass":"unrestricted","requiresLease":false,"supportedExecutionModes":["privileged"]}
       operationId: requestShutdown
       summary: >
         Request graceful local shutdown (administrative, spec §1.1/§14:
@@ -949,7 +1040,7 @@ components:
       allOf:
         - $ref: "#/components/schemas/ProtocolVersioned"
         - type: object
-          required: [name, version, apiVersion, minecraftVersion, platform, platformVersion]
+          required: [name, version, apiVersion, minecraftVersion, platform, platformVersion, runtimeArtifact]
           properties:
             name: { type: string, const: mapi }
             version: { type: string, description: MAPI mod version }
@@ -957,6 +1048,17 @@ components:
             minecraftVersion: { type: string, example: "26.2" }
             platform: { type: string, enum: [fabric, neoforge] }
             platformVersion: { type: string, description: loader version string }
+            runtimeArtifact:
+              $ref: "#/components/schemas/RuntimeArtifactIdentity"
+    RuntimeArtifactIdentity:
+      type: object
+      required: [kind]
+      properties:
+        kind: { type: string, enum: [jar, directory, unavailable] }
+        sha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+          description: Present only when the loaded runtime artifact is a readable regular JAR.
     ServerNotRunning:
       allOf:
         - $ref: "#/components/schemas/ProtocolVersioned"
@@ -1183,16 +1285,18 @@ components:
         pngBase64: { type: string }
     HoldKeyRequest:
       type: object
-      required: [keyCode, ticks]
+      required: [keyCode, ticks, leaseId]
       properties:
+        leaseId: { type: string }
         keyCode: { type: integer }
         ticks: { type: integer, minimum: 1, maximum: 3600 }
         executionMode: { type: string, default: raw-input }
         deadlineEpochMs: { type: integer }
     WaypointsRequest:
       type: object
-      required: [waypoints]
+      required: [waypoints, leaseId]
       properties:
+        leaseId: { type: string }
         waypoints:
           type: array
           minItems: 1

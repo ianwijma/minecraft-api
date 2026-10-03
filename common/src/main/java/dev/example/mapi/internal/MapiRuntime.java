@@ -418,6 +418,7 @@ public final class MapiRuntime implements Mapi {
                     dev.example.mapi.internal.problem.ProblemCode.SERVER_BUSY,
                     "server thread busy; work did not complete within " + timeoutMs + " ms");
         } catch (InterruptedException e) {
+            future.cancel(false);
             Thread.currentThread().interrupt();
             throw new dev.example.mapi.internal.problem.ProblemException(
                     dev.example.mapi.internal.problem.ProblemCode.SERVER_BUSY,

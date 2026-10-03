@@ -11,6 +11,8 @@ edited by hand; edit this generator or the contract.
 """
 
 import json
+import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -42,16 +44,25 @@ def ts_type(schema: dict) -> str:
     }.get(t, "unknown")
 
 
-def query_params(method: dict) -> list:
-    out = []
-    for param in method.get("parameters", []):
-        name = param.get("name", "")
-        if param.get("in") != "query":
-            continue
-        schema = param.get("schema", {})
-        optional = "default" in schema or param.get("required") is not True
-        out.append((name, ts_type(schema), optional, schema.get("default")))
-    return sorted(out)
+def operation_params(path: str, method: dict) -> list:
+    """Combine path-level and operation-level parameters by name/location."""
+    merged = {}
+    for param in method.get("_path_parameters", []) + method.get("parameters", []):
+        merged[(param.get("in"), param.get("name"))] = param
+    for name in re.findall(r"\{([^}]+)\}", path):
+        merged.setdefault(("path", name), {
+            "name": name, "in": "path", "required": True,
+            "schema": {"type": "string"},
+        })
+    return list(merged.values())
+
+
+def ts_param_type(param: dict) -> str:
+    schema = param.get("schema", {})
+    t = ts_type(schema)
+    if schema.get("type") == "array":
+        return "string[]"
+    return t
 
 
 def emit_client(spec: dict) -> str:
@@ -68,6 +79,10 @@ def emit_client(spec: dict) -> str:
     lines.append("  status: number;")
     lines.append("  body: unknown;")
     lines.append("  ok: boolean;")
+    lines.append("}")
+    lines.append("")
+    lines.append("function queryValue(value: string | number | boolean | string[] | number[]): string {")
+    lines.append("  return Array.isArray(value) ? value.join(',') : String(value);")
     lines.append("}")
     lines.append("")
     lines.append("export class MapiError extends Error {")
@@ -115,32 +130,57 @@ def emit_client(spec: dict) -> str:
     lines.append("    return { status: response.status, body: parsed, ok };")
     lines.append("  }")
     lines.append("")
+    lines.append("  /** Generic GET for a documented or extension path. */")
+    lines.append("  get(path: string): Promise<MapiResult> {")
+    lines.append("    return this.request('GET', path);")
+    lines.append("  }")
+    lines.append("")
+    lines.append("  /** Generic POST for a documented or extension path. */")
+    lines.append("  post(path: string, body: unknown): Promise<MapiResult> {")
+    lines.append("    return this.request('POST', path, body);")
+    lines.append("  }")
+    lines.append("")
 
     for path in sorted(spec.get("paths", {})):
-        for method in sorted(spec["paths"][path]):
-            op = spec["paths"][path][method]
+        path_item = spec["paths"][path]
+        for method in sorted(path_item):
+            op = path_item[method]
             if method not in ("get", "post"):
                 continue
+            if op.get("operationId") == "streamEvents":
+                continue  # emitted below as an async SSE iterator
+            op = dict(op)
+            op["_path_parameters"] = path_item.get("parameters", [])
             op_id = camel(op.get("operationId") or method + path)
             summary = (op.get("summary") or "").replace("*/", "*\\/").split("\n")[0]
             literal = path.replace("{", "${encodeURIComponent(String(") \
                 .replace("}", "))}")
             args = []
             if method == "get":
-                params = query_params(op)
-                for name, t, optional, default in params:
-                    arg = f"{name}{'' if not optional else '?'}: {t}"
-                    args.append(arg)
-                qs = " & ".join(
-                    f"{name}=${{encodeURIComponent(String({name}))}}" for name, *_ in params)
-                query = f"?{qs}" if qs else ""
+                params = operation_params(path, op)
+                path_params = [p for p in params if p.get("in") == "path"]
+                query = sorted([p for p in params if p.get("in") == "query"],
+                               key=lambda p: (p.get("required") is not True, p["name"]))
+                path_params.sort(key=lambda p: p["name"])
+                for param in path_params + query:
+                    name = param["name"]
+                    optional = param.get("required") is not True
+                    args.append(f"{name}{'?' if optional else ''}: {ts_param_type(param)}")
                 lines.append(f"  /** {summary} */")
-                if args:
-                    lines.append(f"  {op_id}({', '.join(args)}): Promise<MapiResult> {{")
+                lines.append(f"  {op_id}({', '.join(args)}): Promise<MapiResult> {{")
+                if query:
+                    lines.append("    const query = new URLSearchParams();")
+                    for param in query:
+                        name = param["name"]
+                        if param.get("required") is True:
+                            lines.append(f"    query.set('{name}', queryValue({name}));")
+                        else:
+                            lines.append(f"    if ({name} !== undefined) query.set('{name}', queryValue({name}));")
+                    lines.append("    const suffix = query.size ? `?${query}` : '';")
                 else:
-                    lines.append(f"  {op_id}(): Promise<MapiResult> {{")
+                    lines.append("    const suffix = '';")
                 lines.append(f"    return this.request('{method.upper()}', "
-                             f"`{literal}{query}`);")
+                             f"`{literal}` + suffix);")
                 lines.append("  }")
                 lines.append("")
             else:
@@ -164,10 +204,16 @@ def emit_client(spec: dict) -> str:
     lines.append("   * from it (spec §13.2). Gap comments surface as")
     lines.append("   * `{ gap: true, droppedUpToSeq }` yields.")
     lines.append("   */")
-    lines.append("  async *streamEvents(cursor?: number): AsyncGenerator<")
+    lines.append("  async *streamEvents(cursor?: number, types?: string | string[],")
+    lines.append("                       world?: string, keepaliveSeconds?: number): AsyncGenerator<")
     lines.append("      { gap: false; id: string; event: string; data: unknown } |")
     lines.append("      { gap: true; droppedUpToSeq: number }> {")
-    lines.append("    const query = cursor === undefined ? '' : `?cursor=${cursor}`;")
+    lines.append("    const params = new URLSearchParams();")
+    lines.append("    if (cursor !== undefined) params.set('cursor', String(cursor));")
+    lines.append("    if (types !== undefined) params.set('types', Array.isArray(types) ? types.join(',') : types);")
+    lines.append("    if (world !== undefined) params.set('world', world);")
+    lines.append("    if (keepaliveSeconds !== undefined) params.set('keepaliveSeconds', String(keepaliveSeconds));")
+    lines.append("    const query = params.size ? `?${params}` : '';")
     lines.append("    const response = await fetch(")
     lines.append("        this.base + '/api/v1/events/stream' + query, {")
     lines.append("      headers: { Authorization: `Bearer ${this.token}`,")
@@ -228,10 +274,14 @@ def emit_client(spec: dict) -> str:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--check", action="store_true",
+                        help="fail if generated outputs differ; do not write files")
+    args = parser.parse_args()
     spec = yaml.safe_load(OPENAPI.read_text(encoding="utf-8"))
-    (OUT_DIR / "src").mkdir(parents=True, exist_ok=True)
-    (OUT_DIR / "src" / "mapi-client.ts").write_text(emit_client(spec), encoding="utf-8")
-    (OUT_DIR / "package.json").write_text(json.dumps({
+    outputs = {
+      OUT_DIR / "src" / "mapi-client.ts": emit_client(spec),
+      OUT_DIR / "package.json": json.dumps({
         "name": "@mapi/client",
         "version": "1.0.0",
         "description": "Generated MAPI TypeScript client (docs/openapi.yaml; do not edit)",
@@ -240,17 +290,29 @@ def main() -> int:
         "types": "src/mapi-client.ts",
         "engines": {"node": ">=18"},
         "license": "SEE LICENSE.pending.md",
-    }, indent=2) + "\n", encoding="utf-8")
-    (OUT_DIR / "README.md").write_text(
+    }, indent=2) + "\n",
+      OUT_DIR / "README.md": (
         "# @mapi/client (generated)\n\n"
         "Generated by `scripts/generate-sdks.py` from `docs/openapi.yaml` — "
         "do not edit the output. Zero dependencies; Node >= 18 (global fetch).\n\n"
         "```ts\n"
         "import { MapiClient } from '@mapi/client';\n"
         "const client = new MapiClient('http://127.0.0.1:25586', token);\n"
-        "const health = await client.health();\n"
-        "```\n",
-        encoding="utf-8")
+        "const health = await client.getHealth();\n"
+        "```\n"
+      ),
+    }
+    if args.check:
+        stale = [str(path.relative_to(ROOT)) for path, content in outputs.items()
+                 if not path.exists() or path.read_text(encoding="utf-8") != content]
+        if stale:
+            print("generated SDK drift: " + ", ".join(stale), file=sys.stderr)
+            return 1
+        print("SDK generation check passed")
+        return 0
+    (OUT_DIR / "src").mkdir(parents=True, exist_ok=True)
+    for path, content in outputs.items():
+        path.write_text(content, encoding="utf-8")
     print(f"generated: {OUT_DIR}")
     return 0
 

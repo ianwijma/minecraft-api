@@ -30,10 +30,39 @@ const base = process.argv.find(a => a.startsWith('--base='))?.slice(7)
 // validation — the server ignores it.
 const token = process.env['MAPI_HTTP_TOKEN'] ?? 'auth-off-dummy-token';
 const client = new MapiClient(base, token);
+let inputLeaseId: string | null = null;
+let inputLeaseExpiresAt = 0;
+
+async function inputLease(): Promise<string> {
+    const acquire = async () => {
+        const r = await client.post('/api/v1/client/control/lease', { ttlSeconds: 300 });
+        if (!r.ok) throw new Error(`input-control lease -> ${r.status}: ${JSON.stringify(r.body)}`);
+        const lease = r.body as any;
+        inputLeaseId = String(lease.leaseId);
+        inputLeaseExpiresAt = Number(lease.expiresAtEpochMs);
+    };
+    if (!inputLeaseId) {
+        await acquire();
+    } else if (Date.now() + 15_000 >= inputLeaseExpiresAt) {
+        try {
+            const r = await client.post('/api/v1/client/control/lease',
+                { ttlSeconds: 300, leaseId: inputLeaseId });
+            if (!r.ok) throw new Error(`input-control lease renewal -> ${r.status}`);
+            inputLeaseExpiresAt = Number((r.body as any).expiresAtEpochMs);
+        } catch (error) {
+            if (!(error instanceof MapiError) || error.code !== 'LEASE_REQUIRED') throw error;
+            inputLeaseId = null;
+            inputLeaseExpiresAt = 0;
+            await acquire();
+        }
+    }
+    return inputLeaseId;
+}
 
 const results: { check: string; ok: boolean; detail: string }[] = [];
 const screenshots: string[] = [];
 let phase = '';
+let tickLeaseId: string | null = null;
 
 function record(check: string, ok: boolean, detail: string): boolean {
     results.push({ check, ok, detail });
@@ -83,7 +112,8 @@ async function getScreen(): Promise<ScreenInfo> {
 }
 
 async function click(x: number, y: number): Promise<boolean> {
-    const r = await client.post('/api/v1/client/actions/click', { x, y });
+    const r = await client.post('/api/v1/client/actions/click',
+        { x, y, leaseId: await inputLease() });
     return r.ok;
 }
 
@@ -264,6 +294,8 @@ async function testMenuAutomation(): Promise<void> {
         const target = list[0].levelId;
         const r = await client.post('/api/v1/client/worlds/load', { levelId: target });
         assert(r.status === 202 || r.ok, `world load failed: ${r.status}`);
+        inputLeaseId = null;
+        inputLeaseExpiresAt = 0;
         return `loading "${target}"`;
     });
 
@@ -299,6 +331,7 @@ async function testMovement(): Promise<void> {
     await check('waypoint dispatch (yaw 180, 30 ticks)', async () => {
         const r = await client.post('/api/v1/client/movement/waypoints', {
             waypoints: [{ yaw: 180, pitch: 0, ticks: 30 }],
+            leaseId: await inputLease(),
         });
         assert(r.ok, `status ${r.status}`);
         const b = r.body as any;
@@ -369,7 +402,8 @@ async function testInventory(): Promise<void> {
 
     await check('PICKUP (click diamond slot)', async () => {
         const r = await client.post('/api/v1/client/inventory/click',
-            { slot: diamondSlot, button: 0, containerInput: 'PICKUP' });
+            { slot: diamondSlot, button: 0, containerInput: 'PICKUP',
+                executionMode: 'client-logic', leaseId: await inputLease() });
         assert(r.ok, `status ${r.status}`);
         await sleep(500);
         const after = await client.get('/api/v1/client/inventory');
@@ -387,7 +421,8 @@ async function testInventory(): Promise<void> {
 
     await check('PICKUP again (place back)', async () => {
         const r = await client.post('/api/v1/client/inventory/click',
-            { slot: diamondSlot, button: 0, containerInput: 'PICKUP' });
+            { slot: diamondSlot, button: 0, containerInput: 'PICKUP',
+                executionMode: 'client-logic', leaseId: await inputLease() });
         assert(r.ok, `status ${r.status}`);
         await sleep(500);
         const after = await client.get('/api/v1/client/inventory');
@@ -424,7 +459,7 @@ async function testTooltips(): Promise<void> {
         const diamond = b.slots.find((s: any) => s.itemId === 'minecraft:diamond');
         if (!diamond) return 'no items to capture (skipped)';
         const r2 = await client.post('/api/v1/client/inventory/tooltip-rendered',
-            { slot: diamond.slot });
+            { slot: diamond.slot, leaseId: await inputLease() });
         assert(r2.ok, `status ${r2.status}`);
         const capture = r2.body as any;
         assert(capture.pngBase64?.length > 0, 'no screenshot in rendered capture');
@@ -439,17 +474,16 @@ async function testTooltips(): Promise<void> {
 async function testTickControl(): Promise<void> {
     console.log('\n── 8. Tick control');
 
-    let leaseId: string;
     await check('acquire tick-control lease', async () => {
-        const r = await client.post('/api/v1/server/ticks/lease', { ttlSeconds: 120 });
+        const r = await client.post('/api/v1/server/ticks/lease', { ttlSeconds: 300 });
         assert(r.ok, `status ${r.status}`);
-        leaseId = (r.body as any).leaseId;
-        return `lease ${leaseId}, expires ${new Date((r.body as any).expiresAtEpochMs)}`;
+        tickLeaseId = String((r.body as any).leaseId);
+        return `lease ${tickLeaseId}, expires ${new Date((r.body as any).expiresAtEpochMs)}`;
     });
 
     await check('freeze', async () => {
         const r = await client.post('/api/v1/server/ticks/freeze',
-            { leaseId });
+            { leaseId: tickLeaseId });
         assert(r.ok, `status ${r.status}`);
         const b = r.body as any;
         assert(b.frozen === true, `frozen: ${b.frozen}`);
@@ -459,7 +493,7 @@ async function testTickControl(): Promise<void> {
     let jobId: string;
     await check('step 20 ticks (job)', async () => {
         const r = await client.post('/api/v1/server/ticks/step',
-            { leaseId, ticks: 20 });
+            { leaseId: tickLeaseId, ticks: 20 });
         assert(r.status === 202, `status ${r.status}`);
         jobId = (r.body as any).jobId;
         return `job ${jobId}`;
@@ -479,7 +513,7 @@ async function testTickControl(): Promise<void> {
 
     await check('unfreeze', async () => {
         const r = await client.post('/api/v1/server/ticks/unfreeze',
-            { leaseId });
+            { leaseId: tickLeaseId });
         assert(r.ok, `status ${r.status}`);
         const b = r.body as any;
         assert(b.frozen === false, `frozen: ${b.frozen}`);
@@ -492,9 +526,11 @@ async function testTickControl(): Promise<void> {
 async function testLan(): Promise<void> {
     console.log('\n── 9. LAN');
 
+    if (!tickLeaseId) throw new Error('tick-control lease is unavailable');
+
     await check('publish to LAN', async () => {
         const r = await client.post('/api/v1/server/lan',
-            { port: 25590, gamemode: 'survival' });
+            { port: 25590, gamemode: 'survival', leaseId: tickLeaseId });
         assert(r.ok, `status ${r.status}`);
         const b = r.body as any;
         assert(b.published === true, `published: ${b.published}`);
@@ -502,7 +538,7 @@ async function testLan(): Promise<void> {
     });
 
     await check('unpublish from LAN', async () => {
-        const r = await client.post('/api/v1/server/lan/stop', {});
+        const r = await client.post('/api/v1/server/lan/stop', { leaseId: tickLeaseId });
         assert(r.ok, `status ${r.status}`);
         const b = r.body as any;
         assert(b.unpublished === true, `unpublished: ${b.unpublished}`);

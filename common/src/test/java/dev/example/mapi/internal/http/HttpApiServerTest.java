@@ -2,12 +2,18 @@ package dev.example.mapi.internal.http;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.example.mapi.internal.MapiRuntime;
 import dev.example.mapi.internal.MapiRuntimeTest;
 import dev.example.mapi.internal.MapiRuntimeTest.TestPlatform;
 import dev.example.mapi.internal.config.MapiConfig;
+import dev.example.mapi.internal.connection.ConnectionPolicy;
+import dev.example.mapi.internal.json.JsonReader;
+import dev.example.mapi.internal.operation.Scope;
+import dev.example.mapi.internal.problem.ProblemCode;
+import dev.example.mapi.internal.problem.ProblemException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -20,6 +26,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Map;
 import java.util.Optional;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -58,6 +65,10 @@ class HttpApiServerTest {
         if (server != null) {
             server.stop();
             server = null;
+        }
+        if (runtime != null && runtime.httpRunning() && platform != null
+                && platform.clientLifecycleListener() != null) {
+            platform.clientLifecycleListener().onClientStopping();
         }
     }
 
@@ -147,9 +158,45 @@ class HttpApiServerTest {
         startServer(enabledConfig());
         HttpResponse<String> response = get("/api/v1/info", "Authorization", "Bearer " + TOKEN);
         assertEquals(200, response.statusCode());
-        assertEquals("{\"protocolVersion\":1,\"name\":\"mapi\",\"version\":\"0.1.0\",\"apiVersion\":\"0.1.0\","
-                        + "\"minecraftVersion\":\"26.2\",\"platform\":\"fabric\",\"platformVersion\":\"test-loader\"}",
-                response.body());
+        Object parsed = JsonReader.parse(response.body().getBytes(StandardCharsets.UTF_8));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> info = (Map<String, Object>) parsed;
+        assertEquals("mapi", info.get("name"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> artifact = (Map<String, Object>) info.get("runtimeArtifact");
+        assertTrue(java.util.Set.of("jar", "directory", "unavailable").contains(artifact.get("kind")));
+        if ("jar".equals(artifact.get("kind"))) {
+            assertTrue(artifact.get("sha256") instanceof String digest && digest.matches("[a-f0-9]{64}"));
+        } else {
+            assertFalse(artifact.containsKey("sha256"));
+        }
+    }
+
+    @Test
+    void clientPolicyContextRechecksLeaseAfterItExpires() throws Exception {
+        MapiConfig config = enabledConfig();
+        platform = new TestPlatform(LOG) {
+            @Override
+            public MapiConfig loadConfig(Path configDir, Map<String, String> env, Logger logger) {
+                return config;
+            }
+        };
+        runtime = new MapiRuntime(platform);
+        platform.clientLifecycleListener().onClientStarted();
+        server = new HttpApiServer(config, runtime, LOG);
+        var lease = runtime.leases().acquire("input", "http:test", 150);
+        var handler = new ClientApiHandler(server);
+        var captured = new java.util.concurrent.atomic.AtomicReference<ConnectionPolicy.RequestContext>();
+        handler.withApiControl((exchange, body, grants) -> {
+            captured.set(ConnectionPolicy.currentContext());
+            captured.get().requireControl().run();
+        }).handle(null, Map.of("leaseId", lease.id()), java.util.Set.of(Scope.CLIENT_CONNECT));
+
+        Thread.sleep(200);
+
+        ProblemException expired = assertThrows(ProblemException.class,
+                () -> captured.get().requireControl().run());
+        assertEquals(ProblemCode.LEASE_REQUIRED, expired.code());
     }
 
     @Test

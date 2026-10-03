@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "package": "dev.example.mapi.fabric.client.mixin",
+  "client": [
+    "ConnectScreenMixin",
+    "ConnectScreenConnectorMixin",
+    "ServerNameResolverMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

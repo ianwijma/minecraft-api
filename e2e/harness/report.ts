@@ -80,6 +80,7 @@ export class Report {
             failed: this.failed,
             advisories: this.advisories,
             checkpoints: this.checkpoints,
+            firstFailure: this.checks.find(check => !check.ok) ?? null,
             checks: this.checks,
         };
         fs.writeFileSync(file, JSON.stringify(body, null, 2));

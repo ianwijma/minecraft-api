@@ -11,7 +11,8 @@ import net.neoforged.neoforge.common.ModConfigSpec;
  * NeoForge-native configuration (spec §9.2/§9.3 keys, loader convention:
  * auto-generated {@code config/mapi-common.toml} with comments and defaults
  * on first run — nothing hand-created). Environment variables
- * ({@code MAPI_HTTP_*}) override file values at load time.
+ * ({@code MAPI_HTTP_*}, {@code MAPI_CLIENT_CONNECT_ALLOWLIST}, and
+ * {@code MAPI_SERVER_LAN_ENABLED}) override file values at load time.
  */
 public final class NeoForgeConfig {
 
@@ -49,10 +50,10 @@ public final class NeoForgeConfig {
                     && !s.isBlank());
 
     private static final ModConfigSpec.ConfigValue<List<? extends String>> CONNECT_ALLOWLIST = BUILDER
-            .comment("Direct-connection targets as host[:port] (spec §9.2); "
-                    + "empty list denies all connections")
+            .comment("Exact connection host[:port] and final literal IP:port targets (spec §9.2); "
+                    + "IPv6 literals use brackets; empty list denies all connections")
             .defineList("client.connect.allowlist", List.of(), entry -> entry instanceof String s
-                    && s.matches("[A-Za-z0-9.\\-]+(:[0-9]{1,5})?"));
+                    && s.matches("(?:[A-Za-z0-9.\\-]+|\\[[0-9A-Fa-f:.]+\\])(:[0-9]{1,5})?"));
 
     private static final ModConfigSpec.BooleanValue SERVER_LAN = BUILDER
             .comment("Whether integrated-server LAN publication is permitted (spec §9.3)")

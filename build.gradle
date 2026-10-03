@@ -297,10 +297,30 @@ tasks.register('verifyDistributions') {
             return names
         }
 
+        def checkConnectionMixins = { java.util.zip.ZipFile zf, String label ->
+            def configName = "mapi-${label}.client.mixins.json"
+            def entry = zf.getEntry(configName)
+            if (entry == null) {
+                problems << "${label}: required connection mixin config missing"
+                return
+            }
+            def config = new groovy.json.JsonSlurper().parseText(zf.getInputStream(entry).text)
+            if (config.required != true || config.injectors?.defaultRequire != 1) {
+                problems << "${label}: connection mixins must be required"
+            }
+            if (config.mixins || config.server) problems << "${label}: connection mixins must be client-only"
+            ['ConnectScreenMixin', 'ConnectScreenConnectorMixin', 'ServerNameResolverMixin'].each { hook ->
+                if (!config.client?.contains(hook)) problems << "${label}: connection hook ${hook} not registered"
+                def classEntry = config.package.toString().replace('.', '/') + '/' + hook + '.class'
+                if (zf.getEntry(classEntry) == null) problems << "${label}: connection hook ${hook} not bundled"
+            }
+        }
+
         // ---- Fabric jar ----
         def fabricNames
         new java.util.zip.ZipFile(fabricJarFile).withCloseable { zf ->
             fabricNames = checkJar(zf, 'fabric')
+            checkConnectionMixins(zf, 'fabric')
             def fmjEntry = zf.getEntry('fabric.mod.json')
             if (fmjEntry == null) { problems << 'fabric: fabric.mod.json missing' }
             else {
@@ -311,6 +331,8 @@ tasks.register('verifyDistributions') {
                 if (!(fmj.depends?.fabricloader)) problems << 'fabric: depends.fabricloader missing'
                 if (!(fmj.depends?.java)) problems << 'fabric: depends.java missing'
                 if (!fmj.entrypoints?.main) problems << 'fabric: main entrypoint missing'
+                if (!fmj.mixins?.any { it instanceof Map && it.config == 'mapi-fabric.client.mixins.json'
+                        && it.environment == 'client' }) problems << 'fabric: connection mixin config not registered for clients'
             }
             ['net/neoforged/', 'dev/example/mapi/neoforge/', 'dev/example/mapi/example/', 'org/slf4j/'].each { p ->
                 if (fabricNames.any { it.startsWith(p) }) problems << "fabric: must not bundle ${p}*"
@@ -320,6 +342,7 @@ tasks.register('verifyDistributions') {
         // ---- NeoForge jar ----
         new java.util.zip.ZipFile(neoJarFile).withCloseable { zf ->
             def neoNames = checkJar(zf, 'neoforge')
+            checkConnectionMixins(zf, 'neoforge')
             def tomlEntry = zf.getEntry('META-INF/neoforge.mods.toml')
             if (tomlEntry == null) { problems << 'neoforge: META-INF/neoforge.mods.toml missing' }
             else {
@@ -327,6 +350,9 @@ tasks.register('verifyDistributions') {
                 if (!toml.contains('modId="mapi"')) problems << 'neoforge: mods.toml missing modId="mapi"'
                 if (!toml.contains("version=\"${version}\"")) problems << "neoforge: mods.toml version mismatch"
                 if (!toml.contains('versionRange="[26.2]"')) problems << 'neoforge: mods.toml minecraft versionRange mismatch'
+                if (!toml.contains('config="mapi-neoforge.client.mixins.json"')) {
+                    problems << 'neoforge: connection mixin config not registered'
+                }
             }
             ['net/fabricmc/', 'dev/example/mapi/fabric/', 'dev/example/mapi/example/', 'org/slf4j/'].each { p ->
                 if (neoNames.any { it.startsWith(p) }) problems << "neoforge: must not bundle ${p}*"

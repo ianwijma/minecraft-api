@@ -3,15 +3,11 @@ package dev.example.mapi.fabric.client;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.platform.Window;
 import dev.example.mapi.internal.client.ClientBridge;
-import dev.example.mapi.internal.problem.ProblemCode;
-import dev.example.mapi.internal.problem.ProblemException;
+import dev.example.mapi.internal.client.ClientThreadCall;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
@@ -87,40 +83,20 @@ final class FabricClientBridge implements ClientBridge {
      * other client-thread hooks exactly once.
      */
     void initialize() {
+        ConnectionHookVerifier.requireActive();
         inputBackend.registerTickCounter();
     }
 
     @Override
     public <T> T onClientThread(java.util.function.Supplier<T> task) {
         Minecraft client = Minecraft.getInstance();
-        if (client.isSameThread()) {
-            return task.get();
-        }
-        CompletableFuture<T> future = new CompletableFuture<>();
-        client.execute(() -> {
-            try {
-                future.complete(task.get());
-            } catch (RuntimeException e) {
-                future.completeExceptionally(e);
-            }
-        });
-        try {
-            return future.get(5, TimeUnit.SECONDS);
-        } catch (TimeoutException e) {
-            future.cancel(false);
-            throw new ProblemException(ProblemCode.SERVER_BUSY,
-                    "client thread busy; work did not complete within 5000 ms");
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new ProblemException(ProblemCode.SERVER_BUSY, "interrupted");
-        } catch (java.util.concurrent.ExecutionException e) {
-            Throwable cause = e.getCause() == null ? e : e.getCause();
-            if (cause instanceof ProblemException problem) {
-                throw problem;
-            }
-            throw new ProblemException(ProblemCode.INTERNAL,
-                    "client-thread work failed: " + cause);
-        }
+        return ClientThreadCall.call(client::isSameThread, client::execute, task);
+    }
+
+    @Override
+    public <T> T onClientThreadCleanup(java.util.function.Supplier<T> task) {
+        Minecraft client = Minecraft.getInstance();
+        return ClientThreadCall.callCleanup(client::isSameThread, client::execute, task);
     }
 
     private ClientBridge.WindowBackend.WindowState currentState() {

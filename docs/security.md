@@ -8,8 +8,9 @@ repository.
 - **Loopback only.** The listener binds `127.0.0.1` explicitly (IPv4
   loopback, deterministic even under
   `-Djava.net.preferIPv6Addresses=system`, which NeoForge dev runs set);
-  the bind address is not configurable. Remote clients cannot connect even
-  if the port were forwarded.
+  the bind address is not configurable. Direct off-host connections cannot
+  reach the listener. A proxy or tunnel can forward remote traffic to a
+  loopback socket; loopback binding does not protect against that exposure.
 - **Host validation.** Requests whose `Host` header is not `localhost`,
   `127.0.0.1`, or `[::1]` are rejected with 403 `FORBIDDEN_HOST` (DNS
   rebinding defense). The listener itself binds the IPv4 loopback.
@@ -82,9 +83,37 @@ scopes/destructive/intent select the authorization.
 - **Out of scope:** remote attackers (cannot reach a loopback socket),
   malicious mods on the same server (they can call the Java API directly —
   the Java API exposes no secrets), and physical access.
-- The API is read-only by construction: no POST/PUT/DELETE handlers exist,
-  and no endpoint touches the filesystem, runs commands, mutates the world,
-  or exposes player identities, chat, paths, or environment variables.
+- POST routes are authorized through operation metadata before their handlers
+  run. The router requires every POST path to map to a registered descriptor,
+  and the OpenAPI contract references the descriptor with
+  `x-mapi-operation`. Window mutations require `client:settings`.
+- Client input and inventory actions require the exclusive `input` lease.
+  Tick-control and LAN publication operations require the `tick-control`
+  lease. Lease ownership is checked at route dispatch and again inside queued
+  client input or game-thread work, so an expired lease cannot authorize work
+  that has not yet reached its dispatch point.
+- Inventory click uses `client-logic`. Its response confirms only that the
+  click was dispatched; it reports `effectVerified: false` because server
+  application is not observed or confirmed.
+- Direct and API-driven menu connections require `client:connect`, the current
+  `input` lease, and an exact allowlist match for the requested host and port.
+  The registered client safety hooks carry that authorization into
+  `ConnectScreen`'s resolver thread. Every resolver input, including an SRV
+  redirect target, must also match the allowlist. After vanilla resolution,
+  the final numeric address and exact port must independently match a literal
+  IP entry such as `203.0.113.7:25565` or `[2001:db8::7]:25565`. A hostname
+  entry does not approve its DNS result. MAPI does not use reverse DNS or
+  resolve the hostname again after selecting the socket destination.
+- API connection ownership follows server-initiated transfers from that
+  Minecraft client session. The original input lease is checked again when a
+  transfer starts, before each resolver input, and before accepting the final
+  numeric destination. An explicit manual join clears API ownership; manual
+  sessions and their transfers keep vanilla behavior.
+- The connection hooks are required mixins in both loader artifacts. If a
+  Minecraft update or another mod prevents either required hook from applying,
+  startup fails closed rather than exposing API connection control without
+  the checks. Ordinary manual connections have no API request context and keep
+  vanilla behavior.
 
 ## Thread-safety of game state
 

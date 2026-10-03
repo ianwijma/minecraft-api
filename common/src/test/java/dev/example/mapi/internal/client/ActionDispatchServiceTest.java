@@ -228,6 +228,25 @@ class ActionDispatchServiceTest {
     }
 
     @Test
+    void revokedLeaseCancelsHoldAndReleasesKeyWithReceipt() {
+        InlineBridge bridge = new InlineBridge();
+        ActionDispatchService service = new ActionDispatchService(
+                bridge, new OperationRegistry(), new OperationGuard());
+        AtomicInteger checks = new AtomicInteger();
+        ProblemException failure = assertThrows(ProblemException.class, () -> service.holdKey(
+                new ActionDispatchService.ActionRequest("hold-key", ExecutionMode.RAW_INPUT,
+                        66, 3, System.currentTimeMillis() + 5000), Set.of(), () -> {
+                            if (checks.incrementAndGet() > 2) {
+                                throw new ProblemException(ProblemCode.LEASE_REQUIRED, "lease expired");
+                            }
+                        }));
+        assertEquals(ProblemCode.LEASE_REQUIRED, failure.code());
+        assertEquals(1, bridge.input.pressed());
+        assertEquals(1, bridge.input.released());
+        assertTrue(failure.details().get("receipt") instanceof Map);
+    }
+
+    @Test
     void restrictedScopesDoNotBlockLeaselessRawInputByDefault() throws Exception {
         // Raw input is lease-gated at the HTTP layer; the substrate only
         // enforces the operation's own scopes (empty for hold-key).

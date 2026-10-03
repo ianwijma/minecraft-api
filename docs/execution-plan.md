@@ -2,9 +2,27 @@
 
 > Status: derives the approved product specification (`docs/product-spec.md`,
 > 2026-09-13) into independently executable change sets ("chunks"). The
-> architecture ADRs required by spec §15.2 are **not yet approved**; every
-> chunk after the Phase 0 human gate is blocked until they are (see
-> `AGENTS.md` §1, §7).
+> architecture ADRs and acceptance targets were **approved 2026-09-13**.
+> Phase 0 human gate 0.2 has passed; remaining phase order and human gates
+> still apply (see `AGENTS.md` §1, §7).
+
+## Implementation and acceptance status
+
+This plan describes deliverables, not a record that every chunk is complete.
+The repository contains the shared runtime substrate, server/client bridges,
+HTTP operation families, runner utilities, Java/Python/TypeScript SDKs, and a
+TypeScript visual harness. Their presence alone does not satisfy the full
+product specification or release gates.
+
+The cross-loader fixture module is not present. Loader-parity campaigns,
+packaged-client/integrated-server tests, benchmark environment pinning, and
+the reliability/parallel-isolation campaigns remain acceptance work. Do not
+mark these chunks complete without retained evidence from the corresponding
+procedures in `docs/acceptance-targets.md`.
+
+Follow-up chunks should record implemented behavior, remaining limitations,
+and executed validation together. Ordinary core verification checks JVM
+contracts and packaging; it does not substitute for live-game acceptance.
 
 ## How to use this plan
 

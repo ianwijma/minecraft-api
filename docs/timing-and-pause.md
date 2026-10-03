@@ -27,5 +27,13 @@
 
 ## Current state
 
-Not yet implemented. No tick, frame, or clock surfaces exist; the runtime
-uses a bounded wall-clock wait for snapshots only (docs/architecture.md).
+No tick, frame, or clock surfaces exist. The current runtime uses monotonic
+elapsed-time deadlines for jobs and leases while preserving epoch-millisecond
+timestamps in views and lease metadata. The serial job worker admits at most
+128 pending jobs by default; additional submissions fail with `SERVER_BUSY`,
+and terminal job views (including cancelled pending jobs) share the configured
+completion-retention limit. Lease acquisition is atomic per topic; an expired
+lease is revoked and its expiry listeners run before a replacement lease is
+installed. Lease listeners must remain fast and must not reenter the manager
+for the same topic during notification. These bounds do not add tick, frame,
+or clock surfaces.

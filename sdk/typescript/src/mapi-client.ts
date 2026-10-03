@@ -11,6 +11,10 @@ export interface MapiResult {
   ok: boolean;
 }
 
+function queryValue(value: string | number | boolean | string[] | number[]): string {
+  return Array.isArray(value) ? value.join(',') : String(value);
+}
+
 export class MapiError extends Error {
   readonly status: number;
   readonly code: string;
@@ -25,7 +29,7 @@ export class MapiClient {
   private readonly base: string;
   private readonly token: string;
   private readonly timeoutMs: number;
-  constructor(base: string, token: string, timeoutMs = 30_000) {
+  constructor(base: string, token: string, timeoutMs = 10_000) {
     if (!token) throw new Error('a bearer token is required');
     this.base = base.replace(/\/+$/, '');
     this.token = token;
@@ -36,6 +40,7 @@ export class MapiClient {
                         body?: unknown): Promise<MapiResult> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.token}`,
+      Host: '127.0.0.1',
     };
     if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
@@ -55,22 +60,23 @@ export class MapiClient {
     return { status: response.status, body: parsed, ok };
   }
 
-  /** Generic GET for any path (for operations without a typed method). */
-  async get(path: string): Promise<MapiResult> {
+  /** Generic GET for a documented or extension path. */
+  get(path: string): Promise<MapiResult> {
     return this.request('GET', path);
   }
 
-  /** Generic POST for any path (for operations without a typed method). */
-  async post(path: string, body: unknown): Promise<MapiResult> {
+  /** Generic POST for a documented or extension path. */
+  post(path: string, body: unknown): Promise<MapiResult> {
     return this.request('POST', path, body);
   }
 
   /** Client bridge identity and capabilities. CAPABILITY_UNAVAILABLE semantics apply per feature on dedicated servers (no client bridge). */
   getClientInfo(): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/client`);
+    const suffix = '';
+    return this.request('GET', `/api/v1/client` + suffix);
   }
 
-  /** Click the active screen at GUI coordinates through its own event routing (screen dispatch). Returns consumed flag. */
+  /** Click the active screen at GUI coordinates through client logic. Requires the exclusive input lease; returns dispatch and consumed state. */
   clickScreen(body: Record<string, unknown>): Promise<MapiResult> {
     return this.request('POST', `/api/v1/client/actions/click`, body);
   }
@@ -85,19 +91,28 @@ export class MapiClient {
     return this.request('POST', `/api/v1/client/connect`, body);
   }
 
-  /** Player inventory menu slots (§10.3): non-empty slots with itemId and count, carried-stack size, container id. */
-  inspectInventory(): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/client/inventory`);
+  /** Acquire or renew the exclusive client input lease */
+  acquireClientControlLease(body: Record<string, unknown>): Promise<MapiResult> {
+    return this.request('POST', `/api/v1/client/control/lease`, body);
   }
 
-  /** Container click (client-logic mode, §3.1/§10.3): dispatches through the game's server flow for server-confirmed postconditions. Verify via GET /server/queries/players (inventory field). */
+  /** Player inventory menu slots (§10.3): non-empty slots with itemId and count, carried-stack size, container id. */
+  inspectInventory(): Promise<MapiResult> {
+    const suffix = '';
+    return this.request('GET', `/api/v1/client/inventory` + suffix);
+  }
+
+  /** Container click (client-logic mode, §3.1/§10.3): dispatches through client logic. The response reports dispatch acceptance; it does not verify the resulting server state. */
   clickInventory(body: Record<string, unknown>): Promise<MapiResult> {
     return this.request('POST', `/api/v1/client/inventory/click`, body);
   }
 
   /** Computed tooltip lines for a slot's item (§10.2: calculated without reproducing hover — rendered capture is a separate path). Includes item name, durability, enchantments, and lore. */
   getTooltip(slot: number): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/client/inventory/tooltip?slot=${encodeURIComponent(String(slot))}`);
+    const query = new URLSearchParams();
+    query.set('slot', queryValue(slot));
+    const suffix = query.size ? `?${query}` : '';
+    return this.request('GET', `/api/v1/client/inventory/tooltip` + suffix);
   }
 
   /** Rendered tooltip capture (§10.2): opens the inventory, hovers over the slot, captures a screenshot showing the tooltip as the game actually displayed it. Returns both the visual evidence and the computed lines. */
@@ -112,17 +127,20 @@ export class MapiClient {
 
   /** Inspect the active screen's widgets (§10.1-lite: recognized widget structures with rendered text and bounds). Empty at in-world state. */
   inspectScreen(): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/client/screen`);
+    const suffix = '';
+    return this.request('GET', `/api/v1/client/screen` + suffix);
   }
 
   /** Screenshot capture with frame/scale metadata (spec §20) */
   captureScreenshot(): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/client/screenshots`);
+    const suffix = '';
+    return this.request('GET', `/api/v1/client/screenshots` + suffix);
   }
 
   /** Window state with framebuffer/logical distinction (spec §9.1) */
   getWindowState(): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/client/window`);
+    const suffix = '';
+    return this.request('GET', `/api/v1/client/window` + suffix);
   }
 
   /** Request fullscreen on/off. 26.2 exposes no public setter on the window: the actual state is returned and the window revision bumps, never assumed (spec §9.1 honesty rule). */
@@ -142,7 +160,8 @@ export class MapiClient {
 
   /** Saved singleplayer worlds */
   listWorlds(): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/client/worlds`);
+    const suffix = '';
+    return this.request('GET', `/api/v1/client/worlds` + suffix);
   }
 
   /** Create a fresh world with vanilla defaults and a NORMAL preset (202; async — poll /server/world for phase ACTIVE). Creation over an existing id fails; never overwrites. */
@@ -160,34 +179,37 @@ export class MapiClient {
     return this.request('POST', `/api/v1/client/worlds/load`, body);
   }
 
-  /** Server-Sent Events stream of runtime events (spec §13) */
-  streamEvents(cursor?: number, keepaliveSeconds?: number, types?: string, world?: string): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/events/stream?cursor=${encodeURIComponent(String(cursor))} & keepaliveSeconds=${encodeURIComponent(String(keepaliveSeconds))} & types=${encodeURIComponent(String(types))} & world=${encodeURIComponent(String(world))}`);
-  }
-
   /** Liveness/auth check */
   getHealth(): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/health`);
+    const suffix = '';
+    return this.request('GET', `/api/v1/health` + suffix);
   }
 
   /** Mod, API, Minecraft, and platform versions */
   getInfo(): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/info`);
+    const suffix = '';
+    return this.request('GET', `/api/v1/info` + suffix);
   }
 
   /** Job view (state, milestones, failure, result) */
-  getJob(): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/jobs/${encodeURIComponent(String(id))}`);
+  getJob(id: string): Promise<MapiResult> {
+    const suffix = '';
+    return this.request('GET', `/api/v1/jobs/${encodeURIComponent(String(id))}` + suffix);
   }
 
   /** Bounded log capture with cursor reads and explicit gaps (spec §17.1) */
   readLogs(cursor?: number, limit?: number): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/logs?cursor=${encodeURIComponent(String(cursor))} & limit=${encodeURIComponent(String(limit))}`);
+    const query = new URLSearchParams();
+    if (cursor !== undefined) query.set('cursor', queryValue(cursor));
+    if (limit !== undefined) query.set('limit', queryValue(limit));
+    const suffix = query.size ? `?${query}` : '';
+    return this.request('GET', `/api/v1/logs` + suffix);
   }
 
   /** Operation metadata registry (spec §14) */
   listOperations(): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/operations`);
+    const suffix = '';
+    return this.request('GET', `/api/v1/operations` + suffix);
   }
 
   /** Request graceful local shutdown (administrative, spec §1.1/§14: operations:unrestricted). CAPABILITY_UNAVAILABLE until the loader adapter implements it. */
@@ -205,34 +227,56 @@ export class MapiClient {
     return this.request('POST', `/api/v1/server/lan`, body);
   }
 
-  /** Unpublish LAN (spec §9.3; 26.2 supports unpublish without world unload) */
+  /** Unpublish LAN (spec §9.3; requires the tick-control lease) */
   unpublishLan(body: Record<string, unknown>): Promise<MapiResult> {
     return this.request('POST', `/api/v1/server/lan/stop`, body);
   }
 
   /** Block id and block-entity data at a position (typed NBT when present) */
   queryBlock(dimension?: string, x?: number, y?: number, z?: number): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/server/queries/block?dimension=${encodeURIComponent(String(dimension))} & x=${encodeURIComponent(String(x))} & y=${encodeURIComponent(String(y))} & z=${encodeURIComponent(String(z))}`);
+    const query = new URLSearchParams();
+    if (dimension !== undefined) query.set('dimension', queryValue(dimension));
+    if (x !== undefined) query.set('x', queryValue(x));
+    if (y !== undefined) query.set('y', queryValue(y));
+    if (z !== undefined) query.set('z', queryValue(z));
+    const suffix = query.size ? `?${query}` : '';
+    return this.request('GET', `/api/v1/server/queries/block` + suffix);
   }
 
   /** Loaded entities within a bounded region */
   queryEntities(dimension?: string, max?: number, radius?: number, x?: number, y?: number, z?: number): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/server/queries/entities?dimension=${encodeURIComponent(String(dimension))} & max=${encodeURIComponent(String(max))} & radius=${encodeURIComponent(String(radius))} & x=${encodeURIComponent(String(x))} & y=${encodeURIComponent(String(y))} & z=${encodeURIComponent(String(z))}`);
+    const query = new URLSearchParams();
+    if (dimension !== undefined) query.set('dimension', queryValue(dimension));
+    if (max !== undefined) query.set('max', queryValue(max));
+    if (radius !== undefined) query.set('radius', queryValue(radius));
+    if (x !== undefined) query.set('x', queryValue(x));
+    if (y !== undefined) query.set('y', queryValue(y));
+    if (z !== undefined) query.set('z', queryValue(z));
+    const suffix = query.size ? `?${query}` : '';
+    return this.request('GET', `/api/v1/server/queries/entities` + suffix);
   }
 
   /** Online players with non-empty inventory slots (bounded) */
   queryPlayers(max?: number): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/server/queries/players?max=${encodeURIComponent(String(max))}`);
+    const query = new URLSearchParams();
+    if (max !== undefined) query.set('max', queryValue(max));
+    const suffix = query.size ? `?${query}` : '';
+    return this.request('GET', `/api/v1/server/queries/players` + suffix);
   }
 
   /** Registry summaries */
   listRegistries(): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/server/queries/registries`);
+    const suffix = '';
+    return this.request('GET', `/api/v1/server/queries/registries` + suffix);
   }
 
   /** Sorted entry ids of one registry (bounded) */
-  queryRegistryEntries(max?: number, registryId: string): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/server/queries/registry?max=${encodeURIComponent(String(max))} & registryId=${encodeURIComponent(String(registryId))}`);
+  queryRegistryEntries(registryId: string, max?: number): Promise<MapiResult> {
+    const query = new URLSearchParams();
+    query.set('registryId', queryValue(registryId));
+    if (max !== undefined) query.set('max', queryValue(max));
+    const suffix = query.size ? `?${query}` : '';
+    return this.request('GET', `/api/v1/server/queries/registry` + suffix);
   }
 
   /** Bounded path-level diff between two retained snapshots */
@@ -247,12 +291,14 @@ export class MapiClient {
 
   /** Read-only server status snapshot */
   getServerStatus(): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/server/status`);
+    const suffix = '';
+    return this.request('GET', `/api/v1/server/status` + suffix);
   }
 
   /** Tick-control state (available:false when unsupported, spec §5) */
   getTickState(): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/server/ticks`);
+    const suffix = '';
+    return this.request('GET', `/api/v1/server/ticks` + suffix);
   }
 
   /** Freeze the tick loop (lease-required, spec §5) */
@@ -297,7 +343,8 @@ export class MapiClient {
 
   /** World-session phase, capabilities, and named clocks */
   getWorldInfo(): Promise<MapiResult> {
-    return this.request('GET', `/api/v1/server/world`);
+    const suffix = '';
+    return this.request('GET', `/api/v1/server/world` + suffix);
   }
 
   /**
@@ -306,13 +353,20 @@ export class MapiClient {
    * from it (spec §13.2). Gap comments surface as
    * `{ gap: true, droppedUpToSeq }` yields.
    */
-  async *streamEvents(cursor?: number): AsyncGenerator<
+  async *streamEvents(cursor?: number, types?: string | string[],
+                       world?: string, keepaliveSeconds?: number): AsyncGenerator<
       { gap: false; id: string; event: string; data: unknown } |
       { gap: true; droppedUpToSeq: number }> {
-    const query = cursor === undefined ? '' : `?cursor=${cursor}`;
+    const params = new URLSearchParams();
+    if (cursor !== undefined) params.set('cursor', String(cursor));
+    if (types !== undefined) params.set('types', Array.isArray(types) ? types.join(',') : types);
+    if (world !== undefined) params.set('world', world);
+    if (keepaliveSeconds !== undefined) params.set('keepaliveSeconds', String(keepaliveSeconds));
+    const query = params.size ? `?${params}` : '';
     const response = await fetch(
         this.base + '/api/v1/events/stream' + query, {
-      headers: { Authorization: `Bearer ${this.token}` },
+      headers: { Authorization: `Bearer ${this.token}`,
+               Host: '127.0.0.1' },
       signal: AbortSignal.timeout(this.timeoutMs),
     });
     if (!response.ok || !response.body) {

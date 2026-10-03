@@ -15,6 +15,7 @@ public final class ControlLease {
     private final String topic;
     private final String owner;
     private volatile long expiresAtEpochMs;
+    private volatile long expiresAtNanos;
     private volatile boolean revoked;
     private volatile long revokedAtEpochMs;
 
@@ -23,6 +24,9 @@ public final class ControlLease {
         this.topic = topic;
         this.owner = owner;
         this.expiresAtEpochMs = expiresAtEpochMs;
+        this.expiresAtNanos = System.nanoTime()
+                + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(
+                        Math.max(0, expiresAtEpochMs - System.currentTimeMillis()));
     }
 
     /** @return the lease identifier, never blank */
@@ -55,13 +59,23 @@ public final class ControlLease {
         return revoked ? Optional.of(revokedAtEpochMs) : Optional.empty();
     }
 
-    void extend(long newExpiryEpochMs) {
+    synchronized void extend(long newExpiryEpochMs, long ttlMs) {
         this.expiresAtEpochMs = newExpiryEpochMs;
+        this.expiresAtNanos = System.nanoTime()
+                + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(ttlMs);
     }
 
-    void revoke(long atEpochMs) {
+    synchronized boolean revoke(long atEpochMs) {
+        if (revoked) {
+            return false;
+        }
         this.revoked = true;
         this.revokedAtEpochMs = atEpochMs;
+        return true;
+    }
+
+    boolean heldNow() {
+        return !revoked && System.nanoTime() < expiresAtNanos;
     }
 
     /** @return true while the lease is held: not revoked and not past expiry */

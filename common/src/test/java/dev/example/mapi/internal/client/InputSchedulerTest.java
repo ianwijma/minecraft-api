@@ -104,6 +104,50 @@ class InputSchedulerTest {
     }
 
     @Test
+    void interruptionReleasesHeldInput() {
+        AtomicInteger downs = new AtomicInteger();
+        AtomicInteger ups = new AtomicInteger();
+        Thread.currentThread().interrupt();
+        try {
+            assertThrows(InterruptedException.class, () -> new InputScheduler(() -> 1L)
+                    .holdKey(recording(downs, ups), 66, 3, System.currentTimeMillis() + 5000));
+            assertEquals(1, downs.get());
+            assertEquals(1, ups.get());
+        } finally {
+            Thread.interrupted();
+        }
+    }
+
+    @Test
+    void revokedControlReleasesHeldInputWithoutWaitingForTicks() {
+        AtomicInteger checks = new AtomicInteger();
+        AtomicInteger downs = new AtomicInteger();
+        AtomicInteger ups = new AtomicInteger();
+        ProblemException failure = assertThrows(ProblemException.class,
+                () -> new InputScheduler(() -> 1L).holdKey(recording(downs, ups), 66, 3,
+                        System.currentTimeMillis() + 5000, () -> {
+                            if (checks.incrementAndGet() > 1) {
+                                throw new ProblemException(ProblemCode.LEASE_REQUIRED, "control revoked");
+                            }
+                        }));
+        assertEquals(ProblemCode.LEASE_REQUIRED, failure.code());
+        assertEquals(1, downs.get());
+        assertEquals(1, ups.get());
+    }
+
+    @Test
+    void elapsedDeadlinePreventsKeyDown() {
+        AtomicInteger downs = new AtomicInteger();
+        AtomicInteger ups = new AtomicInteger();
+        ProblemException failure = assertThrows(ProblemException.class,
+                () -> new InputScheduler(() -> 1L).holdKey(recording(downs, ups), 66, 3,
+                        System.currentTimeMillis() - 1));
+        assertEquals(ProblemCode.DEADLINE_EXCEEDED, failure.code());
+        assertEquals(0, downs.get());
+        assertEquals(0, ups.get());
+    }
+
+    @Test
     void heldTicksNeverExceedRequestWhenClockStallsMidway() throws Exception {
         FakeClock clock = new FakeClock();
         InputScheduler scheduler = new InputScheduler(clock::get);

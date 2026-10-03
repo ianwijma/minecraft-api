@@ -9,6 +9,11 @@ import dev.example.mapi.internal.problem.ProblemCode;
 import dev.example.mapi.internal.problem.ProblemException;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -114,5 +119,44 @@ class LeaseManagerTest {
         assertThrows(IllegalArgumentException.class, () -> manager.acquire("input", " ", 100));
         assertThrows(IllegalArgumentException.class, () -> manager.acquire("input", "a", 0));
         assertThrows(NullPointerException.class, () -> manager.acquire(null, "a", 100));
+    }
+
+    @Test
+    void competingAcquisitionsHaveExactlyOneWinner() throws Exception {
+        int contenders = 12;
+        ExecutorService pool = Executors.newFixedThreadPool(contenders);
+        CountDownLatch ready = new CountDownLatch(contenders);
+        CountDownLatch start = new CountDownLatch(1);
+        try {
+            List<Future<Boolean>> results = new java.util.ArrayList<>();
+            for (int i = 0; i < contenders; i++) {
+                int index = i;
+                results.add(pool.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    try {
+                        manager.acquire("shared", "runner-" + index, 10_000);
+                        return true;
+                    } catch (ProblemException e) {
+                        assertEquals(ProblemCode.LEASE_HELD, e.code());
+                        return false;
+                    }
+                }));
+            }
+            assertTrue(ready.await(2, TimeUnit.SECONDS));
+            start.countDown();
+            int winners = 0;
+            for (Future<Boolean> result : results) {
+                if (result.get(2, TimeUnit.SECONDS)) {
+                    winners++;
+                }
+            }
+            assertEquals(1, winners);
+            ControlLease holder = manager.holderOf("shared").orElseThrow();
+            assertTrue(manager.heldBy("shared", holder.id()));
+            assertFalse(manager.heldBy("shared", "another-id"));
+        } finally {
+            pool.shutdownNow();
+        }
     }
 }
