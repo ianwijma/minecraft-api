@@ -63,6 +63,9 @@ replay_pid*.log
 __pycache__/
 *.pyc
 
-# E2E harness artifacts (baselines are environment-specific; out/ is per-run)
+# E2E harness artifacts (only CI reference baselines are committed)
 e2e/out/
-e2e/baselines/
+e2e/baselines/*
+!e2e/baselines/linux-ci-fabric/
+!e2e/baselines/linux-ci-neoforge/
+!e2e/baselines/README.md

@@ -121,6 +121,12 @@ complete an authenticated multiplayer login or exercise SRV redirects.
 
 ## Tests
 
+The packaged-client CI house scenario compares committed environment-specific
+visual references. Missing references fail; normal runs never create them.
+Use the manual `ci` workflow's `update_visual_baselines` input to capture
+replacement PNGs for review and commit. See `e2e/baselines/README.md` for
+refresh and local-environment commands.
+
 - `common` tests are pure JVM (JUnit 5): config parsing, JSON writer, rate
   limiter, service registry, lifecycle with fake handles, and full HTTP
   contract tests over a real loopback socket. `./gradlew testAll`.

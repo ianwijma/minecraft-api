@@ -239,11 +239,12 @@ the two stacks stay comparable:
   `report.json`.
 - Baselines live under `baselines/<envId>/` where `envId` identifies one
   pinned environment (e.g. `linux-ci-fabric`, `linux-ci-neoforge`) per spec
-  §18 ("environment-specific baselines and explicit tolerances"). First run
-  on a machine, or `--update-baselines`, writes them. **Open decision
-  (operator):** commit reference-env baselines to git (reviewable PNG diffs,
-  repo weight) vs. store as CI artifacts. Default until decided: CI
-  artifacts + local generation.
+  §18 ("environment-specific baselines and explicit tolerances"). The CI
+  house references for `linux-ci-fabric` and `linux-ci-neoforge` are committed
+  PNGs. Normal runs compare them; a missing baseline fails and saves an
+  `.actual.png` for review. Only `--update-baselines` creates or replaces
+  references. Local environments use their own `--env` and remain ignored.
+  See `e2e/baselines/README.md` for the CI refresh procedure.
 
 ### 3.5 Supervisor (`supervisor.ts`)
 
@@ -673,7 +674,7 @@ canary. It is also cheap enough to run as a preflight before the others.
    6 and 7 (player-faithful verbs; depend on the profile key remaps) →
    4 (movement) → CI wiring.
 2. **Operator decisions to record before implementation:**
-   - baseline storage: committed reference PNGs vs. CI artifacts (§3.4);
+   - baseline storage: decided — committed CI reference PNGs (§3.4);
    - whether the optional `worlds/create` preset field (§4) is wanted as a
      separate chunk — not required by this plan;
    - adding `e2e/` run dirs, tokens, and `out/` to the never-commit list is

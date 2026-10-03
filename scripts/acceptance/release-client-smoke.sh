@@ -29,5 +29,12 @@ RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-$$"
 OUT_DIR="$(pwd)/build/acceptance/release-client/${LOADER}/${RUN_ID}"
 mkdir -p "$OUT_DIR"
 echo "release client smoke: $LOADER; launch runtime is loader-specific; report: $OUT_DIR/report.json"
+BASELINE_ARGS=()
+if [[ -n "${MAPI_E2E_ENV:-}" ]]; then
+  BASELINE_ARGS+=(--env "$MAPI_E2E_ENV")
+fi
+if [[ "${MAPI_UPDATE_BASELINES:-}" == true ]]; then
+  BASELINE_ARGS+=(--update-baselines)
+fi
 node --experimental-strip-types --no-warnings e2e/run.ts \
-  --loader "$LOADER" --scenario house --release-jar --out-dir "$OUT_DIR"
+  --loader "$LOADER" --scenario house --release-jar --out-dir "$OUT_DIR" "${BASELINE_ARGS[@]}"
