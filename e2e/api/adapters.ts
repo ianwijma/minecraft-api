@@ -87,7 +87,8 @@ export class WorkerAdapter implements Adapter {
         this.base = base;
         this.token = token;
         this.timeoutMs = timeoutMs;
-        this.process = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+        this.process = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'],
+            env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' } });
         this.process.stderr.on('data', chunk => { this.stderr = (this.stderr + chunk).slice(-4000); });
         const fail = (error: Error) => {
             for (const entry of this.pending.values()) { clearTimeout(entry.timer); entry.reject(error); }

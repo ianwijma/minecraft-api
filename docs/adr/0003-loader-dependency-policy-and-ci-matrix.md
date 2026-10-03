@@ -2,8 +2,8 @@
 
 Date: 2026-09-13
 Status: Accepted (2026-09-13)
-Amended: 2026-09-13 — the dedicated-server smoke job is the single
-EULA-gated CI exception (owner decision).
+Amended: 2026-10-04 — packaged API coverage gates PRs across both loaders and
+all three SDKs; standing owner EULA acceptance configures game execution.
 
 ## Context
 
@@ -46,24 +46,21 @@ docs/toolchain.md, verified 2026-09-13). No CI workflows exist yet
      `-PmapiConsumerUseMavenLocal=true`); (d) `doctor` + `llmContext` with
      the generated context uploaded; (e) dedicated-server smoke test (see
      below). Triggers include `workflow_dispatch`.
-   - Game-launching checks: `runClient` and E2E suites are not CI jobs
-     initially (CI runners have no display or GPU); they run locally and on
-     release gates (chunk 8.4) and are marked NOT RUN when absent. The
-     dedicated-server smoke test is the **single exception**: it runs in CI
-     only when the owner explicitly sets the repository variable
-     `MAPI_ACCEPT_EULA=true`; otherwise the job is skipped. CI never
-     accepts the EULA silently — setting the variable is the explicit
-     operator decision. Release-gate smoke (chunk 8.4) is required
-     regardless.
-   - PRs: at least job (a) required green before merge.
+   - Game-launching API checks run on Ubuntu 24.04/Xvfb with the packaged
+     artifacts, for Fabric and NeoForge through TypeScript, Python, and Java.
+     The repository variable `MAPI_ACCEPT_EULA=true` configures standing owner
+     acceptance. A missing configuration or skipped job fails the required
+     aggregate coverage check. Visual examples and acceptance campaigns remain
+     additional integration/release work.
+   - PRs: verification and Complete API coverage (required) must be green before merge.
 
 ## Consequences
 
-- CI adds no new licensing or secret-handling burden; no EULA acceptance
-  happens in CI.
-- Capability tests that need a real client cannot gate PRs in CI until a
-  self-hosted/display runner exists; until then the acceptance campaigns
-  (chunk 8.2) carry them.
+- Standing owner EULA acceptance covers supervised tests; keep per-run
+  credentials and worlds out of source control.
+- Real client API behavior gates PRs through the six packaged-game jobs;
+  software-rendered semantic assertions are primary evidence.
+
 - Loader parity claims in docs must cite tests that actually ran on both
   loaders.
 

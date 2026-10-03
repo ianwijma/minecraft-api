@@ -18,13 +18,16 @@ test('adding or removing an operation without updating tests fails', () => {
 test('only asserted successful requests earn environment coverage', () => {
     const definition = { sample: { environments: ['menu' as const], prerequisites: [],
         assertion: 'observed effect', negativeCases: [] } };
-    const evidence: Evidence[] = [{ operationId: 'sample', environment: 'menu', caseId: 'sample',
+    const evidence: Evidence[] = [{ operationId: 'sample', environment: 'menu', caseId: 'success',
         outcome: 'capability-rejected', assertions: ['rejection observed'], requestIds: [1] }];
     assert.deepEqual(missingCoverage(definition, evidence), ['sample@menu']);
     evidence[0].outcome = 'passed';
     evidence[0].assertions = [];
     assert.throws(() => assertComplete(definition, evidence));
     evidence[0].assertions = ['observed effect'];
+    evidence[0].caseId = 'expected-error';
+    assert.throws(() => assertComplete(definition, evidence));
+    evidence[0].caseId = 'success';
     assertComplete(definition, evidence);
     evidence.push({ ...evidence[0], outcome: 'failed' });
     assert.throws(() => assertComplete(definition, evidence), /first-attempt/);

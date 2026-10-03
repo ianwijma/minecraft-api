@@ -29,5 +29,7 @@
   "ServerStatusSnapshot.uptimeMs": "live",
   "ServerStatusSnapshot.equals": "jvm",
   "ServerStatusSnapshot.hashCode": "jvm",
-  "ServerStatusSnapshot.toString": "jvm"
+  "ServerStatusSnapshot.toString": "jvm",
+  "PlatformType.FABRIC": "jvm",
+  "PlatformType.NEOFORGE": "jvm"
 }

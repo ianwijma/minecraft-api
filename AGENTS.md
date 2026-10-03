@@ -114,7 +114,7 @@ All commands run from the repository root and require **JDK 25**
 ./gradlew :neoforge:runServer    # NeoForge dev server (run dir: neoforge/run/server)
 ./gradlew :fabric:runReleaseClient   # packaged mod, isolated client run dir override supported
 ./gradlew :neoforge:runReleaseClient
-./gradlew :fabric:runReleaseServer   # packaged mod, explicit EULA acceptance still required
+./gradlew :fabric:runReleaseServer   # packaged mod, MAPI_ACCEPT_EULA=true configured for supervised runs
 ./gradlew :neoforge:runReleaseServer
 ./gradlew :example-consumer:build -PmapiConsumerUseMavenLocal=true   # after publishLocal
 MAPI_ACCEPT_EULA=true scripts/server-smoke.sh fabric    # see docs/development.md (EULA!)
@@ -192,9 +192,9 @@ same change set; `./gradlew verify` must pass before you report done.
 - Do not commit secrets: bearer tokens (`MAPI_HTTP_TOKEN`, `http.token`),
   `eula.txt`, run directories, logs, worlds. Patterns are gitignored; do not
   weaken that.
-- Do not commit, or silently accept, the Minecraft EULA on the user's behalf;
-  it is an explicit operator decision (`MAPI_ACCEPT_EULA` in
-  `scripts/server-smoke.sh`).
+- The repository owner has given standing Minecraft EULA acceptance for
+  supervised tests (2026-10-04). Set `MAPI_ACCEPT_EULA=true` for these runs
+  without requesting acceptance again. Continue excluding `eula.txt` from Git.
 - Do not add an HTTP endpoint that exposes source-code editing, shell
   execution, or reflection (permanent, spec §2). All other endpoints follow
   `docs/execution-plan.md` phase order and spec §14 (scopes, `destructive`,

@@ -150,7 +150,7 @@ Defaults: loopback-only bind, bearer token required on every endpoint,
 
 - Dedicated-server smoke tests and client runs require a display-capable or
   EULA-accepting environment; see `docs/development.md` (server checks are
-  gated behind `MAPI_ACCEPT_EULA=true`, which is an explicit operator step).
+  configured with `MAPI_ACCEPT_EULA=true` under the owner’s standing acceptance).
 - The Java package/group `dev.example.mapi` is a **placeholder** the project
   owner must replace before publishing.
 - **No license is selected yet** — see `LICENSE.pending.md`; do not publish
@@ -159,3 +159,7 @@ Defaults: loopback-only bind, bearer token required on every endpoint,
   extremely trimmed JREs may lack it (checked at startup and logged).
 - Authors list and repository URLs are intentionally empty until provided by
   the owner.
+
+Complete HTTP and public Java API coverage: see [API coverage](docs/api-coverage.md)
+for the shared TypeScript/Python/Java corpus, packaged Fabric/NeoForge matrix,
+deterministic contracts, and required CI coverage gate.

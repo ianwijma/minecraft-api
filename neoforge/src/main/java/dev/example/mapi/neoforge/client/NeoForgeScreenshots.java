@@ -42,7 +42,9 @@ class NeoForgeScreenshots implements ClientBridge.ScreenshotBackend {
                 screen == null ? null : screen.getClass().getSimpleName());
         Consumer<NativeImage> writer = image -> {
             try {
-                image.writeToFile(temp.toFile());
+                Path writing = temp.resolveSibling(temp.getFileName() + ".writing");
+                image.writeToFile(writing.toFile());
+                Files.move(writing, temp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             } catch (IOException e) {
                 throw new IllegalStateException(e);
             } finally {

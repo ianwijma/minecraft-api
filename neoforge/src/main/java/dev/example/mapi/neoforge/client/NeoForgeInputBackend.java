@@ -32,7 +32,7 @@ public final class NeoForgeInputBackend implements ClientBridge.InputBackend {
 
     @Override
     public String backendId() {
-        return "mapi-keybinding-state";
+        return "mapi-key-callback";
     }
 
     @Override
@@ -43,10 +43,10 @@ public final class NeoForgeInputBackend implements ClientBridge.InputBackend {
     @Override
     public Coverage coverage() {
         return new Coverage(
-                /* callbackDispatch */ false,
+                /* callbackDispatch */ true,
                 /* keybindingState */ true,
                 /* helperPolling */ false,
-                /* screenDispatch */ false,
+                /* screenDispatch */ true,
                 List.of("native-glfw-polling (InputConstants.isKeyDown reads GLFW "
                         + "state this backend does not write; compat requires an "
                         + "explicitly tested bridge, spec §3.5)"));
@@ -54,18 +54,26 @@ public final class NeoForgeInputBackend implements ClientBridge.InputBackend {
 
     @Override
     public void pressKey(int keyCode) {
-        InputConstants.Key key = InputConstants.Type.KEYSYM.getOrCreate(keyCode);
-        // click() = held state AND clickCount++ — KeyMapping.set() alone
-        // never starts click-consuming bindings (attack/use place/break).
-        KeyMapping.click(key);
+        dispatchKey(keyCode, org.lwjgl.glfw.GLFW.GLFW_PRESS);
         syntheticHeld.put(keyCode, true);
     }
 
     @Override
     public void releaseKey(int keyCode) {
-        InputConstants.Key key = InputConstants.Type.KEYSYM.getOrCreate(keyCode);
-        KeyMapping.set(key, false);
-        syntheticHeld.put(keyCode, false);
+        try {
+            dispatchKey(keyCode, org.lwjgl.glfw.GLFW.GLFW_RELEASE);
+        } finally {
+            KeyMapping.set(InputConstants.Type.KEYSYM.getOrCreate(keyCode), false);
+            syntheticHeld.put(keyCode, false);
+        }
+    }
+
+    private void dispatchKey(int keyCode, int action) {
+        long handle = net.minecraft.client.Minecraft.getInstance().getWindow().handle();
+        var callback = org.lwjgl.glfw.GLFW.glfwSetKeyCallback(handle, null);
+        org.lwjgl.glfw.GLFW.glfwSetKeyCallback(handle, callback);
+        if (callback == null) throw new UnsupportedOperationException("game key callback is not installed");
+        callback.invoke(handle, keyCode, org.lwjgl.glfw.GLFW.glfwGetKeyScancode(keyCode), action, 0);
     }
 
     @Override

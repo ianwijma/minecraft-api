@@ -26,14 +26,28 @@ class PublicApiCoverageTest {
         while (!Files.isRegularFile(root.resolve("e2e/api/java-members.json"))) root = root.getParent();
         var raw = (Map<?, ?>) JsonReader.parse(Files.readString(root.resolve("e2e/api/java-members.json")));
         Set<String> actual = new LinkedHashSet<>();
-        for (Class<?> type : List.of(Mapi.class, MapiApi.class, MapiService.class,
-                MapiServices.class, PlatformType.class, ServerStatusSnapshot.class)) {
+        var types = new java.util.ArrayList<Class<?>>(List.of(Mapi.class, MapiApi.class, MapiService.class,
+                MapiServices.class, PlatformType.class, ServerStatusSnapshot.class));
+        for (int index = 0; index < types.size(); index++) {
+            Class<?> type = types.get(index);
+            for (Class<?> nested : type.getDeclaredClasses()) {
+                if (Modifier.isPublic(nested.getModifiers())) types.add(nested);
+            }
             for (var method : type.getDeclaredMethods()) {
                 if (Modifier.isPublic(method.getModifiers()) && !method.isSynthetic()) {
-                    actual.add(type.getSimpleName() + "." + method.getName());
+                    assertTrue(actual.add(type.getSimpleName() + "." + method.getName()),
+                            "overloaded public methods need distinct signature coverage keys");
                 }
             }
-            if (type.getConstructors().length > 0) actual.add(type.getSimpleName() + ".<init>");
+            for (var constructor : type.getConstructors()) {
+                assertTrue(actual.add(type.getSimpleName() + ".<init>"),
+                        "overloaded public constructors need distinct signature coverage keys");
+            }
+            for (var field : type.getDeclaredFields()) {
+                if (Modifier.isPublic(field.getModifiers()) && !field.isSynthetic()) {
+                    assertTrue(actual.add(type.getSimpleName() + "." + field.getName()));
+                }
+            }
         }
         assertEquals(raw.keySet(), actual, "declare explicit JVM/live coverage for every public member");
         try (var sources = Files.list(root.resolve("common/src/main/java/dev/example/mapi/api"))) {

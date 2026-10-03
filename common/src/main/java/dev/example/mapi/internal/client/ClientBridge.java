@@ -178,6 +178,9 @@ public interface ClientBridge {
          * semantic data. Returns {@code TOOLTIP_SEMANTICS_UNAVAILABLE}
          * semantics when the slot is empty.
          *
+         * <p>Called off the client thread; implementations dispatch short game-thread
+         * phases and wait for frame/readback completion on the calling thread.
+         *
          * @param slot menu slot index (must have an item)
          * @return the rendered capture: screenshot base64 + lines + metadata
          */

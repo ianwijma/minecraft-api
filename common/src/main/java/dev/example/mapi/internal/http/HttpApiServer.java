@@ -147,7 +147,10 @@ public final class HttpApiServer {
                     logger.error("MAPI HTTP: uncaught exception in worker", e));
             return thread;
         };
-        workers = new ThreadPoolExecutor(2, 2 + EventStreamHandler.MAX_CONCURRENT_STREAMS,
+        // Long-lived SSE handlers occupy workers; queued requests cannot trigger
+        // growth beyond the core size until the queue fills.
+        workers = new ThreadPoolExecutor(2 + EventStreamHandler.MAX_CONCURRENT_STREAMS,
+                2 + EventStreamHandler.MAX_CONCURRENT_STREAMS,
                 30L, TimeUnit.SECONDS,
                 new ArrayBlockingQueue<>(32), factory, new ThreadPoolExecutor.AbortPolicy());
         workers.allowCoreThreadTimeOut(true);

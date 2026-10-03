@@ -183,6 +183,72 @@ class HttpApiServerTest {
     }
 
     @Test
+    void everyScopedPostRejectsInsufficientGrantsBeforeDispatch() throws Exception {
+        for (Scope grant : java.util.List.of(Scope.CLIENT_SETTINGS, Scope.SERVER_PUBLISH)) {
+            startServer(new MapiConfig(true, freePort(), TOKEN, 100_000,
+                    java.util.Set.of(grant), java.util.List.of(), true));
+            for (var route : server.postRouteOperations().entrySet()) {
+                var required = (java.util.List<?>) server.operations().find(route.getValue())
+                        .orElseThrow().toMap().get("requiredScopes");
+                if (required.isEmpty() || required.stream().allMatch(grant.wireName()::equals)) continue;
+                var response = client.send(HttpRequest.newBuilder()
+                        .uri(URI.create("http://127.0.0.1:" + port + route.getKey()))
+                        .timeout(Duration.ofSeconds(5)).header("Authorization", "Bearer " + TOKEN)
+                        .POST(HttpRequest.BodyPublishers.ofString("{\"confirm\":true}"))
+                        .build(), HttpResponse.BodyHandlers.ofString());
+                assertEquals(403, response.statusCode(), route.getKey());
+                assertTrue(response.body().contains("INSUFFICIENT_SCOPE"), response.body());
+            }
+            server.stop();
+        }
+    }
+
+    @Test
+    void everyLeaseRequiredPostRejectsMissingOwnershipBeforeDispatch() throws Exception {
+        startServer(new MapiConfig(true, freePort(), TOKEN, 100_000, java.util.Set.of(),
+                java.util.List.of("127.0.0.1:25565"), true));
+        for (var route : server.postRouteOperations().entrySet()) {
+            var descriptor = server.operations().find(route.getValue()).orElseThrow().toMap();
+            if (!Boolean.TRUE.equals(descriptor.get("requiresLease"))) continue;
+            var response = client.send(HttpRequest.newBuilder()
+                    .uri(URI.create("http://127.0.0.1:" + port + route.getKey()))
+                    .timeout(Duration.ofSeconds(5)).header("Authorization", "Bearer " + TOKEN)
+                    .POST(HttpRequest.BodyPublishers.ofString("""
+                            {"confirm":true,"slot":0,"x":0,"y":0,"keyCode":69,"ticks":1,
+                            "width":800,"height":600,"scale":2,"levelId":"fixture","name":"fixture",
+                            "address":"127.0.0.1:25565","waypoints":[{"yaw":0,"pitch":0,"ticks":1}]}
+                            """.replace("\"confirm\":true", route.getKey().equals("/api/v1/client/inventory/click")
+                                    ? "\"confirm\":true,\"executionMode\":\"client-logic\"" : "\"confirm\":true")))
+                    .build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(409, response.statusCode(), route.getKey() + " " + response.body());
+            assertTrue(response.body().contains("LEASE_REQUIRED"), response.body());
+        }
+    }
+
+    @Test
+    void concurrentEventStreamsDoNotStarveOrdinaryRequests() throws Exception {
+        startServer(new MapiConfig(true, freePort(), TOKEN, 100_000));
+        var streams = new java.util.ArrayList<InputStream>();
+        try {
+            for (int i = 0; i < EventStreamHandler.MAX_CONCURRENT_STREAMS; i++) {
+                var response = client.send(HttpRequest.newBuilder()
+                        .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/events/stream?keepaliveSeconds=1"))
+                        .timeout(Duration.ofSeconds(2)).header("Authorization", "Bearer " + TOKEN)
+                        .GET().build(), HttpResponse.BodyHandlers.ofInputStream());
+                streams.add(response.body());
+                assertEquals(200, response.statusCode());
+            }
+            var health = client.send(HttpRequest.newBuilder()
+                    .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/health"))
+                    .timeout(Duration.ofSeconds(2)).header("Authorization", "Bearer " + TOKEN)
+                    .GET().build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(200, health.statusCode());
+        } finally {
+            for (var stream : streams) stream.close();
+        }
+    }
+
+    @Test
     void requiresBearerTokenOnEveryEndpoint() throws Exception {
         startServer(enabledConfig());
         for (String path : new String[] {"/api/v1/health", "/api/v1/info", "/api/v1/server/status"}) {

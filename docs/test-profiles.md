@@ -16,9 +16,8 @@
 3. Server profile schema (auth mode, bind/port, capacity, seed, distances,
    difficulty/gamemode, gamerules, empty-server pause, packs, API limits)
    (spec §8.2).
-4. EULA responsibility: supervisor requires explicit operator-provided
-   acceptance; the mod never accepts automatically (spec §8.3; mirrors
-   AGENTS.md §7).
+4. EULA configuration: standing owner acceptance covers supervised tests;
+   configure `MAPI_ACCEPT_EULA=true` without asking again (spec §8.3).
 5. Preflight output contract: profile id/version, requested vs effective
    settings, deviations, unsupported settings, identity conflicts, rendering
    readiness, missing permissions, fatal vs advisory issues (spec §8.4).
@@ -46,6 +45,6 @@ in the contract are not implemented.
 
 Both development and release client launches use per-run directories under
 `build/e2e/`; release acceptance output is under `build/acceptance/`. The
-supervisor terminates only the process group it started. It never accepts the
-Minecraft EULA automatically; any future supervised server profile must
-require `MAPI_ACCEPT_EULA=true` from the operator.
+supervisor terminates only the process group it started. The owner’s standing
+Minecraft EULA acceptance covers supervised server profiles; configure
+`MAPI_ACCEPT_EULA=true` for local runs and the CI repository variable.

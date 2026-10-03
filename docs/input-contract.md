@@ -36,7 +36,8 @@
 - `InputScheduler` implements the §4.2 hold-N-client-ticks boundary
   contract with wall-clock deadlines and release-all before failure.
 - The input backend contract with §3.5 coverage disclosure is implemented
-  per loader (keybinding-state dispatch + camera deltas via the player
+  per loader (game key callback dispatch, keybinding state, active-screen
+  dispatch, and camera deltas via the player
   input path, sensitivity NOT re-applied — documented at the contract).
   Runtime-verified 2026-09-15 on NeoForge: screenshot of the live title
   screen captured through the full stack.

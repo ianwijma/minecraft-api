@@ -62,7 +62,7 @@ export function validateManifest(operations: Operation[], manifest: Record<strin
 export function missingCoverage(manifest: Record<string, CaseDefinition>, evidence: Evidence[]): string[] {
     return Object.entries(manifest).flatMap(([id, entry]) => entry.environments
         .filter(environment => !evidence.some(e => e.operationId === id && e.environment === environment
-            && e.outcome === 'passed' && e.assertions.length > 0 && e.requestIds.length > 0))
+            && e.caseId === 'success' && e.outcome === 'passed' && e.assertions.length > 0 && e.requestIds.length > 0))
         .map(environment => `${id}@${environment}`));
 }
 
@@ -83,6 +83,7 @@ function resolve(contract: any, schema: any): any {
 export function validateSchema(contract: any, schema: any, value: any, location = '$'): void {
     schema = resolve(contract, schema);
     if (!schema) return;
+    if ('const' in schema) assert.deepEqual(value, schema.const, `${location}: const mismatch`);
     if (schema.nullable && value === null) return;
     for (const sub of schema.allOf ?? []) validateSchema(contract, sub, value, location);
     if (schema.oneOf || schema.anyOf) {
