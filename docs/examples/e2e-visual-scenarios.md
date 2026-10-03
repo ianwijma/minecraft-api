@@ -177,10 +177,14 @@ re-reading the file pre-launch.
 3. Apply charter gamerules (§1 incl. `random_tick_speed 0`), absolute
    `/time set 6000`, `/weather clear`, `/difficulty peaceful` via
    `/server/commands`.
-4. `prepareStage(cx, cz)`: `/fill` air `y=65..95` and floor `y=60..63 stone,
-   y=64 grass_block` over `[cx±48, cz±48]`; `/kill @e[type=!minecraft:player]`
-   then step 21 controlled ticks for vanilla's death timer, kill dropped
-   items/XP, and step one more tick before snapshots.
+4. `prepareStage(cx, cz)`: acquire force-load tickets for only the chunks in
+   `[cx±48, cz±48]` that were not already forced, then `/fill` air `y=65..95`
+   and replace each `y=60..63` layer with air before filling it with stone;
+   `y=64` is grass_block. Stage tickets keep the fixture's chunks entity-
+   ticking through construction and captures; the runner releases only the
+   tickets it added when that scenario exits. Cleanup kills non-player
+   entities, steps 21 controlled ticks for vanilla's death timer, kills
+   dropped items/XP, and steps one more tick before snapshots.
 5. `setTimeAbsolute(t)` = `/time set t` then `assertDayTime(t)` =
    `/time query daytime` compared against `t` (result value ⚙ verify-26.2).
 6. `setCamera(x,y,z,yaw,pitch)` = `/tp @p …`; hides HUD via F1 on first use.
@@ -196,10 +200,11 @@ Every screenshot assertion in every scenario follows this exact sequence:
    step count).
 2. **Time assertion:** `/time query daytime` must equal the checkpoint's
    `expectedDayTime` (§1.1); fail before any capture otherwise.
-3. **Render settle:** capture twice 250 ms apart; require pixel-identical
-   frames (epsilon 0). Retry up to 3× with 1 s spacing. Failure ⇒ scenario
-   fails `scene not stable` — never compared against a baseline in an
-   unsettled state.
+3. **Render settle:** capture twice 250 ms apart; accept renderer shimmer only
+   up to 0.05% changed pixels and max channel delta 24/255. Retry up to 6
+   pairs with 1 s spacing. Failure ⇒ scenario fails `scene not stable` —
+   never compared against a baseline in an unsettled state. Supervised smoke
+   runs pin clouds off in their isolated profile for deterministic captures.
 4. Capture the checkpoint. Assert metadata: `frame` strictly increasing,
    `screenId` as expected, dimensions equal to the baseline's.
 5. Diff against the baseline with that checkpoint's masks and tolerances
@@ -296,7 +301,7 @@ command block updates are immediate; freeze comes later for the captures):
 | Door (south, closed) | `/setblock 0 65 3 oak_door[half=lower,facing=south]`, `/setblock 0 66 3 oak_door[half=upper,facing=south]` |
 | Roof (1-block overhang) | `/fill -5 69 -4 5 69 4 oak_planks`; corners `stone_bricks` |
 | Interior light | `/setblock 0 68 0 glowstone` (no torches — flame particles are random) |
-| Cleanup | Kill non-player entities, step 21 ticks for death removal, kill drops/XP, then step one tick; after construction, repeat bounded cleanup for late-loaded entities and require three consecutive empty radius-32 queries |
+| Cleanup | Keep stage chunks entity-ticking, kill non-player entities, step 21 ticks for death removal, kill drops/XP, then step one tick; after construction, repeat bounded cleanup for late-loaded entities and require three consecutive empty radius-32 queries |
 
 **Checkpoints** (camera via `/tp @p`, F1 hidden, time pinned at 6000,
 weather clear, ticks frozen during the shoot to pin any accidental state):

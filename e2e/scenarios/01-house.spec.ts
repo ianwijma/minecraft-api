@@ -82,8 +82,12 @@ export const scenario: Scenario = {
         const nonPlayer = settled.entities;
         report.expect(settled.stable && nonPlayer.length === 0, 'no entities near house',
             `${nonPlayer.length} non-player entities in radius 32: `
-            + nonPlayer.map(e => e.typeId).join(', ')
-            + `; stable=${settled.stable}; cleanupPasses=${settled.cleanupPasses}`);
+            + nonPlayer.map(e => `${e.typeId}@${Number(e.x).toFixed(1)},`
+                + `${Number(e.y).toFixed(1)},${Number(e.z).toFixed(1)}`).join(', ')
+            + `; stable=${settled.stable}; cleanupPasses=${settled.cleanupPasses}`
+            + `; stageTickets=${settled.tickets.added} added,`
+            + `${settled.tickets.preexisting} preexisting`
+            + `; cleanup=${settled.diagnostics.join(' || ')}`);
 
         for (const [name, pose] of Object.entries(PINS.poses)) {
             await setCamera(h, pose);

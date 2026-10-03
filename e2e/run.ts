@@ -30,7 +30,8 @@ import * as net from 'node:net';
 import { Harness } from './harness/client.ts';
 import { Report } from './harness/report.ts';
 import type { Ctx, Scenario, SessionTick } from './harness/context.ts';
-import { ensureWorld, applyCharter, scenarioReset, dismissScreens, NOON, setTimeAbsolute }
+import { ensureWorld, applyCharter, scenarioReset, dismissScreens,
+    releaseStageChunkTickets, NOON, setTimeAbsolute }
     from './harness/stage.ts';
 import { startClient, stopClient, type SupervisedClient } from './harness/supervisor.ts';
 import { scenario as house } from './scenarios/01-house.spec.ts';
@@ -276,6 +277,12 @@ async function main(): Promise<number> {
                 report.record(`${name} crashed`, false,
                     e instanceof Error ? e.message : String(e));
             } finally {
+                try {
+                    await releaseStageChunkTickets(h);
+                } catch (e) {
+                    report.record(`${name} stage chunk ticket cleanup`, false,
+                        e instanceof Error ? e.message : String(e));
+                }
                 await setTimeAbsolute(h, NOON).catch(() => {});
                 await tick.freeze().catch(() => {});
             }

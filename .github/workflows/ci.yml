@@ -202,4 +202,6 @@ jobs:
             build/smoke/**/acceptance-report.json
             build/acceptance/**/report.json
             build/acceptance/**/summary.json
+            build/acceptance/release-client/**/house/unstable-a.png
+            build/acceptance/release-client/**/house/unstable-b.png
           if-no-files-found: ignore

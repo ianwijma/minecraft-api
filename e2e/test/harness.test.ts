@@ -15,7 +15,8 @@ import { MAP, bfsPath, legsFromPath } from '../scenarios/04-hedge-maze.spec.ts';
 import { Harness } from '../harness/client.ts';
 import { MapiError } from '../../sdk/typescript/src/mapi-client.ts';
 import { createRunRoot } from '../harness/supervisor.ts';
-import { applyCharter, clearNonPlayerEntities, settleNearbyEntities }
+import { applyCharter, clearNonPlayerEntities, constructStageFloor,
+    holdStageChunkTickets, releaseStageChunkTickets, settleNearbyEntities }
     from '../harness/stage.ts';
 import type { SessionTick } from '../harness/context.ts';
 
@@ -85,20 +86,118 @@ test('stage cleanup waits for death removal then clears drops and XP', async () 
     assert.equal(drops, 0);
 });
 
+test('stage chunk tickets preserve prior tickets and release only fixture-owned tickets', async () => {
+    const forced = new Set(['0,0']);
+    const added: string[] = [];
+    const removed: string[] = [];
+    const keyAt = (x: number, z: number) => `${Math.floor(x / 16)},${Math.floor(z / 16)}`;
+    const h = {
+        command: async (command: string) => {
+            const [verb, action, xText, zText] = command.split(' ');
+            assert.equal(verb, 'forceload');
+            const key = keyAt(Number(xText), Number(zText));
+            if (action === 'query') {
+                if (!forced.has(key)) throw new Error('chunk is not forced');
+                return { resultCode: 1 };
+            }
+            if (action === 'add') {
+                forced.add(key);
+                added.push(key);
+                return { resultCode: 1 };
+            }
+            if (action === 'remove') {
+                forced.delete(key);
+                removed.push(key);
+                return { resultCode: 1 };
+            }
+            throw new Error(`unexpected fixture command ${command}`);
+        },
+    } as unknown as Harness;
+
+    const scope = await holdStageChunkTickets(h, 0, 0);
+    assert.deepEqual(scope, { added: 48, preexisting: 1 });
+    assert.equal(added.length, 48);
+    await releaseStageChunkTickets(h);
+    assert.deepEqual(forced, new Set(['0,0']));
+    assert.equal(removed.length, 48);
+});
+
+test('stage ticket acquisition removes tickets already added when a later add fails', async () => {
+    const forced = new Set<string>();
+    const keyAt = (x: number, z: number) => `${Math.floor(x / 16)},${Math.floor(z / 16)}`;
+    let successfulAdds = 0;
+    const removed: string[] = [];
+    const h = {
+        command: async (command: string) => {
+            const [verb, action, xText, zText] = command.split(' ');
+            assert.equal(verb, 'forceload');
+            const key = keyAt(Number(xText), Number(zText));
+            if (action === 'query') {
+                if (!forced.has(key)) throw new Error('chunk is not forced');
+                return { resultCode: 1 };
+            }
+            if (action === 'add') {
+                if (successfulAdds === 2) throw new Error('ticket cap reached');
+                successfulAdds++;
+                forced.add(key);
+                return { resultCode: 1 };
+            }
+            if (action === 'remove') {
+                forced.delete(key);
+                removed.push(key);
+                return { resultCode: 1 };
+            }
+            throw new Error(`unexpected fixture command ${command}`);
+        },
+    } as unknown as Harness;
+
+    await assert.rejects(holdStageChunkTickets(h, 0, 0), /ticket cap reached/);
+    assert.equal(forced.size, 0);
+    assert.equal(removed.length, 2);
+});
+
+test('stage floor replacement never relies on a no-change fill result', async () => {
+    const layers = new Map<number, string>([[62, 'air']]);
+    const commands: string[] = [];
+    const h = {
+        command: async (command: string) => {
+            commands.push(command);
+            const match = command.match(/^fill -48 (-?\d+) -48 48 -?\d+ 48 (air|stone)$/);
+            assert.ok(match, `unexpected floor command: ${command}`);
+            const y = Number(match[1]);
+            const block = match[2];
+            if (block === 'air' && layers.get(y) === 'air') {
+                throw new Error('vanilla fill changed no blocks');
+            }
+            if (block === 'stone') assert.equal(layers.get(y), 'air');
+            layers.set(y, block);
+            return { success: true, resultCode: 1 };
+        },
+    } as unknown as Harness;
+
+    await constructStageFloor(h, 0, 0);
+
+    assert.deepEqual([...layers.entries()].sort((a, b) => a[0] - b[0]),
+        [[60, 'stone'], [61, 'stone'], [62, 'stone'], [63, 'stone']]);
+    assert.equal(commands.length, 8);
+});
+
 test('house entity settling cleans late arrivals and requires stable empty reads', async () => {
     const seen: string[][] = [
         ['minecraft:squid'],
-        [], [],
         ['minecraft:nautilus'],
+        ['minecraft:squid'],
         [], [], [],
     ];
     let queries = 0;
-    let cleanupPasses = 0;
+    let killCommands = 0;
     const h = {
         entitiesAround: async () => (seen[queries++] ?? []).map(typeId => ({ typeId })),
-        command: async () => { cleanupPasses++; },
+        command: async () => { killCommands++; return { resultCode: 1 }; },
     } as unknown as Harness;
-    const tick = { stepTicks: async () => {} } as SessionTick;
+    const tick = { stepTicks: async () => ({ milestones: [
+        { name: 'stepped', data: { requested: 21, completed: 21 } },
+    ] }) } as SessionTick;
 
     const result = await settleNearbyEntities(h, tick, 0, 64, 0, 32, {
         maxCleanupPasses: 2, stablePolls: 3, pollMs: 0,
@@ -107,16 +206,18 @@ test('house entity settling cleans late arrivals and requires stable empty reads
     assert.equal(result.stable, true);
     assert.deepEqual(result.entities, []);
     assert.equal(result.cleanupPasses, 2);
-    assert.equal(cleanupPasses, 4, 'each cleanup pass kills before and after death ticks');
+    assert.equal(killCommands, 3, 'observed arrivals trigger bounded cleanup commands');
     assert.equal(queries, 7, 'a late arrival resets the consecutive empty observations');
 });
 
 test('house entity settling remains failed when entities persist through bounded cleanup', async () => {
     const h = {
         entitiesAround: async () => [{ typeId: 'minecraft:squid' }],
-        command: async () => {},
+        command: async () => ({ resultCode: 1 }),
     } as unknown as Harness;
-    const tick = { stepTicks: async () => {} } as SessionTick;
+    const tick = { stepTicks: async () => ({ milestones: [
+        { name: 'stepped', data: { requested: 21, completed: 21 } },
+    ] }) } as SessionTick;
 
     const result = await settleNearbyEntities(h, tick, 0, 64, 0, 32, {
         maxCleanupPasses: 1, stablePolls: 2, pollMs: 0,

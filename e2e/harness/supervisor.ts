@@ -53,6 +53,9 @@ export async function startClient(opts: {
     await assertPortFree(port);
     fs.mkdirSync(opts.outDir, { recursive: true });
     fs.mkdirSync(runDir, { recursive: true });
+    // Exclude animated sky geometry from static checkpoint settlement.
+    // This directory belongs to this disposable supervised launch.
+    fs.writeFileSync(path.join(runDir, 'options.txt'), 'renderClouds:"false"\n');
     fs.copyFileSync(opts.profilePath, path.join(runDir, 'profile.json'));
     const profileReport = path.join(opts.outDir, 'profile-preflight.json');
     const preflight = spawnSync('./gradlew', [':runner:runnerJar', '--console=plain', '--no-daemon'], {
