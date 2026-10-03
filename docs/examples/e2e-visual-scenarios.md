@@ -296,7 +296,7 @@ command block updates are immediate; freeze comes later for the captures):
 | Door (south, closed) | `/setblock 0 65 3 oak_door[half=lower,facing=south]`, `/setblock 0 66 3 oak_door[half=upper,facing=south]` |
 | Roof (1-block overhang) | `/fill -5 69 -4 5 69 4 oak_planks`; corners `stone_bricks` |
 | Interior light | `/setblock 0 68 0 glowstone` (no torches — flame particles are random) |
-| Cleanup | Kill non-player entities, step 21 ticks for death removal, kill drops/XP, then step one tick |
+| Cleanup | Kill non-player entities, step 21 ticks for death removal, kill drops/XP, then step one tick; after construction, repeat bounded cleanup for late-loaded entities and require three consecutive empty radius-32 queries |
 
 **Checkpoints** (camera via `/tp @p`, F1 hidden, time pinned at 6000,
 weather clear, ticks frozen during the shoot to pin any accidental state):

@@ -185,6 +185,45 @@ export async function clearNonPlayerEntities(
     await tick.stepTicks(1);
 }
 
+/**
+ * Wait for a stable empty observation around the stage. Chunk entity lists
+ * can arrive after initial cleanup, so each bounded non-empty pass repeats
+ * cleanup and requires several empty reads before accepting the result.
+ */
+export async function settleNearbyEntities(
+    h: Harness, tick: SessionTick, x: number, y: number, z: number, radius: number,
+    options: { maxCleanupPasses?: number; stablePolls?: number; pollMs?: number } = {},
+): Promise<{ entities: any[]; stable: boolean; cleanupPasses: number }> {
+    const maxCleanupPasses = options.maxCleanupPasses ?? 3;
+    const stablePolls = options.stablePolls ?? 3;
+    const pollMs = options.pollMs ?? 500;
+    const maxPolls = maxCleanupPasses * stablePolls + stablePolls;
+    let cleanupPasses = 0;
+    let consecutiveEmpty = 0;
+    let nonPlayer: any[] = [];
+
+    for (let poll = 0; poll < maxPolls; poll++) {
+        await sleep(pollMs);
+        const entities = await h.entitiesAround(x, y, z, radius);
+        nonPlayer = entities.filter(entity => entity.typeId !== 'minecraft:player');
+        if (nonPlayer.length === 0) {
+            consecutiveEmpty++;
+            if (consecutiveEmpty >= stablePolls) {
+                return { entities: nonPlayer, stable: true, cleanupPasses };
+            }
+            continue;
+        }
+
+        consecutiveEmpty = 0;
+        if (cleanupPasses >= maxCleanupPasses) {
+            return { entities: nonPlayer, stable: false, cleanupPasses };
+        }
+        await clearNonPlayerEntities(h, tick);
+        cleanupPasses++;
+    }
+    return { entities: nonPlayer, stable: false, cleanupPasses };
+}
+
 /** §1.1 rule 1+3: set absolute time, then assert the world agrees. */
 export async function setTimeAbsolute(h: Harness, t: number): Promise<void> {
     await h.command(`time set ${t}`);

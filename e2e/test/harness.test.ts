@@ -15,7 +15,8 @@ import { MAP, bfsPath, legsFromPath } from '../scenarios/04-hedge-maze.spec.ts';
 import { Harness } from '../harness/client.ts';
 import { MapiError } from '../../sdk/typescript/src/mapi-client.ts';
 import { createRunRoot } from '../harness/supervisor.ts';
-import { applyCharter, clearNonPlayerEntities } from '../harness/stage.ts';
+import { applyCharter, clearNonPlayerEntities, settleNearbyEntities }
+    from '../harness/stage.ts';
 import type { SessionTick } from '../harness/context.ts';
 
 test('supervisor creates its isolated run root from a clean build directory', () => {
@@ -82,6 +83,48 @@ test('stage cleanup waits for death removal then clears drops and XP', async () 
     assert.ok(deathTicks >= 20, 'vanilla death timer completed');
     assert.equal(corpse, false);
     assert.equal(drops, 0);
+});
+
+test('house entity settling cleans late arrivals and requires stable empty reads', async () => {
+    const seen: string[][] = [
+        ['minecraft:squid'],
+        [], [],
+        ['minecraft:nautilus'],
+        [], [], [],
+    ];
+    let queries = 0;
+    let cleanupPasses = 0;
+    const h = {
+        entitiesAround: async () => (seen[queries++] ?? []).map(typeId => ({ typeId })),
+        command: async () => { cleanupPasses++; },
+    } as unknown as Harness;
+    const tick = { stepTicks: async () => {} } as SessionTick;
+
+    const result = await settleNearbyEntities(h, tick, 0, 64, 0, 32, {
+        maxCleanupPasses: 2, stablePolls: 3, pollMs: 0,
+    });
+
+    assert.equal(result.stable, true);
+    assert.deepEqual(result.entities, []);
+    assert.equal(result.cleanupPasses, 2);
+    assert.equal(cleanupPasses, 4, 'each cleanup pass kills before and after death ticks');
+    assert.equal(queries, 7, 'a late arrival resets the consecutive empty observations');
+});
+
+test('house entity settling remains failed when entities persist through bounded cleanup', async () => {
+    const h = {
+        entitiesAround: async () => [{ typeId: 'minecraft:squid' }],
+        command: async () => {},
+    } as unknown as Harness;
+    const tick = { stepTicks: async () => {} } as SessionTick;
+
+    const result = await settleNearbyEntities(h, tick, 0, 64, 0, 32, {
+        maxCleanupPasses: 1, stablePolls: 2, pollMs: 0,
+    });
+
+    assert.equal(result.stable, false);
+    assert.deepEqual(result.entities, [{ typeId: 'minecraft:squid' }]);
+    assert.equal(result.cleanupPasses, 1);
 });
 
 test('charter requires gamerule application but tolerates idempotent no-ops', async () => {
