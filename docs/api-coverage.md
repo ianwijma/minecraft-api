@@ -104,6 +104,13 @@ six unique reports from one revision and canonical contract (matching
 successful request evidence as well as behavior assertions. It never converts
 a failed first attempt into success using diagnostic retries.
 
+The client fixture limits software rendering to 30 FPS and two-chunk render
+and simulation distances, disables Vsync and focus pausing, and records and
+verifies the saved options after shutdown. API dispatch deadlines remain
+unchanged. Step-and-observe captures within the completion server-thread pass;
+its result and milestone use the actual retained observation boundary, avoiding
+drift from server-loop ticks that continue while simulation is frozen.
+
 The live corpus also uncovered and fixes an HTTP worker-pool starvation defect:
 long-lived SSE connections occupied both core threads while normal requests
 queued behind them. The bounded worker pool now reserves ordinary-request

@@ -47,6 +47,7 @@ export async function startClient(opts: {
     mode?: 'dev' | 'release';
     fixture?: boolean;
     env?: Record<string, string>;
+    options?: Record<string, string | number | boolean>;
 }): Promise<SupervisedClient> {
     const mode = opts.mode ?? 'dev';
     const runRoot = createRunRoot(opts.repoRoot, opts.loader);
@@ -57,7 +58,10 @@ export async function startClient(opts: {
     fs.mkdirSync(runDir, { recursive: true });
     // Exclude animated sky geometry from static checkpoint settlement.
     // This directory belongs to this disposable supervised launch.
-    fs.writeFileSync(path.join(runDir, 'options.txt'), 'renderClouds:"false"\n');
+    const options = { renderClouds: '"false"', ...opts.options };
+    fs.writeFileSync(path.join(runDir, 'options.txt'), Object.entries(options)
+        .map(([key, value]) => `${key}:${value}`).join('\n') + '\n');
+    fs.writeFileSync(path.join(opts.outDir, 'options-requested.json'), JSON.stringify(options, null, 2));
     fs.copyFileSync(opts.profilePath, path.join(runDir, 'profile.json'));
     const profileReport = path.join(opts.outDir, 'profile-preflight.json');
     const preflight = spawnSync('./gradlew', [':runner:runnerJar', '--console=plain', '--no-daemon'], {

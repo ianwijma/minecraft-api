@@ -188,6 +188,12 @@ class ServerEndpointsTest {
         assertEquals(202, stepObserve.statusCode(), stepObserve.body());
         String observeJob = waitForJob(extract(stepObserve.body(), "jobId"), "SUCCEEDED");
         assertTrue(observeJob.contains("snapshotId"), observeJob);
+        var observed = (Map<?, ?>) ((Map<?, ?>) dev.example.mapi.internal.json.JsonReader.parse(
+                observeJob.getBytes(java.nio.charset.StandardCharsets.UTF_8))).get("result");
+        assertEquals(observed.get("snapshotBoundary"), observed.get("boundary"),
+                "completion and retained observation must report the same server-thread pass");
+        assertEquals(1234L, ((Number) observed.get("boundary")).longValue(),
+                "the observation boundary must replace an earlier step-poll boundary");
         String snapshotId = extract(observeJob, "snapshotId");
 
         // Two snapshots diff cleanly.

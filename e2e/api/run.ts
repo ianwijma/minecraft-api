@@ -55,6 +55,14 @@ for (const loader of loaders as ('fabric' | 'neoforge')[]) for (const sdk of sdk
         report.trace.push(...cleanupRequests.map((trace, index) => ({ ...trace, id: offset + index + 1 })));
     };
     const checkFixture = async (game: GameProcess) => {
+        if (!game.gamePort) {
+            const options = fs.readFileSync(path.join(game.runDir, 'options.txt'), 'utf8');
+            fs.writeFileSync(path.join(path.dirname(game.logFile), 'options-effective.txt'), options);
+            const requested = JSON.parse(fs.readFileSync(path.join(path.dirname(game.logFile), 'options-requested.json'), 'utf8'));
+            for (const [key, value] of Object.entries(requested)) {
+                assert.ok(options.split('\n').includes(`${key}:${value}`), `effective fixture option differs: ${key}`);
+            }
+        }
         const fixture = JSON.parse(fs.readFileSync(game.fixtureReport, 'utf8'));
         const kind = game.gamePort ? 'server' : 'client';
         verifyFixture(fixture, kind === 'client' ? 2 : 1);

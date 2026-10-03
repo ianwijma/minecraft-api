@@ -48,6 +48,18 @@ public final class SnapshotCaptureService {
      * @return the retained snapshot id and boundary
      */
     public Captured capture(String label, int maxPlayers, int maxEntities) {
+        return call(() -> captureFromServerThread(label, maxPlayers, maxEntities));
+    }
+
+    /**
+     * Captures and retains without another dispatch, for a caller already on the server thread.
+     *
+     * @param label free-form capture label, never blank
+     * @param maxPlayers maximum players included, 0..100
+     * @param maxEntities maximum entities included, 0..512
+     * @return the retained snapshot and its actual observation boundary
+     */
+    public Captured captureFromServerThread(String label, int maxPlayers, int maxEntities) {
         if (label == null || label.isBlank()) {
             throw new ProblemException(ProblemCode.BAD_REQUEST, "label is required");
         }
@@ -58,7 +70,7 @@ public final class SnapshotCaptureService {
             throw new ProblemException(ProblemCode.BAD_REQUEST, "maxEntities must be 0..512");
         }
         String sessionId = world.requireActive(Optional.empty());
-        Captured captured = call(() -> captureOnServerThread(label, maxPlayers, maxEntities, sessionId));
+        Captured captured = captureOnServerThread(label, maxPlayers, maxEntities, sessionId);
         store.retain(captured.snapshot());
         return captured;
     }
