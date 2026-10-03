@@ -18,6 +18,12 @@ export interface SupervisedClient {
     mode: 'dev' | 'release';
 }
 
+export function createRunRoot(repoRoot: string, loader: 'fabric' | 'neoforge'): string {
+    const runRootParent = path.join(repoRoot, 'build', 'e2e');
+    fs.mkdirSync(runRootParent, { recursive: true });
+    return fs.mkdtempSync(path.join(runRootParent, `${Date.now()}-${loader}-`));
+}
+
 /** Fail fast instead of letting the mod log a bind conflict hours later. */
 async function assertPortFree(port: number): Promise<void> {
     await new Promise<void>((resolve, reject) => {
@@ -41,7 +47,7 @@ export async function startClient(opts: {
     mode?: 'dev' | 'release';
 }): Promise<SupervisedClient> {
     const mode = opts.mode ?? 'dev';
-    const runRoot = fs.mkdtempSync(path.join(opts.repoRoot, 'build', 'e2e', `${Date.now()}-${opts.loader}-`));
+    const runRoot = createRunRoot(opts.repoRoot, opts.loader);
     const runDir = path.join(runRoot, 'client');
     const port = Number(process.env['MAPI_HTTP_PORT'] ?? 25586);
     await assertPortFree(port);

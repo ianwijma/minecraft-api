@@ -5,11 +5,26 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { deflateSync } from 'node:zlib';
 import { decodePng, encodePng, cropImage, type RgbaImage } from '../harness/png.ts';
 import { diffImages, renderDiffImage } from '../harness/diff.ts';
 import { MAP, bfsPath, legsFromPath } from '../scenarios/04-hedge-maze.spec.ts';
 import { Harness } from '../harness/client.ts';
+import { createRunRoot } from '../harness/supervisor.ts';
+
+test('supervisor creates its isolated run root from a clean build directory', () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mapi-e2e-root-'));
+    try {
+        const runRoot = createRunRoot(repoRoot, 'fabric');
+        assert.equal(path.dirname(runRoot), path.join(repoRoot, 'build', 'e2e'));
+        assert.ok(fs.statSync(runRoot).isDirectory());
+    } finally {
+        fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+});
 
 function image(width: number, height: number,
                fill: [number, number, number, number]): RgbaImage {

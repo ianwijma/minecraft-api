@@ -85,7 +85,8 @@ JAR.
 disposable client through the loader's production-run task with the built
 distributable JAR, performs the `house` E2E scenario, and verifies that the
 runtime-reported JAR SHA-256 matches the artifact in that loader's `build/libs`.
-It uses a fresh run directory and writes `report.json` under
+The supervisor creates `build/e2e` on clean checkouts before allocating a
+unique run directory. It writes `report.json` under
 `build/acceptance/release-client/<loader>/<run-id>/`. The command requires a
 display or `xvfb-run`; Xvfb is selected automatically when present. This is a
 bounded client smoke check, not the release acceptance campaign: dedicated
