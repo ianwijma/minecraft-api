@@ -71,7 +71,7 @@ subprojects {
         }
         format 'misc', {
             target '**/*.md', '**/*.json', '**/*.yaml', '**/*.yml', '**/*.toml', '**/*.properties', '**/.gitignore', '**/.gitattributes'
-            targetExclude 'build/**', 'run/**', 'run*/**', '.gradle/**', '**/gradle-wrapper.properties'
+            targetExclude 'build/**', '**/build/**', 'run/**', 'run*/**', '.gradle/**', '**/gradle-wrapper.properties'
             trimTrailingWhitespace()
             endWithNewline()
         }
@@ -91,7 +91,7 @@ tasks.register('buildAll', Task) {
 tasks.register('testAll', Task) {
     group = 'verification'
     description = 'Runs all unit and HTTP contract tests (common module) plus the consumer example tests.'
-    dependsOn ':common:test', ':runner:test', ':sdk:test', ':example-consumer:test'
+    dependsOn ':common:test', ':runner:test', ':sdk:test', ':example-consumer:test', ':fixture-mod:test'
 }
 
 tasks.register('formatCheck', Task) {
@@ -122,6 +122,7 @@ tasks.register('verify', Task) {
     group = 'verification'
     description = 'Core verification: formatting, tests, packaging, and manifest checks.'
     dependsOn tasks.named('formatCheck'), tasks.named('testAll'), tasks.named('verifyDistributions'), tasks.named('validateManifest'), tasks.named('apiCoverageCheck')
+    dependsOn ':fixture-fabric:jar', ':fixture-neoforge:jar'
 }
 
 tasks.register('apiCoverageCheck', Exec) {
@@ -340,7 +341,7 @@ tasks.register('verifyDistributions') {
                 if (!fmj.mixins?.any { it instanceof Map && it.config == 'mapi-fabric.client.mixins.json'
                         && it.environment == 'client' }) problems << 'fabric: connection mixin config not registered for clients'
             }
-            ['net/neoforged/', 'dev/example/mapi/neoforge/', 'dev/example/mapi/example/', 'org/slf4j/'].each { p ->
+            ['net/neoforged/', 'dev/example/mapi/neoforge/', 'dev/example/mapi/example/', 'dev/example/mapi/fixture/', 'org/slf4j/'].each { p ->
                 if (fabricNames.any { it.startsWith(p) }) problems << "fabric: must not bundle ${p}*"
             }
         }
@@ -360,7 +361,7 @@ tasks.register('verifyDistributions') {
                     problems << 'neoforge: connection mixin config not registered'
                 }
             }
-            ['net/fabricmc/', 'dev/example/mapi/fabric/', 'dev/example/mapi/example/', 'org/slf4j/'].each { p ->
+            ['net/fabricmc/', 'dev/example/mapi/fabric/', 'dev/example/mapi/example/', 'dev/example/mapi/fixture/', 'org/slf4j/'].each { p ->
                 if (neoNames.any { it.startsWith(p) }) problems << "neoforge: must not bundle ${p}*"
             }
         }

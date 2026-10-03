@@ -18,6 +18,9 @@ dependencies {
     implementation libs.fabric.loader
     implementation libs.fabric.api
     productionRuntimeMods libs.fabric.api
+    if (providers.gradleProperty('mapiFixture').getOrElse('false').toBoolean()) {
+        productionRuntimeMods project(':fixture-fabric')
+    }
     implementation project(':common')
 }
 

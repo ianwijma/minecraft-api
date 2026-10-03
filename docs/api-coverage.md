@@ -31,3 +31,13 @@ Input deadline tests inject tick, epoch, and monotonic clocks and boundary
 waits; they require no sleeping and confirm cleanup even after an epoch-clock
 jump. Existing job, snapshot, lease, event, world-lifecycle, and dispatch tests
 retain their focused failure and race checks.
+
+The `fixture-mod`, `fixture-fabric`, and `fixture-neoforge` Gradle modules
+produce acceptance-only consumer JARs. Release launch tasks include them only
+with `-PmapiFixture=true`. `MAPI_FIXTURE_REPORT` names the isolated report path.
+The consumer uses only `dev.example.mapi.api`; reports include public-member
+checks, first-attempt failures, snapshots, and lifecycle callback counts.
+`e2e/api/java-members.json` separates JVM/bootstrap checks from live consumer
+checks. A reflection/source inventory test fails when public types or members
+are added without coverage. The singleton bootstrap test uses an isolated
+class loader and does not modify the running test suite's facade.

@@ -30,3 +30,8 @@ include 'neoforge'
 include 'runner'
 include 'sdk'
 include 'example-consumer'
+include 'fixture-mod'
+include 'fixture-fabric'
+project(':fixture-fabric').projectDir = file('fixture-mod/fabric')
+include 'fixture-neoforge'
+project(':fixture-neoforge').projectDir = file('fixture-mod/neoforge')

@@ -1,0 +1,22 @@
+plugins {
+    id 'java-library'
+}
+
+repositories {
+    maven { url = 'https://maven.fabricmc.net/' }
+}
+
+dependencies {
+    compileOnly project(':common')
+    compileOnly libs.fabric.loader
+    implementation project(':fixture-mod')
+}
+
+tasks.named('jar', Jar) {
+    from project(':fixture-mod').sourceSets.main.output
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('fabric.mod.json') { expand version: project.version }
+}

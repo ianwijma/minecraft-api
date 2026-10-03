@@ -53,6 +53,21 @@
       "path": "sdk",
       "kind": "sdk",
       "description": "Java, Python, and generated TypeScript SDK clients (spec deliverable 2): standalone HTTP clients with no MAPI-internal dependencies."
+    },
+    {
+      "path": "fixture-mod",
+      "kind": "acceptance-fixture",
+      "description": "Acceptance-only public Java API consumer; excluded from MAPI distributions."
+    },
+    {
+      "path": "fixture-mod/fabric",
+      "kind": "acceptance-fixture",
+      "description": "Acceptance-only public Java API consumer; excluded from MAPI distributions."
+    },
+    {
+      "path": "fixture-mod/neoforge",
+      "kind": "acceptance-fixture",
+      "description": "Acceptance-only public Java API consumer; excluded from MAPI distributions."
     }
   ],
   "documentation": {

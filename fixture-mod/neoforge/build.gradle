@@ -1,0 +1,21 @@
+plugins {
+    alias(libs.plugins.neoforge.moddev)
+}
+
+neoForge {
+    version = libs.versions.neoforge.get()
+}
+
+dependencies {
+    compileOnly project(':common')
+    implementation project(':fixture-mod')
+}
+
+tasks.named('jar', Jar) {
+    from project(':fixture-mod').sourceSets.main.output
+}
+
+processResources {
+    inputs.property 'version', project.version
+    filesMatching('META-INF/neoforge.mods.toml') { expand version: project.version }
+}
