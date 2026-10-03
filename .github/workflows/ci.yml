@@ -4,6 +4,11 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      update_visual_baselines:
+        description: Generate CI reference PNGs for review and commit
+        type: boolean
+        default: false
 
 env:
   JAVA_VERSION: "25"
@@ -193,6 +198,15 @@ jobs:
         run: scripts/acceptance/release-client-smoke.sh ${{ matrix.loader }}
         env:
           MAPI_USE_XVFB: "true"
+          MAPI_E2E_ENV: linux-ci-${{ matrix.loader }}
+          MAPI_UPDATE_BASELINES: ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines && 'true' || 'false' }}
+      - name: Upload updated visual baselines
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.update_visual_baselines }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-baselines-${{ matrix.loader }}
+          path: e2e/baselines/linux-ci-${{ matrix.loader }}/
+          if-no-files-found: error
       - name: Upload acceptance reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -204,4 +218,6 @@ jobs:
             build/acceptance/**/summary.json
             build/acceptance/release-client/**/house/unstable-a.png
             build/acceptance/release-client/**/house/unstable-b.png
+            build/acceptance/release-client/**/house/*.actual.png
+            build/acceptance/release-client/**/house/*.diff.png
           if-no-files-found: ignore

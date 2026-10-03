@@ -106,12 +106,20 @@ export class Visual {
             name: spec.name, baseline: file, ...meta,
             masks: spec.masks ?? [],
         };
-        if (this.opts.updateBaselines || !fs.existsSync(file)) {
+        if (this.opts.updateBaselines) {
             fs.mkdirSync(dir, { recursive: true });
             fs.writeFileSync(file, png);
             this.report.advisory(
-                `baseline written: ${file} (${this.opts.updateBaselines ? 'update' : 'first run'})`);
+                `baseline written: ${file} (update)`);
             this.report.checkpoint({ ...entry, verdict: 'BASELINED' });
+            return;
+        }
+        if (!fs.existsSync(file)) {
+            fs.mkdirSync(this.opts.outDir, { recursive: true });
+            fs.writeFileSync(path.join(this.opts.outDir, `${spec.name}.actual.png`), png);
+            this.report.checkpoint({ ...entry, verdict: 'FAIL', reason: 'missing baseline' });
+            this.report.record(`checkpoint ${spec.name}`, false,
+                `missing baseline: ${file}; generate with --update-baselines and review the PNG`);
             return;
         }
         const expected = decodePng(fs.readFileSync(file));
@@ -131,6 +139,7 @@ export class Visual {
         });
         if (!ok) {
             fs.mkdirSync(this.opts.outDir, { recursive: true });
+            fs.writeFileSync(path.join(this.opts.outDir, `${spec.name}.actual.png`), png);
             const diffFile = path.join(this.opts.outDir, `${spec.name}.diff.png`);
             fs.writeFileSync(diffFile,
                 encodePng(renderDiffImage(expected, actual, opts)));

@@ -8,17 +8,86 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { deflateSync } from 'node:zlib';
 import { decodePng, encodePng, cropImage, type RgbaImage } from '../harness/png.ts';
 import { diffImages, renderDiffImage } from '../harness/diff.ts';
 import { MAP, bfsPath, legsFromPath } from '../scenarios/04-hedge-maze.spec.ts';
+import { HOUSE_EXTERIOR_MASKS } from '../scenarios/01-house.spec.ts';
 import { Harness } from '../harness/client.ts';
+import { Visual } from '../harness/visual.ts';
+import { Report } from '../harness/report.ts';
 import { MapiError } from '../../sdk/typescript/src/mapi-client.ts';
 import { createRunRoot } from '../harness/supervisor.ts';
 import { applyCharter, clearNonPlayerEntities, constructStageFloor,
     holdStageChunkTickets, releaseStageChunkTickets, settleNearbyEntities }
     from '../harness/stage.ts';
 import type { SessionTick } from '../harness/context.ts';
+
+test('both CI loaders ship all five house reference PNGs at the profile dimensions', () => {
+    const root = fileURLToPath(new URL('../baselines/', import.meta.url));
+    for (const loader of ['fabric', 'neoforge']) {
+        for (const checkpoint of ['house-se', 'house-sw', 'house-nw', 'house-ne', 'house-interior']) {
+            const png = decodePng(fs.readFileSync(path.join(root, `linux-ci-${loader}`, 'house', `${checkpoint}.png`)));
+            assert.equal(png.width, 1280, `${loader}/${checkpoint} width`);
+            assert.equal(png.height, 720, `${loader}/${checkpoint} height`);
+        }
+    }
+});
+
+test('house masks ignore distant terrain while retaining sensitivity to house changes', () => {
+    const file = fileURLToPath(new URL('../baselines/linux-ci-fabric/house/house-se.png', import.meta.url));
+    const expected = decodePng(fs.readFileSync(file));
+    const repaint = (x: number, y: number) => {
+        const changed = { ...expected, data: Buffer.from(expected.data) };
+        for (let row = y; row < y + 40; row++) {
+            for (let col = x; col < x + 40; col++) {
+                changed.data.set([255, 0, 255, 255], 4 * (row * changed.width + col));
+            }
+        }
+        return diffImages(expected, changed, { pixelThreshold: 4, masks: HOUSE_EXTERIOR_MASKS });
+    };
+    assert.equal(repaint(10, 470).changedFraction, 0);
+    assert.equal(repaint(1000, 470).changedFraction, 0);
+    assert.ok(repaint(600, 500).changedFraction > 0.001);
+});
+
+test('visual baselines require explicit updates and remain unchanged on divergence', async t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mapi-baselines-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const baselinesDir = path.join(root, 'baselines');
+    const outDir = path.join(root, 'out');
+    const baseline = path.join(baselinesDir, 'sample.png');
+    const png = encodePng({ width: 1, height: 1, data: Buffer.from([10, 20, 30, 255]) });
+    const changed = encodePng({ width: 1, height: 1, data: Buffer.from([255, 255, 255, 255]) });
+    const h = new Harness('http://127.0.0.1:1', 'test-token');
+    const compareReport = new Report('compare', {});
+    const visual = new Visual(h, compareReport, {
+        scenario: 'sample', baselinesDir, outDir, updateBaselines: false,
+    });
+    await visual.submitPng({ name: 'sample' }, png);
+    assert.equal(compareReport.failed, 1);
+    assert.equal(fs.existsSync(baseline), false);
+    assert.deepEqual(fs.readFileSync(path.join(outDir, 'sample.actual.png')), png);
+
+    const updateReport = new Report('update', {});
+    const update = new Visual(h, updateReport, {
+        scenario: 'sample', baselinesDir, outDir, updateBaselines: true,
+    });
+    await update.submitPng({ name: 'sample' }, png);
+    assert.equal(updateReport.failed, 0);
+    assert.deepEqual(fs.readFileSync(baseline), png);
+    await visual.submitPng({ name: 'sample' }, png);
+    assert.equal(compareReport.passed, 1);
+    await visual.submitPng({ name: 'sample' }, changed);
+    assert.equal(compareReport.failed, 2);
+    assert.deepEqual(fs.readFileSync(baseline), png);
+    assert.deepEqual(fs.readFileSync(path.join(outDir, 'sample.actual.png')), changed);
+    assert.ok(fs.existsSync(path.join(outDir, 'sample.diff.png')));
+
+    await update.submitPng({ name: 'sample' }, changed);
+    assert.deepEqual(fs.readFileSync(baseline), changed);
+});
 
 test('tick stepping rejects successful jobs with incomplete simulation progress', async () => {
     const originalFetch = globalThis.fetch;
