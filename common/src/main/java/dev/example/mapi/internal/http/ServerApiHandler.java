@@ -117,14 +117,24 @@ final class ServerApiHandler {
                             () -> service.step(lease, stepTicks), 30_000);
                     var scheduled = operation.scheduled();
                     dev.example.mapi.internal.tick.TickControlBackend.StepResult result;
+                    var observation = new java.util.concurrent.atomic.AtomicReference<dev.example.mapi.internal.snapshot.SnapshotCaptureService.Captured>();
                     boolean completed = false;
                     try {
                         result = dev.example.mapi.internal.tick.TickStepWaiter.await(scheduled, context,
                                 () -> server.runtime.callOnServerThread(
                                         () -> service.stepState(lease, operation), 5_000));
-                        server.runtime.callOnServerThread(() -> {
+                        var waited = result;
+                        result = server.runtime.callOnServerThread(() -> {
+                            service.holderFor(lease.id());
+                            var capture = observe ? server.runtime.snapshotCapture() : java.util.Optional.<dev.example.mapi.internal.snapshot.SnapshotCaptureService>empty();
+                            if (capture.isPresent()) {
+                                observation.set(capture.get().captureFromServerThread(
+                                        label == null ? "step-and-observe" : label, 10, 50));
+                            }
                             service.completeStep(lease, operation);
-                            return null;
+                            return observation.get() == null ? waited
+                                    : new dev.example.mapi.internal.tick.TickControlBackend.StepResult(
+                                            waited.requested(), waited.completed(), observation.get().boundary());
                         }, 5_000);
                         completed = true;
                     } finally {
@@ -144,10 +154,8 @@ final class ServerApiHandler {
                     out.put("completed", result.completed());
                     out.put("boundary", result.boundaryTickCount());
                     if (observe) {
-                        var capture = server.runtime.snapshotCapture();
-                        if (capture.isPresent()) {
-                            var captured = capture.get().capture(
-                                    label == null ? "step-and-observe" : label, 10, 50);
+                        var captured = observation.get();
+                        if (captured != null) {
                             out.put("snapshotId", captured.id());
                             out.put("snapshotBoundary", captured.boundary());
                         } else {

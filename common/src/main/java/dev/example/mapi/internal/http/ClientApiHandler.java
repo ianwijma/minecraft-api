@@ -151,10 +151,11 @@ final class ClientApiHandler {
             throw new ProblemException(ProblemCode.BAD_REQUEST, "slot is required");
         }
         String leaseId = HttpApiRequest.stringField(body, "leaseId");
-        var capture = server.runtime.callOnClientThread(() -> {
+        server.runtime.callOnClientThread(() -> {
             server.requireLease("input", leaseId);
-            return inv.renderedCapture(slot);
+            return null;
         });
+        var capture = inv.renderedCapture(slot);
         HttpApiResponse.respond(exchange, 200, JsonWriter.write(capture.toMap()));
     }
 

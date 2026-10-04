@@ -125,6 +125,8 @@ public final class NeoForgeClientBridge implements ClientBridge {
             com.mojang.blaze3d.platform.Window window =
                     Minecraft.getInstance().getWindow();
             if (fullscreen != window.isFullscreen()) {
+                window.toggleFullScreen();
+                Minecraft.getInstance().options.fullscreen().set(fullscreen);
                 window.updateFullscreenIfChanged();
             }
             return currentState();
@@ -132,6 +134,7 @@ public final class NeoForgeClientBridge implements ClientBridge {
 
         @Override
         public ClientBridge.WindowBackend.WindowState setGuiScale(int guiScale) {
+            Minecraft.getInstance().options.guiScale().set(guiScale);
             Minecraft.getInstance().getWindow().setGuiScale(guiScale);
             return currentState();
         }

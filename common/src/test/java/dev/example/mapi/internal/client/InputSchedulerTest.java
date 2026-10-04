@@ -13,6 +13,36 @@ import org.junit.jupiter.api.Test;
 
 class InputSchedulerTest {
 
+    @Test
+    void controlledMonotonicDeadlineReleasesInputDespiteEpochClockJump() {
+        AtomicLong epoch = new AtomicLong(1000);
+        AtomicLong nanos = new AtomicLong();
+        AtomicInteger downs = new AtomicInteger();
+        AtomicInteger ups = new AtomicInteger();
+        InputScheduler scheduler = new InputScheduler(() -> 1L, epoch::get, nanos::get, () -> {
+            epoch.set(-100_000);
+            nanos.addAndGet(50_000_000);
+        });
+        var failure = assertThrows(ProblemException.class, () -> scheduler.holdKey(
+                recording(downs, ups), 66, 3, 1100));
+        assertEquals(ProblemCode.DEADLINE_EXCEEDED, failure.code());
+        assertEquals(1, downs.get());
+        assertEquals(1, ups.get());
+        assertEquals(100_000_000, nanos.get());
+    }
+
+    @Test
+    void controlledTickProgressCompletesWithoutWallClockSleeps() throws Exception {
+        AtomicLong tick = new AtomicLong(100);
+        AtomicInteger ups = new AtomicInteger();
+        InputScheduler scheduler = new InputScheduler(tick::get, () -> 1000,
+                () -> 0L, tick::incrementAndGet);
+        var result = scheduler.holdKey(recording(new AtomicInteger(), ups), 66, 3, 1100);
+        assertEquals(3, result.heldTicks());
+        assertEquals(104, result.endBoundary());
+        assertEquals(1, ups.get());
+    }
+
     /** Fake client-tick clock advancing on demand. */
     private static final class FakeClock {
         private final AtomicLong tick = new AtomicLong(100);

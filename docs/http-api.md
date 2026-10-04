@@ -316,3 +316,20 @@ No endpoints for file access, source-code editing, shell execution,
 reflection, or player identities/chat. Coding-agent interaction uses the
 developer's own authorized tools, never the mod's HTTP surface
 (`docs/llm-workflow.md`).
+
+### Live coverage corrections
+
+Fullscreen requests toggle the actual game window on both loaders and synchronize
+the saved fullscreen option. GUI-scale mutations update the option as well as
+the effective window scale, so later resize events retain the requested scale.
+Key input invokes the installed game callback and reaches active screens; native
+GLFW polling remains explicitly unsupported.
+
+Rendered tooltip capture validates its lease on the client dispatch path, then
+waits off the render thread for frame progression and complete PNG readback.
+It drives the installed cursor callback and restores the previous screen after
+capture or failure. Screenshot files become readable only after complete writes.
+The API corpus verifies both computed lines and visible hover pixels.
+
+The bounded HTTP pool reserves ordinary request capacity while all eight allowed
+SSE streams are open. Stream subscriptions cannot starve commands or health reads.

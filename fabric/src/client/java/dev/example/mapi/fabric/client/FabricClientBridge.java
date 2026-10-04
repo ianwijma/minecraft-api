@@ -126,10 +126,9 @@ final class FabricClientBridge implements ClientBridge {
         public ClientBridge.WindowBackend.WindowState setFullscreen(boolean fullscreen) {
             Window window = Minecraft.getInstance().getWindow();
             if (fullscreen != window.isFullscreen()) {
-                // 26.2 exposes no public setFullscreen(boolean) on Window;
-                // the honest behavior is to report the unchanged actual state
-                // and bump the revision so callers can see the attempt
-                // (spec §9.1: return effective values, never assume).
+                window.toggleFullScreen();
+                Minecraft.getInstance().options.fullscreen().set(fullscreen);
+                window.updateFullscreenIfChanged();
                 windowRevision.incrementAndGet();
             }
             return currentState();
@@ -137,6 +136,7 @@ final class FabricClientBridge implements ClientBridge {
 
         @Override
         public ClientBridge.WindowBackend.WindowState setGuiScale(int guiScale) {
+            Minecraft.getInstance().options.guiScale().set(guiScale);
             Minecraft.getInstance().getWindow().setGuiScale(guiScale);
             windowRevision.incrementAndGet();
             return currentState();

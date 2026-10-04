@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "mapi_fixture",
+  "version": "${version}",
+  "name": "MAPI acceptance fixture",
+  "environment": "*",
+  "entrypoints": { "main": ["dev.example.mapi.fixture.fabric.FixtureFabric"] },
+  "depends": { "mapi": "*", "fabricloader": "*", "minecraft": "26.2", "java": ">=25" }
+}

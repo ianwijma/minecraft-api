@@ -354,7 +354,7 @@ export class MapiClient {
    * `{ gap: true, droppedUpToSeq }` yields.
    */
   async *streamEvents(cursor?: number, types?: string | string[],
-                       world?: string, keepaliveSeconds?: number): AsyncGenerator<
+                       world?: string, keepaliveSeconds?: number, signal?: AbortSignal): AsyncGenerator<
       { gap: false; id: string; event: string; data: unknown } |
       { gap: true; droppedUpToSeq: number }> {
     const params = new URLSearchParams();
@@ -367,7 +367,7 @@ export class MapiClient {
         this.base + '/api/v1/events/stream' + query, {
       headers: { Authorization: `Bearer ${this.token}`,
                Host: '127.0.0.1' },
-      signal: AbortSignal.timeout(this.timeoutMs),
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)]) : AbortSignal.timeout(this.timeoutMs),
     });
     if (!response.ok || !response.body) {
       throw new MapiError(response.status, 'STREAM_FAILED',
@@ -379,12 +379,14 @@ export class MapiClient {
     let id = '';
     let event = 'message';
     let data: string[] = [];
+    try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+      if (done && !buffer) break;
+      buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
       let index;
       while ((index = buffer.search(/\r\n|\n|\r/)) >= 0) {
+        if (!done && buffer[index] === '\r' && index === buffer.length - 1) break;
         const line = buffer.slice(0, index);
         buffer = buffer.slice(index + (buffer[index] === '\r' && buffer[index + 1] === '\n' ? 2 : 1));
         if (line.startsWith(':')) {
@@ -415,6 +417,11 @@ export class MapiClient {
         else if (field === 'event') event = value || 'message';
         else if (field === 'data') data.push(value);
       }
+      if (done) break;
+    }
+    } finally {
+      await reader.cancel();
+      reader.releaseLock();
     }
   }
 }

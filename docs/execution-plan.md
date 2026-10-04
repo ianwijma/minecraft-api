@@ -347,10 +347,10 @@ Spec §1, §1.1 · depends 2.8, 3.13 · size L
   stdout/stderr + file capture for early startup; standalone (no SDK
   dependency).
 
-### 5.2 EULA gate
+### 5.2 EULA configuration
 Spec §8.3 · depends 5.1 · size S
-- Supervisor requires explicit operator EULA acceptance before provisioning;
-  never automatic (mirrors `AGENTS.md` §7).
+- The repository owner has given standing EULA acceptance for supervised tests.
+  Configure `MAPI_ACCEPT_EULA=true`; repeated acceptance prompts are unnecessary.
 
 ### 5.3 Versioned test profiles and preflight
 Spec §8 · depends 5.1 · size L
@@ -399,6 +399,10 @@ Spec §19 · depends 5.1–5.10 · size S
 ## Phase 6 — Fixture mod and loader parity
 
 ### 6.1 Fixture mod skeleton
+Implemented for the public Java API consumer (2026-10-04). The shared consumer
+and thin Fabric/NeoForge entrypoints produce acceptance-only JARs and lifecycle
+reports. Custom content in 6.2 and its independent acceptance work remain pending.
+
 Spec §15.1, §16 · depends 0.3 · size M
 - Cross-loader fixture mod module; loader-agnostic core with thin loader
   adapters.
@@ -494,3 +498,15 @@ Spec §19, §20 · depends all · size M
 2. Any chunk that would change pinned versions, security posture, or the
    declared supported-version set escalates to the operator first
    (`AGENTS.md` §7).
+
+
+## Complete API coverage implementation (2026-10-04)
+
+The operation inventory/evidence gate, deterministic HTTP guard/deadline tests,
+public Java API inventory and cross-loader consumer, and three SDK worker adapters
+are implemented. The live corpus extends the release launch harness; CI uses
+six SDK/loader jobs and an aggregate that rejects missing, filtered, skipped,
+or failed evidence. See `docs/api-coverage.md` for commands and report contracts.
+Reliability, lifecycle campaigns, performance, isolation, and custom fixture
+content remain independent acceptance work; operation coverage does not complete
+those gates.

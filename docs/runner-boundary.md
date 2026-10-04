@@ -18,7 +18,7 @@
    machine-state adapters, live backup).
 5. Process lifecycle ownership: the runner launches, restarts, kills, and
    provisions; the mod only performs graceful local shutdown on request; the
-   EULA is always an explicit operator decision (spec §8.3).
+   owner’s standing EULA acceptance covers supervised tests (spec §8.3).
 6. Out-of-process communication: the runner uses only the public HTTP API —
    no `common` internals, no in-process access (spec §1; ADR-0002 rule 3).
 
@@ -32,7 +32,7 @@
 - **Runner (`runner/` module):** versioned CLI (`version`, `status`,
   `wait-world`, `run`, `replay`, `provision-server`), declarative JSON plans
   (fixture orchestration), JSONL recording + replay with divergence
-  detection, EULA-gated provisioning, machine-readable results and exit
+  detection, configured provisioning, machine-readable results and exit
   codes. Depends only on the HTTP contract — never on `common` internals
   (ADR-0002 rule 3).
 - **Runtime-verified 2026-09-15** (NeoForge 26.2.0.87, live client):

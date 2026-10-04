@@ -1,0 +1,13 @@
+license="UNLICENSED"
+
+[[mods]]
+modId="mapi_fixture"
+version="${version}"
+displayName="MAPI acceptance fixture"
+
+[[dependencies.mapi_fixture]]
+modId="mapi"
+type="required"
+versionRange="[0,)"
+ordering="AFTER"
+side="BOTH"

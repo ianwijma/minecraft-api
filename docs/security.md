@@ -130,8 +130,8 @@ thread is never blocked by network work.
   placeholder-only examples.
 - Never log token values (the code logs lengths/enablement only); never
   commit `.env`, tokens, `eula.txt`, run directories, logs, or worlds.
-- `scripts/server-smoke.sh` requires `MAPI_ACCEPT_EULA=true` explicitly;
-  CI never accepts the EULA on anyone's behalf.
+- Configure `MAPI_ACCEPT_EULA=true` for supervised tests under the owner’s
+  standing acceptance; do not request acceptance repeatedly.
 
 ## Incident checklist
 

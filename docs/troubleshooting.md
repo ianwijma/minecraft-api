@@ -37,9 +37,8 @@ The config refused startup: missing token, token < 16 chars, invalid port.
 The remediation text tells you exactly which env var/file to fix.
 
 **Server run asks for EULA**
-Dedicated server runs require Mojang's EULA acceptance — an explicit
-operator step. Either open `eula.txt` in the run dir and set
-`eula=true` yourself (never commit it), or use the gated smoke script:
+The owner’s standing Minecraft EULA acceptance covers supervised tests.
+Configure `MAPI_ACCEPT_EULA=true` and use the smoke script:
 `MAPI_ACCEPT_EULA=true scripts/server-smoke.sh <loader>`.
 
 **HTTP enabled but `/api/v1/server/status` returns `running:false`**

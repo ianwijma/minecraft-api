@@ -94,6 +94,9 @@ tasks.named('jar', Jar).configure {
 ['runReleaseClient', 'runReleaseServer'].each { runName ->
     tasks.named(runName, net.neoforged.moddevgradle.internal.RunGameTask).configure {
         dependsOn tasks.named('jar')
+        if (providers.gradleProperty('mapiFixture').getOrElse('false').toBoolean()) {
+            dependsOn ':fixture-neoforge:jar'
+        }
         classpathProvider.setFrom(sourceSets.main.runtimeClasspath
                 .minus(sourceSets.main.output)
                 .minus(project(':common').sourceSets.main.output)
@@ -103,6 +106,9 @@ tasks.named('jar', Jar).configure {
             modDirectory.mkdirs()
             copy {
                 from tasks.named('jar', Jar).get().archiveFile
+                if (providers.gradleProperty('mapiFixture').getOrElse('false').toBoolean()) {
+                    from project(':fixture-neoforge').tasks.named('jar', Jar).get().archiveFile
+                }
                 into modDirectory
             }
         }

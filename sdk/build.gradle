@@ -22,6 +22,21 @@ java {
     withSourcesJar()
 }
 
+sourceSets {
+    e2e {
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+tasks.register('apiWorkerJar', Jar) {
+    group = 'verification'
+    archiveFileName = 'mapi-api-worker.jar'
+    from sourceSets.main.output
+    from sourceSets.e2e.output
+    manifest { attributes 'Main-Class': 'dev.example.mapi.sdk.ApiWorker' }
+}
+
 publishing {
     publications {
         register('mavenJava', MavenPublication) {

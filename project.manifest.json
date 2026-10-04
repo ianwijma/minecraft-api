@@ -53,6 +53,21 @@
       "path": "sdk",
       "kind": "sdk",
       "description": "Java, Python, and generated TypeScript SDK clients (spec deliverable 2): standalone HTTP clients with no MAPI-internal dependencies."
+    },
+    {
+      "path": "fixture-mod",
+      "kind": "acceptance-fixture",
+      "description": "Acceptance-only public Java API consumer; excluded from MAPI distributions."
+    },
+    {
+      "path": "fixture-mod/fabric",
+      "kind": "acceptance-fixture",
+      "description": "Acceptance-only public Java API consumer; excluded from MAPI distributions."
+    },
+    {
+      "path": "fixture-mod/neoforge",
+      "kind": "acceptance-fixture",
+      "description": "Acceptance-only public Java API consumer; excluded from MAPI distributions."
     }
   ],
   "documentation": {
@@ -162,6 +177,10 @@
       {
         "path": "docs/examples/e2e-visual-scenarios.md",
         "topic": "Plan: repeatable TypeScript E2E examples validated by machine screenshot diffing"
+      },
+      {
+        "path": "docs/api-coverage.md",
+        "description": "Exhaustive operation and public Java API coverage gates."
       }
     ]
   },
@@ -176,13 +195,16 @@
       "apiDocs": "apiDocs",
       "publishLocal": "publishLocal",
       "llmContext": "llmContext",
-      "validateManifest": "validateManifest"
+      "validateManifest": "validateManifest",
+      "apiCoverageCheck": "apiCoverageCheck",
+      "apiHarnessTest": "apiHarnessTest"
     },
     "scripts": {
       "doctor": "scripts/doctor.sh",
       "serverSmoke": "scripts/server-smoke.sh",
       "verifyPublishedApi": "scripts/verify-published-api.sh",
-      "httpClientExample": "scripts/mapi-client.py"
+      "httpClientExample": "scripts/mapi-client.py",
+      "generateE2eContract": "scripts/generate-e2e-contract.py"
     }
   },
   "artifacts": {
