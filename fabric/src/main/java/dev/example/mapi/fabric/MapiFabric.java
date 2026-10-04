@@ -17,6 +17,7 @@ public final class MapiFabric implements ModInitializer {
     @Override
     public void onInitialize() {
         MapiBootstrap.initialize(new FabricPlatform());
+        FabricMapiServerCommands.register();
     }
 
     /**

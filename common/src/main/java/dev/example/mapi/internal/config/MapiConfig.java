@@ -241,6 +241,26 @@ public record MapiConfig(
         return httpToken != null && !httpToken.isBlank();
     }
 
+    /** Updates only the enabled flag in the fallback properties config. */
+    public static void saveHttpEnabled(Path configDir, boolean enabled) {
+        Path file = configDir.resolve(CONFIG_FILE_NAME);
+        Properties values = new Properties();
+        try {
+            if (Files.exists(file)) {
+                try (InputStream in = Files.newInputStream(file)) {
+                    values.load(in);
+                }
+            }
+            values.setProperty("http.enabled", Boolean.toString(enabled));
+            Files.createDirectories(configDir);
+            try (var out = Files.newOutputStream(file)) {
+                values.store(out, "MAPI configuration");
+            }
+        } catch (IOException e) {
+            throw new MapiConfigException("Failed to save HTTP enabled flag");
+        }
+    }
+
     private static int parseIntStrict(String raw, String name) {
         try {
             return Integer.parseInt(raw.trim());

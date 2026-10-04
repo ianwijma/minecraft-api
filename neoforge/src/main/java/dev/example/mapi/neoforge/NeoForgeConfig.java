@@ -97,6 +97,18 @@ public final class NeoForgeConfig {
                 env, logger);
     }
 
+    /** Persists the HTTP enabled flag using NeoForge's native config. */
+    public static void saveHttpEnabled(boolean enabled) {
+        boolean previous = HTTP_ENABLED.get();
+        HTTP_ENABLED.set(enabled);
+        try {
+            SPEC.save();
+        } catch (RuntimeException e) {
+            HTTP_ENABLED.set(previous);
+            throw e;
+        }
+    }
+
     private static java.util.Set<dev.example.mapi.internal.operation.Scope> parseScopes(
             List<? extends String> raw) {
         if (raw == null || raw.isEmpty()) {

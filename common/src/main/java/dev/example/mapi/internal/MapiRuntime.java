@@ -65,6 +65,7 @@ public final class MapiRuntime implements Mapi {
     private final dev.example.mapi.internal.operation.OperationRegistry clientOperations =
             new dev.example.mapi.internal.operation.OperationRegistry();
 
+    private Boolean httpEnabledOverride;
     private volatile boolean clientPresent;
     private volatile ServerHandle serverHandle;
     private volatile HttpApiServer httpServer;
@@ -480,33 +481,88 @@ public final class MapiRuntime implements Mapi {
     // HTTP lifecycle
     // ------------------------------------------------------------------
 
-    private void startHttp() {
+    /** Returns current listener state and resolved connection credentials. */
+    public synchronized HttpConnection httpConnection() {
+        var loaded = httpServer != null ? config : loadHttpConfig();
+        return new HttpConnection(loaded.httpEnabled(), httpRunning(),
+                "http://127.0.0.1:" + loaded.httpPort(), loaded.httpToken());
+    }
+
+    /** Starts the listener immediately and persists enablement after a successful bind. */
+    public synchronized HttpConnection enableHttp() {
         if (httpServer != null) {
-            return;
+            return httpConnection();
         }
-        dev.example.mapi.internal.config.MapiConfig loaded;
+        Boolean previous = httpEnabledOverride;
+        var previousConfig = config;
+        httpEnabledOverride = true;
         try {
-            loaded = platform.loadConfig(platform.configDir(), System.getenv(),
-                    platform.logger());
-        } catch (dev.example.mapi.internal.config.MapiConfigException e) {
-            platform.logger().error("MAPI: HTTP API not started: {}", e.getMessage());
-            return;
-        }
-        if (!loaded.httpEnabled()) {
-            platform.logger().info("MAPI: local HTTP API is disabled (enable with http.enabled=true "
-                    + "in the loader-native config file)", platform.configDir());
-            return;
-        }
-        this.config = loaded;
-        logCapture.setSecrets(java.util.List.of(loaded.httpToken() == null ? "" : loaded.httpToken()));
-        platform.attachLogCapture(logCapture);
-        HttpApiServer httpServer = new HttpApiServer(loaded, this, platform.logger());
-        if (httpServer.start()) {
-            this.httpServer = httpServer;
+            var loaded = loadHttpConfig();
+            if (!startHttp(loaded)) {
+                throw new IllegalStateException("Could not start the Minecraft API server; check the port and server log.");
+            }
+            platform.saveHttpEnabled(true);
+            return httpConnection();
+        } catch (RuntimeException e) {
+            stopHttp();
+            httpEnabledOverride = previous;
+            config = previousConfig;
+            throw e;
         }
     }
 
-    private void stopHttp() {
+    /** Persists disablement and stops the listener; repeated calls keep it disabled. */
+    public synchronized void disableHttp() {
+        platform.saveHttpEnabled(false);
+        httpEnabledOverride = false;
+        stopHttp();
+    }
+
+    /** Connection details are never included in diagnostic string output. */
+    public record HttpConnection(boolean enabled, boolean running, String url, String token) {
+        @Override
+        public String toString() {
+            return "HttpConnection[enabled=" + enabled + ", running=" + running + ", url=" + url + "]";
+        }
+    }
+
+    private dev.example.mapi.internal.config.MapiConfig loadHttpConfig() {
+        Map<String, String> env = new java.util.HashMap<>(System.getenv());
+        // Explicit local commands control this process; environment overrides
+        // still apply on the next process launch, including port and token.
+        if (httpEnabledOverride != null) {
+            env.put("MAPI_HTTP_ENABLED", httpEnabledOverride.toString());
+        }
+        return platform.loadConfig(platform.configDir(), env, platform.logger());
+    }
+
+    private synchronized void startHttp() {
+        if (httpServer != null) {
+            return;
+        }
+        try {
+            var loaded = loadHttpConfig();
+            if (loaded.httpEnabled()) {
+                startHttp(loaded);
+            }
+        } catch (dev.example.mapi.internal.config.MapiConfigException e) {
+            platform.logger().error("MAPI: HTTP API not started: {}", e.getMessage());
+        }
+    }
+
+    private boolean startHttp(dev.example.mapi.internal.config.MapiConfig loaded) {
+        this.config = loaded;
+        logCapture.setSecrets(java.util.List.of(loaded.httpToken() == null ? "" : loaded.httpToken()));
+        platform.attachLogCapture(logCapture);
+        HttpApiServer candidate = new HttpApiServer(loaded, this, platform.logger());
+        if (candidate.start()) {
+            httpServer = candidate;
+            return true;
+        }
+        return false;
+    }
+
+    private synchronized void stopHttp() {
         HttpApiServer httpServer = this.httpServer;
         this.httpServer = null;
         if (httpServer != null) {

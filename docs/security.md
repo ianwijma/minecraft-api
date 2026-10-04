@@ -26,7 +26,11 @@ repository.
   Explicitly short tokens (< 16 chars) are refused at startup.
 - **Generated configs ship with a generated token.** First-run configs
   (NeoForge `mapi-common.toml`, Fabric `mapi.json`) contain a fresh 32-byte
-  base64url token — read it from the config file; it is never logged.
+  base64url token — read it from the config file or copy it from the local
+  `/mapi status` client command. Client feedback never prints the token in
+  visible chat text. The explicit dedicated console `mapi status`/`mapi enable`
+  commands print credentials to the local console (and may therefore record
+  them in server logs); no feedback is broadcast to players.
   `MAPI_HTTP_TOKEN` (env) wins over the file.
 - **Blank token = authentication disabled (explicit operator choice).**
   Setting `http.token` to an empty string skips auth on every endpoint with
@@ -133,8 +137,9 @@ thread is never blocked by network work.
   the loader-native config file (NeoForge `mapi-common.toml`, Fabric
   `mapi.json`); both are gitignored patterns. `docs/examples/` contains
   placeholder-only examples.
-- Never log token values (the code logs lengths/enablement only); never
-  commit `.env`, tokens, `eula.txt`, run directories, logs, or worlds.
+- Automatic diagnostics never log token values. Explicit local console
+  connection commands print the credentials requested by the operator; protect
+  those console logs as credentials. Never commit `.env`, tokens, `eula.txt`, run directories, logs, or worlds.
 - Configure `MAPI_ACCEPT_EULA=true` for supervised tests under the owner’s
   standing acceptance; do not request acceptance repeatedly.
 
