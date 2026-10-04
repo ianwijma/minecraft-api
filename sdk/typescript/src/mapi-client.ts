@@ -9,6 +9,7 @@ export interface MapiResult {
   status: number;
   body: unknown;
   ok: boolean;
+  headers: Record<string, string>;
 }
 
 function queryValue(value: string | number | boolean | string[] | number[]): string {
@@ -18,10 +19,15 @@ function queryValue(value: string | number | boolean | string[] | number[]): str
 export class MapiError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(status: number, code: string, message: string) {
+  readonly body: unknown;
+  readonly headers: Record<string, string>;
+  constructor(status: number, code: string, message: string,
+              body: unknown = undefined, headers: Record<string, string> = {}) {
     super(`HTTP ${status} ${code}: ${message}`);
     this.status = status;
     this.code = code;
+    this.body = body;
+    this.headers = headers;
   }
 }
 
@@ -40,7 +46,6 @@ export class MapiClient {
                         body?: unknown): Promise<MapiResult> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.token}`,
-      Host: '127.0.0.1',
     };
     if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
@@ -51,13 +56,14 @@ export class MapiClient {
       signal: AbortSignal.timeout(this.timeoutMs),
     });
     const parsed = await response.json();
+    const responseHeaders = Object.fromEntries(response.headers.entries());
     const ok = response.status >= 200 && response.status < 300;
     if (!ok && parsed && typeof parsed === 'object'
         && parsed.error && typeof parsed.error.code === 'string') {
       throw new MapiError(response.status, parsed.error.code,
-                         String(parsed.error.message ?? ''));
+                         String(parsed.error.message ?? ''), parsed, responseHeaders);
     }
-    return { status: response.status, body: parsed, ok };
+    return { status: response.status, body: parsed, ok, headers: responseHeaders };
   }
 
   /** Generic GET for a documented or extension path. */
@@ -366,12 +372,13 @@ export class MapiClient {
     const response = await fetch(
         this.base + '/api/v1/events/stream' + query, {
       headers: { Authorization: `Bearer ${this.token}`,
-               Host: '127.0.0.1' },
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(this.timeoutMs)]) : AbortSignal.timeout(this.timeoutMs),
+               },
+      signal,
     });
     if (!response.ok || !response.body) {
       throw new MapiError(response.status, 'STREAM_FAILED',
-                         'event stream unavailable');
+                         'event stream unavailable', undefined,
+                         Object.fromEntries(response.headers.entries()));
     }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();

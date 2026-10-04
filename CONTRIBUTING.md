@@ -45,3 +45,24 @@ Short imperative subject, focused diffs, no generated files
 - HTTP changes: `docs/openapi.yaml` + `docs/http-api.md` + tests must match
   implementation exactly; security defaults never regress.
 - Loader modules stay thin; shared logic goes in `common`.
+
+## Browser dashboard maintenance
+
+The frontend-only Next.js dashboard lives in [`dashboard/`](dashboard/); setup,
+hosting and connection constraints are in [`docs/dashboard.md`](docs/dashboard.md).
+The separate [design preview](docs/dashboard-preview/index.html) remains simulated.
+
+Every HTTP API feature or contract change must update dashboard coverage in the
+same change set. This includes reads, mutations, event payloads, parameters,
+response schemas, execution modes, scopes, leases, and capability availability.
+Regenerate the production catalog from `docs/openapi.yaml` with
+`python scripts/generate-dashboard.py`, update forms
+and specialized displays as needed, and check both client and server behavior.
+CI rejects missing operation coverage or stale generated artifacts and runs
+the dashboard typecheck and static export builds. Keep the simulated preview's
+operation snapshot/catalog in sync for contract changes; it does not prove live
+API coverage.
+
+Keep the dashboard static and browser-only, compatible with GitHub Pages and
+Vercel. No backend routes or hosted credential proxy. Never include bearer
+tokens in examples, deployment configuration, screenshots, or exported profiles.

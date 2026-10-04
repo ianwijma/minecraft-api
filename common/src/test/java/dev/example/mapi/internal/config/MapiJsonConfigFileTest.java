@@ -28,6 +28,7 @@ class MapiJsonConfigFileTest {
         assertFalse(config.httpEnabled());
         assertEquals(MapiConfig.DEFAULT_PORT, config.httpPort());
         assertTrue(config.clientConnectAllowlist().isEmpty());
+        assertTrue(config.httpAllowedOrigins().isEmpty());
         assertTrue(!config.serverLanEnabled());
 
         Path file = configDir.resolve(MapiJsonConfigFile.JSON_FILE_NAME);
@@ -35,6 +36,7 @@ class MapiJsonConfigFileTest {
         String content = Files.readString(file, StandardCharsets.UTF_8);
         assertTrue(content.contains("\"http.enabled\":false"), content);
         assertTrue(content.contains("\"client.connect.allowlist\":[]"), content);
+        assertTrue(content.contains("\"http.allowedOrigins\":[]"), content);
     }
 
     @Test

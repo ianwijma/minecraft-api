@@ -36,6 +36,8 @@ Currently implemented layers:
    and the E2E visual harness are also present; release acceptance remains separate.
 3. This repository's **LLM-facing documentation and commands** (this file,
    `docs/llm-workflow.md`, `./gradlew llmContext`).
+4. A frontend-only static browser dashboard (`dashboard/`) for the optional
+   local HTTP API; see `docs/dashboard.md` for its trust and hosting model.
 
 The architecture ADRs required by spec §15.2 are **approved** (2026-09-13,
 `docs/adr/`): Minecraft 26.2 only / no mappings, staged module layout with
@@ -60,6 +62,7 @@ Fabric API. Fabric API is a *dependency* of the Fabric artifact only.
 5. The area you are changing:
    - public API behavior → `docs/api.md`
    - HTTP endpoints → `docs/http-api.md` + `docs/security.md`
+   - browser dashboard → `docs/dashboard.md` + `CONTRIBUTING.md`
    - build/run issues → `docs/development.md`, `docs/troubleshooting.md`
 6. `project.manifest.json` — machine-readable module/command/doc map
 
@@ -79,6 +82,7 @@ Quick map:
 | Versions | `gradle/libs.versions.toml` (deps) and `gradle.properties` (project identity) |
 | Tests | `common/src/test/java/` (no Minecraft launch needed) |
 | E2E visual examples (TypeScript) | `e2e/` — harness + scenarios, see `docs/examples/e2e-visual-scenarios.md` |
+| Browser dashboard | `dashboard/` — static export, browser-only, see `docs/dashboard.md` |
 | Docs that must stay in sync | `docs/`, `README.md`, `project.manifest.json` |
 
 Hard rules:
@@ -108,6 +112,7 @@ All commands run from the repository root and require **JDK 25**
 ./gradlew publishLocal           # publish common artifact to ~/.m2
 ./gradlew llmContext             # bounded repo context -> build/llm/CONTEXT.md
 ./gradlew validateManifest       # check manifest vs real tasks/files/versions
+python scripts/generate-dashboard.py --check  # OpenAPI operation catalog is current
 ./gradlew :fabric:runClient      # Fabric dev client  (run dir: fabric/run/client)
 ./gradlew :fabric:runServer      # Fabric dev server  (run dir: fabric/run/server)
 ./gradlew :neoforge:runClient    # NeoForge dev client (run dir: neoforge/run/client)
@@ -168,6 +173,11 @@ On Windows use `gradlew.bat` (same task names) and Git Bash for `scripts/*.sh`.
 3. Update `docs/openapi.yaml`, `docs/http-api.md` (schema, status codes,
    errors) and `docs/security.md` if exposure changes.
 4. Add contract tests in `HttpApiServerTest` (schema + status codes).
+   Keep the browser dashboard in sync in the same change: regenerate its
+   OpenAPI operation catalog with `python scripts/generate-dashboard.py`,
+   update forms, capability rules and result displays, and verify coverage.
+   Keep the simulated design preview operation snapshot current as well. See
+   the dashboard maintenance rules in `CONTRIBUTING.md`.
 5. Until the ADRs required by `docs/product-spec.md` §15.2 are approved, add
    no endpoints beyond the documented read-only status surface. After ADR
    approval, follow spec §14 (scopes, `destructive`, `sideEffectClass`,

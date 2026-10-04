@@ -36,6 +36,26 @@ class MapiConfigTest {
         assertEquals(MapiConfig.DEFAULT_PORT, config.httpPort());
         assertNull(config.httpToken());
         assertEquals(MapiConfig.DEFAULT_RATE_LIMIT, config.rateLimitPerMinute());
+        assertTrue(config.httpAllowedOrigins().isEmpty());
+    }
+
+    @Test
+    void originAllowlistCanonicalizesExactOriginsAndRejectsPatterns() throws IOException {
+        writeFile("http.allowedOrigins=https://Dashboard.Example.test:443, http://localhost:3000\n");
+        MapiConfig config = load(Map.of());
+        assertEquals(java.util.List.of("https://dashboard.example.test", "http://localhost:3000"),
+                config.httpAllowedOrigins());
+        assertThrows(MapiConfigException.class, () -> load(Map.of(
+                "MAPI_HTTP_ALLOWED_ORIGINS", "https://*.example.test")));
+        assertThrows(MapiConfigException.class, () -> load(Map.of(
+                "MAPI_HTTP_ALLOWED_ORIGINS", "https://example.test/path")));
+    }
+
+    @Test
+    void originEnvironmentValueOverridesConfigFile() throws IOException {
+        writeFile("http.allowedOrigins=https://file.example.test\n");
+        MapiConfig config = load(Map.of("MAPI_HTTP_ALLOWED_ORIGINS", "http://localhost:3000"));
+        assertEquals(java.util.List.of("http://localhost:3000"), config.httpAllowedOrigins());
     }
 
     @Test

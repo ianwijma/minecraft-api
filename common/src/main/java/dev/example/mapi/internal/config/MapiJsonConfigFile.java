@@ -45,6 +45,7 @@ public final class MapiJsonConfigFile {
         values.put("http.token", MapiTokens.generate());
         values.put("http.rateLimitPerMinute", MapiConfig.DEFAULT_RATE_LIMIT);
         values.put("http.scopes", new ArrayList<String>());
+        values.put("http.allowedOrigins", new ArrayList<String>());
         values.put("client.connect.allowlist", new ArrayList<String>());
         values.put("server.lan.enabled", Boolean.FALSE);
 
@@ -79,13 +80,14 @@ public final class MapiJsonConfigFile {
                 "http.rateLimitPerMinute", MapiConfig.DEFAULT_RATE_LIMIT);
         java.util.Set<dev.example.mapi.internal.operation.Scope> scopes =
                 parseScopes(listValue(values.get("http.scopes"), "http.scopes"));
+        List<String> origins = listValue(values.get("http.allowedOrigins"), "http.allowedOrigins");
         List<String> allowlist = stringList(values.get("client.connect.allowlist"),
                 "client.connect.allowlist");
         boolean lanEnabled = booleanValue(values.get("server.lan.enabled"),
                 "server.lan.enabled", false);
 
         return MapiConfig.fromValues(enabled, port, token, rateLimit, scopes, allowlist,
-                lanEnabled, env, logger);
+                lanEnabled, origins, env, logger);
     }
 
     private static boolean booleanValue(Object value, String key, boolean fallback) {

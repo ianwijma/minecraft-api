@@ -222,6 +222,7 @@ public final class HttpApiServer {
 
     void streamMiddleware(HttpExchange exchange) throws IOException {
         try {
+            prepareCors(exchange);
             if (!isAllowedHost(exchange.getRequestHeaders().getFirst("Host"))) {
                 error(exchange, ProblemCode.FORBIDDEN_HOST, "Host header not allowed");
                 return;
@@ -302,6 +303,7 @@ public final class HttpApiServer {
     }
 
     private void route(HttpExchange exchange) throws IOException {
+        prepareCors(exchange);
         if (!isAllowedHost(exchange.getRequestHeaders().getFirst("Host"))) {
             error(exchange, ProblemCode.FORBIDDEN_HOST, "Host header not allowed");
             return;
@@ -315,6 +317,10 @@ public final class HttpApiServer {
         if (!rateLimiter.tryAcquire(remote)) {
             exchange.getResponseHeaders().set("Retry-After", "60");
             error(exchange, ProblemCode.RATE_LIMITED, "Too many requests; slow down");
+            return;
+        }
+        if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+            handlePreflight(exchange, origin);
             return;
         }
         String authorization = exchange.getRequestHeaders().getFirst("Authorization");
@@ -601,11 +607,85 @@ public final class HttpApiServer {
     }
 
     private boolean isAllowedOrigin(String origin) {
-        // CORS stays disabled: any Origin must match the loopback listener
-        // exactly, and no CORS response headers are ever emitted.
         String expected = "http://localhost:" + config.httpPort();
         String alt = "http://127.0.0.1:" + config.httpPort();
-        return origin.equals(expected) || origin.equals(alt);
+        return origin.equals(expected) || origin.equals(alt) || configuredOrigin(origin);
+    }
+
+    private boolean configuredOrigin(String origin) {
+        return config.httpAllowedOrigins().contains(normalizeOrigin(origin));
+    }
+
+    private void prepareCors(HttpExchange exchange) {
+        String origin = exchange.getRequestHeaders().getFirst("Origin");
+        if (origin == null) return;
+        exchange.getResponseHeaders().add("Vary", "Origin");
+        if (config.httpAllowedOrigins().contains(normalizeOrigin(origin))) {
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", normalizeOrigin(origin));
+            exchange.getResponseHeaders().set("Access-Control-Expose-Headers",
+                    "Retry-After, X-MAPI-Protocol-Version");
+        }
+    }
+
+    private static String normalizeOrigin(String origin) {
+        try {
+            java.net.URI uri = java.net.URI.create(origin);
+            String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(Locale.ROOT);
+            String host = uri.getHost();
+            if (!(scheme.equals("http") || scheme.equals("https")) || host == null
+                    || uri.getRawUserInfo() != null || uri.getRawQuery() != null || uri.getRawFragment() != null
+                    || (uri.getRawPath() != null && !uri.getRawPath().isEmpty())
+                    || uri.getRawAuthority().endsWith(":")
+                    || uri.getPort() == 0 || uri.getPort() > 65535) {
+                return "";
+            }
+            host = host.toLowerCase(Locale.ROOT);
+            int port = uri.getPort() < 0 ? (scheme.equals("https") ? 443 : 80) : uri.getPort();
+            String normalizedHost = formatOriginHost(host);
+            return scheme + "://" + normalizedHost
+                    + (port == (scheme.equals("https") ? 443 : 80) ? "" : ":" + port);
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
+    private static String formatOriginHost(String host) {
+        String unbracketed = host.startsWith("[") && host.endsWith("]")
+                ? host.substring(1, host.length() - 1) : host;
+        return unbracketed.contains(":") ? "[" + unbracketed + "]" : unbracketed;
+    }
+
+    private void handlePreflight(HttpExchange exchange, String origin) throws IOException {
+        if (origin == null || !configuredOrigin(origin)
+                || !exchange.getRequestURI().getPath().startsWith(API_PREFIX)) {
+            error(exchange, ProblemCode.FORBIDDEN_ORIGIN, "Origin not allowed");
+            return;
+        }
+        String requestedMethod = exchange.getRequestHeaders().getFirst("Access-Control-Request-Method");
+        if (requestedMethod == null || !(requestedMethod.equalsIgnoreCase("GET")
+                || requestedMethod.equalsIgnoreCase("POST"))) {
+            exchange.getResponseHeaders().set("Allow", "GET, POST, OPTIONS");
+            error(exchange, ProblemCode.METHOD_NOT_ALLOWED, "Preflight method not allowed");
+            return;
+        }
+        String requestedHeaders = exchange.getRequestHeaders().getFirst("Access-Control-Request-Headers");
+        if (requestedHeaders != null) {
+            for (String header : requestedHeaders.split(",")) {
+                String name = header.trim();
+                if (!(name.equalsIgnoreCase("authorization") || name.equalsIgnoreCase("content-type"))) {
+                    error(exchange, ProblemCode.BAD_REQUEST, "Preflight header not allowed");
+                    return;
+                }
+            }
+        }
+        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Authorization, Content-Type");
+        exchange.getResponseHeaders().set("Access-Control-Max-Age", "600");
+        if ("true".equalsIgnoreCase(exchange.getRequestHeaders()
+                .getFirst("Access-Control-Request-Private-Network"))) {
+            exchange.getResponseHeaders().set("Access-Control-Allow-Private-Network", "true");
+        }
+        exchange.sendResponseHeaders(204, -1);
     }
 
     // ------------------------------------------------------------------

@@ -146,6 +146,71 @@ class HttpApiServerTest {
     }
 
     @Test
+    void configuredOriginsGetCorsOnSuccessAndAuthErrors() throws Exception {
+        String origin = "https://dashboard.example.test";
+        startServer(new MapiConfig(true, freePort(), TOKEN, 100_000, java.util.Set.of(),
+                java.util.List.of(), false, java.util.List.of(origin)));
+        var unauthorized = client.send(HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/health"))
+                .header("Origin", origin).GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertEquals(401, unauthorized.statusCode());
+        assertEquals(origin, unauthorized.headers().firstValue("Access-Control-Allow-Origin").orElseThrow());
+        assertTrue(unauthorized.headers().firstValue("Vary").orElse("").contains("Origin"));
+        assertTrue(unauthorized.headers().firstValue("Access-Control-Expose-Headers").orElse("")
+                .contains("X-MAPI-Protocol-Version"));
+
+        var success = get("/api/v1/health", "Origin", origin, "Authorization", "Bearer " + TOKEN);
+        assertEquals(200, success.statusCode());
+        assertEquals(origin, success.headers().firstValue("Access-Control-Allow-Origin").orElseThrow());
+        assertEquals("1", success.headers().firstValue("X-MAPI-Protocol-Version").orElseThrow());
+    }
+
+    @Test
+    void allowlistedPreflightRunsBeforeAuthAndCannotDispatchMutation() throws Exception {
+        String origin = "https://dashboard.example.test";
+        startServer(new MapiConfig(true, freePort(), TOKEN, 100_000, java.util.Set.of(),
+                java.util.List.of(), false, java.util.List.of(origin)));
+        var response = client.send(HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/server/ticks/lease"))
+                .header("Origin", origin)
+                .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "authorization,content-type")
+                .header("Access-Control-Request-Private-Network", "true")
+                .method("OPTIONS", HttpRequest.BodyPublishers.noBody()).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(204, response.statusCode());
+        assertEquals(origin, response.headers().firstValue("Access-Control-Allow-Origin").orElseThrow());
+        assertEquals("true", response.headers().firstValue("Access-Control-Allow-Private-Network").orElseThrow());
+        assertEquals("GET, POST", response.headers().firstValue("Access-Control-Allow-Methods").orElseThrow());
+        assertTrue(runtime.leases().activeLeases().isEmpty());
+    }
+
+    @Test
+    void foreignOriginAndUnsupportedPreflightHeadersAreDenied() throws Exception {
+        String allowed = "https://dashboard.example.test";
+        startServer(new MapiConfig(true, freePort(), TOKEN, 100_000, java.util.Set.of(),
+                java.util.List.of(), false, java.util.List.of(allowed)));
+        var foreign = client.send(HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/health"))
+                .header("Origin", "https://evil.example.test")
+                .header("Access-Control-Request-Method", "GET")
+                .method("OPTIONS", HttpRequest.BodyPublishers.noBody()).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, foreign.statusCode());
+        assertTrue(foreign.headers().firstValue("Access-Control-Allow-Origin").isEmpty());
+
+        var unsupported = client.send(HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/health"))
+                .header("Origin", allowed)
+                .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "authorization,x-custom")
+                .method("OPTIONS", HttpRequest.BodyPublishers.noBody()).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertEquals(400, unsupported.statusCode());
+        assertEquals(allowed, unsupported.headers().firstValue("Access-Control-Allow-Origin").orElseThrow());
+    }
+
+    @Test
     void everyPostRejectsMalformedObjectsBeforeDispatch() throws Exception {
         startServer(new MapiConfig(true, freePort(), TOKEN, 100_000));
         for (String path : server.postRoutePaths()) {

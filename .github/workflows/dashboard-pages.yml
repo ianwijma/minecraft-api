@@ -1,0 +1,43 @@
+name: dashboard-pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard/package-lock.json
+      - name: Install dependencies
+        working-directory: dashboard
+        run: npm ci
+      - name: Export static dashboard
+        working-directory: dashboard
+        env:
+          NEXT_PUBLIC_BASE_PATH: /minecraft-api
+        run: npm run build
+      - name: Disable Jekyll processing for exported assets
+        run: touch dashboard/out/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard/out
+      - id: deployment
+        uses: actions/deploy-pages@v4

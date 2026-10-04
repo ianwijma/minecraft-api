@@ -68,6 +68,11 @@
       "path": "fixture-mod/neoforge",
       "kind": "acceptance-fixture",
       "description": "Acceptance-only public Java API consumer; excluded from MAPI distributions."
+    },
+    {
+      "path": "dashboard",
+      "kind": "static-frontend",
+      "description": "Browser-only static dashboard for the optional local HTTP API; exported for GitHub Pages and Vercel, with no runtime backend."
     }
   ],
   "documentation": {
@@ -181,6 +186,18 @@
       {
         "path": "docs/api-coverage.md",
         "description": "Exhaustive operation and public Java API coverage gates."
+      },
+      {
+        "path": "docs/dashboard-plan.md",
+        "topic": "dashboard design, implementation status, browser access and acceptance plan"
+      },
+      {
+        "path": "docs/dashboard.md",
+        "topic": "production dashboard setup, browser access and static hosting"
+      },
+      {
+        "path": "docs/dashboard-preview/index.html",
+        "topic": "simulated browser dashboard design preview; no live API access"
       }
     ]
   },
@@ -204,7 +221,8 @@
       "serverSmoke": "scripts/server-smoke.sh",
       "verifyPublishedApi": "scripts/verify-published-api.sh",
       "httpClientExample": "scripts/mapi-client.py",
-      "generateE2eContract": "scripts/generate-e2e-contract.py"
+      "generateE2eContract": "scripts/generate-e2e-contract.py",
+      "generateDashboard": "scripts/generate-dashboard.py"
     }
   },
   "artifacts": {

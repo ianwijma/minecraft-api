@@ -22,6 +22,7 @@ import org.slf4j.Logger;
  *   <tr><td>http.token</td><td>MAPI_HTTP_TOKEN</td><td>none</td><td>Bearer token; prefer the env var</td></tr>
  *   <tr><td>http.rateLimitPerMinute</td><td>MAPI_HTTP_RATE_LIMIT_PER_MINUTE</td><td>60</td><td>Requests per client per minute</td></tr>
  *   <tr><td>http.scopes</td><td>MAPI_HTTP_SCOPES</td><td>all</td><td>Comma-separated granted scopes (spec §14); absent/blank grants the full set</td></tr>
+ *   <tr><td>http.allowedOrigins</td><td>MAPI_HTTP_ALLOWED_ORIGINS</td><td>empty</td><td>Exact browser origins permitted to use CORS</td></tr>
  *   <tr><td>client.connect.allowlist</td><td>MAPI_CLIENT_CONNECT_ALLOWLIST</td><td>empty (deny all)</td><td>Exact requested names and explicit final IP:port pins, including bracketed IPv6 (spec §9.2)</td></tr>
  *   <tr><td>server.lan.enabled</td><td>MAPI_SERVER_LAN_ENABLED</td><td>false</td><td>Whether integrated-server LAN publication is permitted (spec §9.3)</td></tr>
  * </table>
@@ -32,7 +33,8 @@ import org.slf4j.Logger;
 public record MapiConfig(
         boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute,
         java.util.Set<dev.example.mapi.internal.operation.Scope> httpScopes,
-        java.util.List<String> clientConnectAllowlist, boolean serverLanEnabled) {
+        java.util.List<String> clientConnectAllowlist, boolean serverLanEnabled,
+        java.util.List<String> httpAllowedOrigins) {
 
     /** Default HTTP port. */
     public static final int DEFAULT_PORT = 25586;
@@ -57,13 +59,20 @@ public record MapiConfig(
      */
     public MapiConfig(boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute) {
         this(httpEnabled, httpPort, httpToken, rateLimitPerMinute, java.util.Set.of(),
-                java.util.List.of(), false);
+                java.util.List.of(), false, java.util.List.of());
     }
 
     public MapiConfig(boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute,
             java.util.Set<dev.example.mapi.internal.operation.Scope> httpScopes) {
         this(httpEnabled, httpPort, httpToken, rateLimitPerMinute, httpScopes,
-                java.util.List.of(), false);
+                java.util.List.of(), false, java.util.List.of());
+    }
+
+    public MapiConfig(boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute,
+            java.util.Set<dev.example.mapi.internal.operation.Scope> httpScopes,
+            java.util.List<String> clientConnectAllowlist, boolean serverLanEnabled) {
+        this(httpEnabled, httpPort, httpToken, rateLimitPerMinute, httpScopes,
+                clientConnectAllowlist, serverLanEnabled, java.util.List.of());
     }
 
     /**
@@ -113,11 +122,12 @@ public record MapiConfig(
         java.util.Set<dev.example.mapi.internal.operation.Scope> scopes =
                 readScopes(file, env, logger);
         java.util.List<String> allowlist = readAllowlist(file, env, logger);
+        java.util.List<String> origins = readOrigins(file, env);
         boolean lanEnabled = readBool(file, env, "server.lan.enabled", "MAPI_SERVER_LAN_ENABLED",
                 false, logger);
 
         return fromValues(enabled, port, token, rateLimit, scopes, allowlist, lanEnabled,
-                env, logger);
+                origins, env, logger);
     }
 
     /**
@@ -144,6 +154,31 @@ public record MapiConfig(
             java.util.Set<dev.example.mapi.internal.operation.Scope> scopes,
             java.util.List<String> allowlist, boolean lanEnabled,
             Map<String, String> env, Logger logger) {
+        return fromValues(enabled, port, token, rateLimit, scopes, allowlist, lanEnabled,
+                java.util.List.of(), env, logger);
+    }
+
+    /**
+     * Validates a resolved loader configuration including browser origins.
+     *
+     * @param enabled whether HTTP is enabled
+     * @param port loopback port
+     * @param token bearer token
+     * @param rateLimit requests per client per minute
+     * @param scopes granted scopes
+     * @param allowlist direct-connection allowlist
+     * @param lanEnabled whether LAN publication is permitted
+     * @param origins exact browser origins permitted to use CORS
+     * @param env environment variable overrides
+     * @param logger platform logger
+     * @return the validated configuration
+     * @throws MapiConfigException if any value is invalid
+     */
+    public static MapiConfig fromValues(
+            boolean enabled, int port, String token, int rateLimit,
+            java.util.Set<dev.example.mapi.internal.operation.Scope> scopes,
+            java.util.List<String> allowlist, boolean lanEnabled, java.util.List<String> origins,
+            Map<String, String> env, Logger logger) {
         if (env.containsKey("MAPI_HTTP_ENABLED")) {
             enabled = readBooleanText(env.get("MAPI_HTTP_ENABLED"), "MAPI_HTTP_ENABLED");
         }
@@ -165,6 +200,9 @@ public record MapiConfig(
         Properties allowlistValues = new Properties();
         allowlistValues.setProperty("client.connect.allowlist", String.join(",", allowlist));
         allowlist = readAllowlist(allowlistValues, env, logger);
+        java.util.Properties originValues = new java.util.Properties();
+        originValues.setProperty("http.allowedOrigins", String.join(",", origins));
+        origins = readOrigins(originValues, env);
         if (env.containsKey("MAPI_SERVER_LAN_ENABLED")) {
             lanEnabled = readBooleanText(env.get("MAPI_SERVER_LAN_ENABLED"), "MAPI_SERVER_LAN_ENABLED");
         }
@@ -191,7 +229,7 @@ public record MapiConfig(
             }
         }
         return new MapiConfig(enabled, port, token == null ? null : token.trim(), rateLimit, scopes,
-                allowlist, lanEnabled);
+                allowlist, lanEnabled, origins);
     }
 
     /**
@@ -309,9 +347,43 @@ public record MapiConfig(
         return java.util.List.copyOf(entries);
     }
 
+    private static java.util.List<String> readOrigins(Properties file, Map<String, String> env) {
+        String raw = effective(file, env, "http.allowedOrigins", "MAPI_HTTP_ALLOWED_ORIGINS");
+        if (raw == null || raw.isBlank()) return java.util.List.of();
+        java.util.LinkedHashSet<String> origins = new java.util.LinkedHashSet<>();
+        for (String part : raw.split(",")) {
+            String value = part.trim();
+            if (value.isEmpty()) continue;
+            try {
+                java.net.URI uri = java.net.URI.create(value);
+                String scheme = uri.getScheme() == null ? "" : uri.getScheme().toLowerCase(java.util.Locale.ROOT);
+                String host = uri.getHost();
+                if (!(scheme.equals("http") || scheme.equals("https")) || host == null
+                        || uri.getRawUserInfo() != null || uri.getRawQuery() != null || uri.getRawFragment() != null
+                        || (uri.getRawPath() != null && !uri.getRawPath().isEmpty())
+                        || uri.getRawAuthority().endsWith(":") || value.contains("*")
+                        || uri.getPort() > 65535 || uri.getPort() == 0) {
+                    throw new IllegalArgumentException();
+                }
+                int port = uri.getPort();
+                String authorityHost = host.toLowerCase(java.util.Locale.ROOT);
+                if (authorityHost.startsWith("[") && authorityHost.endsWith("]")) {
+                    authorityHost = authorityHost.substring(1, authorityHost.length() - 1);
+                }
+                if (authorityHost.contains(":")) authorityHost = "[" + authorityHost + "]";
+                int defaultPort = scheme.equals("https") ? 443 : 80;
+                origins.add(scheme + "://" + authorityHost + (port < 0 || port == defaultPort ? "" : ":" + port));
+            } catch (IllegalArgumentException e) {
+                throw new MapiConfigException("http.allowedOrigins entry must be an exact http(s) origin "
+                        + "without a path or wildcard: '" + value + "'");
+            }
+        }
+        return java.util.List.copyOf(origins);
+    }
+
     private static final java.util.Set<String> KNOWN_KEYS = java.util.Set.of(
             "http.enabled", "http.port", "http.token", "http.rateLimitPerMinute", "http.scopes",
-            "client.connect.allowlist", "server.lan.enabled");
+            "client.connect.allowlist", "server.lan.enabled", "http.allowedOrigins");
 
     private static String effective(Properties file, Map<String, String> env, String fileKey, String envKey) {
         String fromEnv = env.get(envKey);

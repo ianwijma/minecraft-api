@@ -65,6 +65,10 @@ __pycache__/
 
 # E2E harness artifacts (only CI reference baselines are committed)
 e2e/out/
+dashboard/node_modules/
+dashboard/.next/
+dashboard/out/
+dashboard/*.tsbuildinfo
 e2e/baselines/*
 !e2e/baselines/linux-ci-fabric/
 !e2e/baselines/linux-ci-neoforge/
