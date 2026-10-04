@@ -13,7 +13,7 @@ import { deflateSync } from 'node:zlib';
 import { decodePng, encodePng, cropImage, type RgbaImage } from '../harness/png.ts';
 import { diffImages, renderDiffImage } from '../harness/diff.ts';
 import { MAP, bfsPath, legsFromPath } from '../scenarios/04-hedge-maze.spec.ts';
-import { HOUSE_EXTERIOR_MASKS } from '../scenarios/01-house.spec.ts';
+import { HOUSE_EXTERIOR_MASKS, HOUSE_SOUTHEAST_MASKS } from '../scenarios/01-house.spec.ts';
 import { Harness } from '../harness/client.ts';
 import { Visual } from '../harness/visual.ts';
 import { Report } from '../harness/report.ts';
@@ -50,6 +50,50 @@ test('house masks ignore distant terrain while retaining sensitivity to house ch
     assert.equal(repaint(10, 470).changedFraction, 0);
     assert.equal(repaint(1000, 470).changedFraction, 0);
     assert.ok(repaint(600, 500).changedFraction > 0.001);
+});
+
+test('southeast masks cover horizon gaps while retaining the adjacent house walls', () => {
+    for (const loader of ['fabric', 'neoforge']) {
+        const file = fileURLToPath(new URL(`../baselines/linux-ci-${loader}/house/house-se.png`, import.meta.url));
+        const expected = decodePng(fs.readFileSync(file));
+        const repaint = (x: number, y: number) => {
+            const changed = { ...expected, data: Buffer.from(expected.data) };
+            changed.data.set([255, 0, 255, 255], 4 * (y * changed.width + x));
+            return diffImages(expected, changed, { pixelThreshold: 4, masks: HOUSE_SOUTHEAST_MASKS });
+        };
+        for (const [x, y] of [[431, 559], [463, 559], [833, 560], [870, 560]]) {
+            assert.equal(repaint(x, y).changedPixels, 0, `${loader}: horizon ${x},${y}`);
+        }
+        for (const [x, y] of [[464, 559], [463, 560], [831, 560], [832, 566], [600, 500]]) {
+            assert.equal(repaint(x, y).changedPixels, 1, `${loader}: house ${x},${y}`);
+        }
+    }
+});
+
+test('checkpoint settling applies the same masks as baseline comparison', async t => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mapi-settle-mask-'));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const baselinesDir = path.join(root, 'baselines');
+    fs.mkdirSync(baselinesDir);
+    const png = encodePng({ width: 2, height: 1, data: Buffer.from([10, 20, 30, 255, 40, 50, 60, 255]) });
+    const backgroundChanged = encodePng({ width: 2, height: 1, data: Buffer.from([255, 255, 255, 255, 40, 50, 60, 255]) });
+    fs.writeFileSync(path.join(baselinesDir, 'sample.png'), png);
+    const h = new Harness('http://127.0.0.1:1', 'test-token');
+    let calls = 0;
+    h.screenshot = async () => {
+        assert.ok(calls < 2, 'masked background must settle on the first pair');
+        return { png: calls++ === 0 ? png : backgroundChanged, width: 2, height: 1,
+            frame: calls, screenId: '', guiScale: 1, capturedAtEpochMs: calls };
+    };
+    const report = new Report('masked-settle', {});
+    const visual = new Visual(h, report, {
+        scenario: 'sample', baselinesDir, outDir: path.join(root, 'out'), updateBaselines: false,
+    });
+    await visual.capture({ name: 'sample', masks: [{ x: 0, y: 0, width: 1, height: 1 }] });
+    assert.equal(calls, 2);
+    assert.equal(report.failed, 0);
+    assert.equal(report.passed, 1);
+    assert.deepEqual(fs.readFileSync(path.join(baselinesDir, 'sample.png')), png);
 });
 
 test('visual baselines require explicit updates and remain unchanged on divergence', async t => {

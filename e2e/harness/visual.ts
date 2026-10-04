@@ -46,14 +46,14 @@ export class Visual {
      * Stricter fails on sub-visual AA/lighting shimmer; looser hides real
      * scene changes (chunk pop-in, toasts, animations).
      */
-    async settle(): Promise<Capture> {
+    async settle(masks: Mask[] = []): Promise<Capture> {
         let last: { a: Capture; b: Capture; m: import('./diff.ts').DiffMetrics } | null = null;
         for (let attempt = 1; attempt <= 6; attempt++) {
             const a = await this.h.screenshot();
             await sleep(250);
             const b = await this.h.screenshot();
             const m = diffImages(decodePng(a.png), decodePng(b.png),
-                { pixelThreshold: 4 });
+                { pixelThreshold: 4, masks });
             if (m.changedFraction <= 0.0005 && m.maxDelta <= 24) return b;
             last = { a, b, m };
             await sleep(1000);
@@ -77,7 +77,7 @@ export class Visual {
                 `daytime pinned @${spec.name}`,
                 `expected ${spec.expectedDayTime}, world reads ${actual}`);
         }
-        const c = await this.settle();
+        const c = await this.settle(spec.masks);
         this.lastFrame = c.frame;
         this.captures.set(spec.name, c);
         await this.comparePng(spec, c.png, {
