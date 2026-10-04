@@ -85,15 +85,19 @@ test('integrated status readiness records busy probes separately from coverage',
         { status: 200, body: { protocolVersion: 1, running: true, capturedAtEpochMs: 1,
             startedAtEpochMs: 1, uptimeMs: 0, playerCount: 1, maxPlayers: 8, tickCount: 1,
             averageTickTimeMs: 50, motd: '' } },
+        { status: 200, body: { protocolVersion: 1, running: true, capturedAtEpochMs: 2,
+            startedAtEpochMs: 1, uptimeMs: 1, playerCount: 1, maxPlayers: 8, tickCount: 2,
+            averageTickTimeMs: 50, motd: '' } },
     ];
     let calls = 0;
     const suite = new Suite({ request: async () => { calls++; return replies.shift()!; },
         close() {}, subscribe: async () => { throw new Error('unused'); } }, contract, 'integrated', '/tmp');
     await awaitServerStatusReady(suite);
-    assert.equal(calls, 2);
+    assert.equal(calls, 3, 'readiness requires two consecutive responsive snapshots');
     assert.equal(suite.trace[0].status, 503);
     assert.match(suite.trace[0].expectedCondition!, /status snapshot readiness/);
     assert.equal(suite.trace[1].status, 200);
+    assert.equal(suite.trace[2].status, 200);
     assert.deepEqual(suite.evidence, [], 'readiness probes do not create coverage evidence');
 });
 test('integrated status readiness fails on non-busy errors and bounded timeout', async () => {
