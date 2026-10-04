@@ -49,6 +49,9 @@ checked-in npm lockfile and `npm run build`; the Next.js static export is in
 or environment secrets are required. For a deployment mounted under a path,
 set `NEXT_PUBLIC_BASE_PATH` to that path at build time. CI exercises `/preview`
 as a representative subpath; the manual Pages workflow builds `/minecraft-api`.
+Vercel deployments also load Web Analytics and Speed Insights. Enable both in
+the Vercel project dashboard to collect data; builds outside Vercel, including
+GitHub Pages exports, omit the tracking components.
 
 ## Connecting to MAPI
 

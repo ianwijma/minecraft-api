@@ -101,14 +101,18 @@ export async function settleFixtureWorld(suite: Suite): Promise<void> {
  * corpus case. This readiness probe is diagnostic only and earns no coverage.
  */
 export async function awaitServerStatusReady(suite: Suite, timeoutMs = 120_000): Promise<void> {
+    let responsiveSamples = 0;
     await suite.poll(async () => {
-        const result = await suite.outcome('getServerStatus');
+        const result = await suite.outcome('getServerStatus', {}, {}, false);
         if (result.status === 503 && result.body.error?.code === 'SERVER_BUSY') {
+            responsiveSamples = 0;
             suite.trace.at(-1)!.expectedCondition = 'server busy while awaiting status snapshot readiness';
             return undefined;
         }
         assert.equal(result.status, 200, `server status readiness: ${JSON.stringify(result)}`);
         assert.equal(result.body.running, true, 'server status readiness requires a running server');
+        responsiveSamples++;
+        if (responsiveSamples < 2) return undefined;
         return result;
     }, result => result !== undefined, 'responsive server status snapshot', timeoutMs);
 }
@@ -204,6 +208,7 @@ export async function serverCorpus(suite: Suite, player: boolean): Promise<strin
     });
     let leaseId = '';
     await suite.case('acquireTickLease', async () => {
+        await awaitServerStatusReady(suite);
         const lease = await suite.request('acquireTickLease', {}, { ttlSeconds: 600 });
         leaseId = lease.leaseId;
         const invalid = await suite.outcome('acquireTickLease', {}, { ttlSeconds: 0 });
