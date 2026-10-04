@@ -139,6 +139,33 @@ test('HTTP errors retain their route context and MapiError type', async () => {
     }
 });
 
+test('GET retries transient fetch failures but POST mutations remain single-shot', async () => {
+    const originalFetch = globalThis.fetch;
+    let getAttempts = 0;
+    let postAttempts = 0;
+    globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+            postAttempts++;
+            throw new TypeError('fetch failed');
+        }
+        getAttempts++;
+        if (getAttempts < 3) throw new TypeError('fetch failed');
+        return new Response(JSON.stringify({ frame: 3 }), {
+            status: 200, headers: { 'Content-Type': 'application/json' },
+        });
+    }) as typeof fetch;
+    try {
+        const h = new Harness('http://127.0.0.1:1', 'test-token');
+        assert.deepEqual(await h.get('/api/v1/client/screenshots'), { frame: 3 });
+        assert.equal(getAttempts, 3);
+        await assert.rejects(h.post('/api/v1/server/commands', { command: 'time set noon' }),
+            /fetch failed/);
+        assert.equal(postAttempts, 1);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
 test('stage cleanup waits for death removal then clears drops and XP', async () => {
     const calls: string[] = [];
     let deathTicks = 0;

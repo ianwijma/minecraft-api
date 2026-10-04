@@ -29,6 +29,13 @@ export interface Capture {
     capturedAtEpochMs: number;
 }
 
+function isTransientTransportError(error: unknown): boolean {
+    if (!(error instanceof TypeError) || error.message !== 'fetch failed') return false;
+    const cause = (error as TypeError & { cause?: { code?: string } }).cause;
+    return cause === undefined || ['ECONNRESET', 'ECONNREFUSED', 'EPIPE', 'UND_ERR_SOCKET']
+        .includes(String(cause.code));
+}
+
 export class Harness {
     readonly api: MapiClient;
     readonly base: string;
@@ -42,9 +49,23 @@ export class Harness {
     }
 
     async get(path: string): Promise<any> {
-        const r = await this.withRequestContext('GET', path, () => this.api.get(path));
+        const r = await this.withReadRetry(path);
         if (!r.ok) throw new Error(`GET ${path} -> ${r.status}: ${JSON.stringify(r.body)}`);
         return r.body;
+    }
+
+    /** Retry brief transport failures on idempotent reads (for example, a
+     * screenshot request racing a local client connection reset). */
+    private async withReadRetry(path: string): Promise<Awaited<ReturnType<MapiClient['get']>>> {
+        const attempts = 3;
+        for (let attempt = 1; ; attempt++) {
+            try {
+                return await this.withRequestContext('GET', path, () => this.api.get(path));
+            } catch (error) {
+                if (!isTransientTransportError(error) || attempt >= attempts) throw error;
+                await sleep(250 * attempt);
+            }
+        }
     }
 
     async post(path: string, body: unknown): Promise<any> {
