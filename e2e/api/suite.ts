@@ -61,20 +61,31 @@ export class Suite {
             } catch (error) { trace.error = String(error); throw error; }
         }
     }
-    async outcome(id: string, parameters: Record<string, any> = {}, body: any = {}): Promise<Result> {
+    async outcome(id: string, parameters: Record<string, any> = {}, body: any = {}, retryBusy = true): Promise<Result> {
         const operation = this.operations.get(id)!;
-        const trace: Trace = { id: this.trace.length + 1, operationId: id, environment: this.environment, parameters, body };
-        this.trace.push(trace);
-        try {
-            const result = await this.adapter.request(operation, parameters, body);
-            trace.status = result.status;
-            trace.response = result.body?.pngBase64 ? { ...result.body, pngBase64: '[stored separately]' } : result.body;
-            if (result.status >= 200 && result.status < 300) {
-                validateResponse(this.contract, operation, result.status, result.body);
-                if (this.active?.operationId === id) this.active.requestIds.push(trace.id);
-            }
-            return result;
-        } catch (error) { trace.error = String(error); throw error; }
+        const retryDeadline = Date.now() + 30_000;
+        let retryDelay = 100;
+        while (true) {
+            const trace: Trace = { id: this.trace.length + 1, operationId: id, environment: this.environment, parameters, body };
+            this.trace.push(trace);
+            try {
+                const result = await this.adapter.request(operation, parameters, body);
+                trace.status = result.status;
+                trace.response = result.body?.pngBase64 ? { ...result.body, pngBase64: '[stored separately]' } : result.body;
+                if (retryBusy && operation.method === 'GET' && result.status === 503
+                    && result.body.error?.code === 'SERVER_BUSY' && Date.now() < retryDeadline) {
+                    trace.expectedCondition = 'retrying read-only request after transient server busy response';
+                    await new Promise(resolve => setTimeout(resolve, retryDelay));
+                    retryDelay = Math.min(retryDelay * 2, 1000);
+                    continue;
+                }
+                if (result.status >= 200 && result.status < 300) {
+                    validateResponse(this.contract, operation, result.status, result.body);
+                    if (this.active?.operationId === id) this.active.requestIds.push(trace.id);
+                }
+                return result;
+            } catch (error) { trace.error = String(error); throw error; }
+        }
     }
     expect(condition: boolean, detail: string): void {
         assert.ok(condition, detail);
@@ -108,7 +119,7 @@ export class Suite {
         label: string, timeoutMs = 30_000): Promise<any> {
         assert.equal(this.operations.get(id)?.method, 'GET', 'progress polling must never repeat mutations');
         return this.poll(async () => {
-            const result = await this.outcome(id, parameters);
+            const result = await this.outcome(id, parameters, {}, false);
             if (result.status === 503 && result.body.error?.code === 'SERVER_BUSY') {
                 this.trace.at(-1)!.expectedCondition = `server busy while awaiting ${label}`;
                 return undefined;

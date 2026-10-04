@@ -31,6 +31,37 @@ test('retries transient SERVER_BUSY responses for safe GET requests', async () =
     assert.ok(suite.trace.slice(0, 2).every(trace => trace.expectedCondition?.includes('retrying')));
 });
 
+test('retries transient SERVER_BUSY outcomes for safe GET requests', async () => {
+    let attempts = 0;
+    const suite = new Suite(adapterFor(async () => {
+        attempts++;
+        return attempts === 1
+            ? { status: 503, body: { error: { code: 'SERVER_BUSY', message: 'busy' } } }
+            : { status: 400, body: { error: { code: 'BAD_REQUEST', message: 'no screen is active' } } };
+    }), loadContract(), 'menu', '/tmp/mapi-api-suite-test');
+
+    const result = await suite.outcome('inspectScreen');
+
+    assert.equal(result.status, 400);
+    assert.equal(attempts, 2);
+    assert.equal(suite.trace[0].status, 503);
+    assert.equal(suite.trace[1].status, 400);
+});
+
+test('can expose transient busy outcomes to readiness polling', async () => {
+    let attempts = 0;
+    const suite = new Suite(adapterFor(async () => {
+        attempts++;
+        return { status: 503, body: { error: { code: 'SERVER_BUSY', message: 'busy' } } };
+    }), loadContract(), 'integrated', '/tmp/mapi-api-suite-test');
+
+    const result = await suite.outcome('getServerStatus', {}, {}, false);
+
+    assert.equal(result.status, 503);
+    assert.equal(attempts, 1);
+    assert.equal(suite.trace.length, 1);
+});
+
 test('does not retry SERVER_BUSY responses for mutations', async () => {
     let attempts = 0;
     const suite = new Suite(adapterFor(async () => {
@@ -39,6 +70,20 @@ test('does not retry SERVER_BUSY responses for mutations', async () => {
     }), loadContract(), 'dedicated', '/tmp/mapi-api-suite-test');
 
     await assert.rejects(suite.request('dispatchCommand', {}, { command: 'say test' }), /HTTP 503/);
+    assert.equal(attempts, 1);
+    assert.equal(suite.trace.length, 1);
+});
+
+test('does not retry SERVER_BUSY outcomes for mutations', async () => {
+    let attempts = 0;
+    const suite = new Suite(adapterFor(async () => {
+        attempts++;
+        return { status: 503, body: { error: { code: 'SERVER_BUSY', message: 'busy' } } };
+    }), loadContract(), 'dedicated', '/tmp/mapi-api-suite-test');
+
+    const result = await suite.outcome('dispatchCommand', {}, { command: 'say test' });
+
+    assert.equal(result.status, 503);
     assert.equal(attempts, 1);
     assert.equal(suite.trace.length, 1);
 });
