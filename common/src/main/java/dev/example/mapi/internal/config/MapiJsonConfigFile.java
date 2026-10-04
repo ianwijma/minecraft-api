@@ -45,7 +45,7 @@ public final class MapiJsonConfigFile {
         values.put("http.token", MapiTokens.generate());
         values.put("http.rateLimitPerMinute", MapiConfig.DEFAULT_RATE_LIMIT);
         values.put("http.scopes", new ArrayList<String>());
-        values.put("http.allowedOrigins", new ArrayList<String>());
+        values.put("http.allowedOrigins", new ArrayList<>(MapiConfig.DEFAULT_ALLOWED_ORIGINS));
         values.put("client.connect.allowlist", new ArrayList<String>());
         values.put("server.lan.enabled", Boolean.FALSE);
 

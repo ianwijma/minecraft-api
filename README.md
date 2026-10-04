@@ -29,8 +29,8 @@ works independently of the runner, an LLM, or an IDE.
 ## Browser dashboard
 
 The [static browser dashboard](docs/dashboard.md) connects directly to the
-local MAPI listener. Configure its exact origin in MAPI before using a hosted
-copy; loopback and bearer-token defaults remain in force. See the
+local MAPI listener. Its hosted origin is included in new MAPI configs by
+default; loopback and bearer-token defaults remain in force. See the
 [dashboard setup and hosting guide](dashboard/README.md). The separate
 [interactive design preview](docs/dashboard-preview/index.html) uses simulated
 data and never contacts Minecraft.

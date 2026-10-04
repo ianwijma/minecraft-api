@@ -691,7 +691,9 @@ SDK streaming helpers must implement:
 - Explicit event-gap handling.
 - No silent abandonment when a browser tab becomes hidden.
 
-CORS remains disabled unless explicitly configured.
+CORS uses exact origins only. New MAPI configurations include
+`https://mapi.wij.ma` by default; operators can remove it or configure other
+exact origins. Wildcards remain unsupported.
 
 ### 13.2 Additional wait operations
 

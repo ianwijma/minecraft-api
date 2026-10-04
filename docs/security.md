@@ -14,10 +14,11 @@ repository.
 - **Host validation.** Requests whose `Host` header is not `localhost`,
   `127.0.0.1`, or `[::1]` are rejected with 403 `FORBIDDEN_HOST` (DNS
   rebinding defense). The listener itself binds the IPv4 loopback.
-- **Browser origins are opt-in.** `http.allowedOrigins` (or
-  `MAPI_HTTP_ALLOWED_ORIGINS`) accepts only exact `http(s)` origins, with no
-  wildcards. Empty is the default. Preflight is restricted to those origins
-  and the API's required methods/headers; local-network preflight permission
+- **Browser origins use an exact allowlist.** The hosted dashboard origin
+  `https://mapi.wij.ma` is included in new configs by default and can be
+  removed. `http.allowedOrigins` (or `MAPI_HTTP_ALLOWED_ORIGINS`) accepts only
+  exact `http(s)` origins, with no wildcards. Preflight is restricted to those
+  origins and the API's required methods/headers; local-network preflight permission
   is sent only when such a request explicitly asks for it. Responses include
   CORS headers only for an allowed origin. A foreign origin is rejected with
   403 `FORBIDDEN_ORIGIN`.

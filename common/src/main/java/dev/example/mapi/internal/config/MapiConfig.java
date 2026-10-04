@@ -22,7 +22,7 @@ import org.slf4j.Logger;
  *   <tr><td>http.token</td><td>MAPI_HTTP_TOKEN</td><td>none</td><td>Bearer token; prefer the env var</td></tr>
  *   <tr><td>http.rateLimitPerMinute</td><td>MAPI_HTTP_RATE_LIMIT_PER_MINUTE</td><td>60</td><td>Requests per client per minute</td></tr>
  *   <tr><td>http.scopes</td><td>MAPI_HTTP_SCOPES</td><td>all</td><td>Comma-separated granted scopes (spec §14); absent/blank grants the full set</td></tr>
- *   <tr><td>http.allowedOrigins</td><td>MAPI_HTTP_ALLOWED_ORIGINS</td><td>empty</td><td>Exact browser origins permitted to use CORS</td></tr>
+ *   <tr><td>http.allowedOrigins</td><td>MAPI_HTTP_ALLOWED_ORIGINS</td><td>https://mapi.wij.ma</td><td>Exact browser origins permitted to use CORS</td></tr>
  *   <tr><td>client.connect.allowlist</td><td>MAPI_CLIENT_CONNECT_ALLOWLIST</td><td>empty (deny all)</td><td>Exact requested names and explicit final IP:port pins, including bracketed IPv6 (spec §9.2)</td></tr>
  *   <tr><td>server.lan.enabled</td><td>MAPI_SERVER_LAN_ENABLED</td><td>false</td><td>Whether integrated-server LAN publication is permitted (spec §9.3)</td></tr>
  * </table>
@@ -35,6 +35,10 @@ public record MapiConfig(
         java.util.Set<dev.example.mapi.internal.operation.Scope> httpScopes,
         java.util.List<String> clientConnectAllowlist, boolean serverLanEnabled,
         java.util.List<String> httpAllowedOrigins) {
+
+    /** Default hosted dashboard origin; operators can remove it from config. */
+    public static final java.util.List<String> DEFAULT_ALLOWED_ORIGINS =
+            java.util.List.of("https://mapi.wij.ma");
 
     /** Default HTTP port. */
     public static final int DEFAULT_PORT = 25586;
@@ -369,7 +373,8 @@ public record MapiConfig(
 
     private static java.util.List<String> readOrigins(Properties file, Map<String, String> env) {
         String raw = effective(file, env, "http.allowedOrigins", "MAPI_HTTP_ALLOWED_ORIGINS");
-        if (raw == null || raw.isBlank()) return java.util.List.of();
+        if (raw == null) return DEFAULT_ALLOWED_ORIGINS;
+        if (raw.isBlank()) return java.util.List.of();
         java.util.LinkedHashSet<String> origins = new java.util.LinkedHashSet<>();
         for (String part : raw.split(",")) {
             String value = part.trim();
