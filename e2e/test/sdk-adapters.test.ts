@@ -5,8 +5,38 @@ import { fileURLToPath } from 'node:url';
 import { createAdapter } from '../api/factory.ts';
 import { inventory, loadContract } from '../api/coverage.ts';
 import { requestPath, type Sdk } from '../api/adapters.ts';
+import { MapiClient } from '../../sdk/typescript/src/mapi-client.ts';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
+
+test('TypeScript cancellation closes an SSE reader waiting for its first event', async () => {
+    let opened!: () => void;
+    let closed!: () => void;
+    const ready = new Promise<void>(resolve => { opened = resolve; });
+    const disconnected = new Promise<void>(resolve => { closed = resolve; });
+    const server = http.createServer((request, response) => {
+        assert.equal(request.headers.authorization, 'Bearer cancellation-test');
+        response.writeHead(200, { 'Content-Type': 'text/event-stream' });
+        response.write(':ready\n\n');
+        response.on('close', closed);
+        opened();
+    });
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+    const controller = new AbortController();
+    const stream = new MapiClient(`http://127.0.0.1:${(server.address() as any).port}`, 'cancellation-test', 3000)
+        .streamEvents(undefined, undefined, undefined, 1, controller.signal);
+    const pending = stream.next();
+    try {
+        await ready;
+        controller.abort();
+        await assert.rejects(pending, error => (error as Error).name === 'AbortError');
+        await Promise.race([disconnected, new Promise((_, reject) => setTimeout(() => reject(new Error('SSE connection was not released')), 3000))]);
+    } finally {
+        controller.abort();
+        server.closeAllConnections();
+        await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+});
 
 for (const sdk of ['typescript', 'python', 'java'] as Sdk[]) {
     test(`${sdk}: every operation serializes through the SDK and streams are bounded`, async () => {

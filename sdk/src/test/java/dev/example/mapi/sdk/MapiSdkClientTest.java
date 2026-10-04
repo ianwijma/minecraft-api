@@ -33,6 +33,10 @@ class MapiSdkClientTest {
     }
 
     private MapiSdkClient startFake() throws IOException {
+        return startFake(List.of("ACTIVE"), new java.util.concurrent.atomic.AtomicInteger());
+    }
+
+    private MapiSdkClient startFake(List<String> phases, java.util.concurrent.atomic.AtomicInteger worldReads) throws IOException {
         var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 8);
         server.createContext("/api/v1", exchange -> {
             String auth = exchange.getRequestHeaders().getFirst("Authorization");
@@ -47,7 +51,8 @@ class MapiSdkClientTest {
                 body = "{\"protocolVersion\":1,\"status\":\"ok\"}";
             } else if (path.equals("/api/v1/server/world")) {
                 status = 200;
-                body = "{\"phase\":\"ACTIVE\",\"bridgeId\":\"test\"}";
+                String phase = phases.get(Math.min(worldReads.getAndIncrement(), phases.size() - 1));
+                body = "{\"phase\":\"" + phase + "\",\"bridgeId\":\"test\"}";
             } else if (path.equals("/api/v1/server/snapshots")
                     && "POST".equals(exchange.getRequestMethod())) {
                 status = 200;
@@ -131,6 +136,22 @@ class MapiSdkClientTest {
             assertEquals(404, e.getStatus());
             assertEquals("NOT_FOUND", e.getCode());
         }
+    }
+
+    @Test
+    void waitHelperRequiresAnObservedActiveTransition() throws IOException {
+        var reads = new java.util.concurrent.atomic.AtomicInteger();
+        var client = startFake(List.of("LOADING", "ACTIVE"), reads);
+        assertTrue(client.awaitWorldActive(10_000, 0));
+        assertEquals(2, reads.get());
+    }
+
+    @Test
+    void expiredWaitHelperDoesNotSendARequest() throws IOException {
+        var reads = new java.util.concurrent.atomic.AtomicInteger();
+        var client = startFake(List.of("ACTIVE"), reads);
+        org.junit.jupiter.api.Assertions.assertFalse(client.awaitWorldActive(0, 0));
+        assertEquals(0, reads.get());
     }
 
     @Test

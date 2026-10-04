@@ -3,9 +3,10 @@
 import json
 import threading
 import unittest
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
-from mapi_client import MapiClient, MapiError
+from mapi_client import MapiClient, MapiError, Result
 
 TOKEN = "python-smoke-token"
 
@@ -75,6 +76,28 @@ class MapiClientTest(unittest.TestCase):
         path, auth = FakeApi.requests[-1]
         self.assertEqual(path, "/stream?keepaliveSeconds=1&cursor=7&types=changed&world=world-1")
         self.assertEqual(auth, f"Bearer {TOKEN}")
+
+    def test_wait_helper_observes_transition_with_a_controllable_clock(self):
+        pending = Result(200, {"phase": "LOADING"}, True)
+        active = Result(200, {"phase": "ACTIVE"}, True)
+        with patch.object(self.client, "get", side_effect=[pending, active]) as get, \
+                patch("time.monotonic", side_effect=[0, 0, 1]), patch("time.sleep") as sleep:
+            self.assertTrue(self.client.wait_world_active(timeout_s=2, poll_s=0.25))
+            self.assertEqual(get.call_count, 2)
+            sleep.assert_called_once_with(0.25)
+
+    def test_wait_helper_stops_when_its_clock_reaches_the_deadline(self):
+        with patch.object(self.client, "get", return_value=Result(200, {"phase": "LOADING"}, True)) as get, \
+                patch("time.monotonic", side_effect=[0, 0, 2]), patch("time.sleep"):
+            self.assertFalse(self.client.wait_world_active(timeout_s=2))
+            self.assertEqual(get.call_count, 1)
+
+    def test_closing_stream_iterator_closes_its_response(self):
+        responses = []
+        stream = self.client.stream("/stream", on_open=responses.append)
+        self.assertEqual(next(stream).id, "5")
+        stream.close()
+        self.assertTrue(responses[0].closed)
 
 
 if __name__ == "__main__":

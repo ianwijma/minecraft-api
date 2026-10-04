@@ -6,6 +6,9 @@ and cleanup tests for TypeScript, Python, and Java. Java SSE has a bounded
 lifetime and explicit `close()`; TypeScript accepts an AbortSignal and releases
 its reader; Python exposes optional open/gap callbacks for supervisor cleanup.
 The worker sources are acceptance helpers and are excluded from published SDKs.
+Offline checks also exercise Python/Java world-wait helpers, a controllable
+Python deadline clock, Python iterator-close cleanup, and TypeScript abort
+while its SSE reader is waiting for the first event.
 
 The live runner invokes generated TypeScript methods and the existing generic
 Python/Java SDK request methods through those adapters. See

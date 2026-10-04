@@ -79,9 +79,10 @@ export async function prepareWorld(suite: Suite, player: boolean): Promise<void>
 }
 
 export async function settleFixtureWorld(suite: Suite): Promise<void> {
-    const loaded = [-16, 0, 16].flatMap(x => [-16, 0, 16].map(z => `if loaded ${x} 65 ${z}`)).join(' ');
-    await suite.poll(() => suite.command(`execute ${loaded} run time query daytime`, false),
-        result => result.success === true, 'all forced fixture chunks loaded', 120_000);
+    for (const x of [-16, 0, 16]) for (const z of [-16, 0, 16]) {
+        await suite.pollRead('queryBlock', { dimension: DIMENSION, x, y: 65, z },
+            block => typeof block.blockId === 'string' && !block.unloaded, `fixture chunk ${x},${z} readable`, 120_000);
+    }
     let firstTick: number | undefined;
     await suite.poll(async () => suite.outcome('getTickState'), result => {
         if (result.status === 503 && result.body.error?.code === 'SERVER_BUSY') {

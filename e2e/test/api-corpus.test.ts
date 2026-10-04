@@ -58,10 +58,12 @@ test('fixture readiness cannot use busy or stopped clocks as progress', async ()
         { status: 200, body: { available: true, frozen: false, sprinting: false, tickCount: 89 } },
     ];
     let reads = 0;
+    const chunks: string[] = [];
     const fake = {
-        command: async (command: string) => {
-            assert.equal((command.match(/if loaded/g) ?? []).length, 9);
-            return { success: true };
+        pollRead: async (id: string, parameters: any) => {
+            assert.equal(id, 'queryBlock');
+            chunks.push(`${parameters.x},${parameters.z}`);
+            return { blockId: 'minecraft:air' };
         },
         outcome: async () => { reads++; return results.shift(); },
         poll: async (read: any, ready: any) => {
@@ -70,6 +72,7 @@ test('fixture readiness cannot use busy or stopped clocks as progress', async ()
         },
     };
     await settleFixtureWorld(fake as any);
+    assert.equal(new Set(chunks).size, 9);
     assert.equal(reads, 4, 'busy readiness probe resets the normal-tick progress window');
     fake.outcome = async () => ({ status: 200, body: { available: true, frozen: true, tickCount: 1000 } }) as any;
     await assert.rejects(settleFixtureWorld(fake as any), /normal ticking/);
