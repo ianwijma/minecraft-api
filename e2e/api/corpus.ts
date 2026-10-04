@@ -103,7 +103,7 @@ export async function settleFixtureWorld(suite: Suite): Promise<void> {
 export async function awaitServerStatusReady(suite: Suite, timeoutMs = 120_000): Promise<void> {
     let responsiveSamples = 0;
     await suite.poll(async () => {
-        const result = await suite.outcome('getServerStatus');
+        const result = await suite.outcome('getServerStatus', {}, {}, false);
         if (result.status === 503 && result.body.error?.code === 'SERVER_BUSY') {
             responsiveSamples = 0;
             suite.trace.at(-1)!.expectedCondition = 'server busy while awaiting status snapshot readiness';
