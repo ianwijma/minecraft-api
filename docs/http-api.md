@@ -382,3 +382,9 @@ The API corpus verifies both computed lines and visible hover pixels.
 
 The bounded HTTP pool reserves ordinary request capacity while all eight allowed
 SSE streams are open. Stream subscriptions cannot starve commands or health reads.
+
+Screenshot and rendered-tooltip PNGs publish only after encoding completes.
+Publication uses an atomic file replacement where supported. Readers treat an
+empty or briefly absent publication target as the same pending GPU readback,
+within the original monotonic deadline; they do not schedule another capture.
+Other I/O failures and expired deadlines still fail the request.

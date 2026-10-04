@@ -126,11 +126,8 @@ public final class NeoForgeInventory implements ClientBridge.InventoryBackend {
             }
             pending = dev.example.mapi.internal.client.ClientThreadCall.call(
                     client::isSameThread, client::execute, () -> new NeoForgeScreenshots().beginCapture());
-            while (java.nio.file.Files.size(pending.tempPath()) == 0) {
-                if (System.nanoTime() >= deadline) throw new ProblemException(ProblemCode.SERVER_BUSY, "tooltip PNG deadline exceeded");
-                Thread.sleep(5);
-            }
-            byte[] png = java.nio.file.Files.readAllBytes(pending.tempPath());
+            byte[] png = dev.example.mapi.internal.client.ScreenshotFiles.awaitPng(
+                    pending.tempPath(), deadline, 5, "tooltip PNG deadline exceeded");
             List<String> lines = dev.example.mapi.internal.client.ClientThreadCall.call(
                     client::isSameThread, client::execute, () -> tooltip(slot));
             return new ClientBridge.InventoryBackend.RenderedTooltip(
