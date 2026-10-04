@@ -646,22 +646,12 @@ final class ClientApiHandler {
         var pending = server.runtime.callOnClientThread(screenshots::beginCapture);
         // Phase 2 (HTTP worker): poll the temp file — the PNG fills on a
         // later frame; blocking the client thread here would deadlock.
-        long deadline = System.currentTimeMillis() + 5000;
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(5000);
         byte[] png;
         try {
-            while (true) {
-                long size = Files.exists(pending.tempPath())
-                        ? Files.size(pending.tempPath()) : 0;
-                if (size > 0) {
-                    png = Files.readAllBytes(pending.tempPath());
-                    break;
-                }
-                if (System.currentTimeMillis() >= deadline) {
-                    throw new ProblemException(ProblemCode.SERVER_BUSY,
-                            "GPU readback did not complete within 5000 ms");
-                }
-                Thread.sleep(25);
-            }
+            png = dev.example.mapi.internal.client.ScreenshotFiles.awaitPng(
+                    pending.tempPath(), deadline, 25,
+                    "GPU readback did not complete within 5000 ms");
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new ProblemException(ProblemCode.SERVER_BUSY, "interrupted");

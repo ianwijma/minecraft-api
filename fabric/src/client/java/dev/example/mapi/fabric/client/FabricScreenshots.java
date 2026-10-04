@@ -40,7 +40,7 @@ class FabricScreenshots implements ClientBridge.ScreenshotBackend {
             try {
                 Path writing = temp.resolveSibling(temp.getFileName() + ".writing");
                 image.writeToFile(writing.toFile());
-                Files.move(writing, temp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                dev.example.mapi.internal.client.ScreenshotFiles.publish(writing, temp);
             } catch (IOException e) {
                 throw new IllegalStateException(e);
             } finally {

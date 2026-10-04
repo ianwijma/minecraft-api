@@ -81,6 +81,11 @@ public interface MapiPlatform {
         return dev.example.mapi.internal.config.MapiConfig.load(configDir, env, logger);
     }
 
+    /** Persists the HTTP enabled flag in the platform's native config. */
+    default void saveHttpEnabled(boolean enabled) {
+        dev.example.mapi.internal.config.MapiConfig.saveHttpEnabled(configDir(), enabled);
+    }
+
     /**
      * @return the server-side bridge capabilities for this loader; the
      *     default reports no capabilities (nothing beyond the base runtime)

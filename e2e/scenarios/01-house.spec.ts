@@ -15,6 +15,14 @@ export const HOUSE_EXTERIOR_MASKS: Mask[] = [
     { x: 875, y: 450, width: 405, height: 130 },
 ];
 
+// The southeast horizon reaches these narrow gaps beside the house walls.
+// Coordinates were checked against both loader references and failed CI frames.
+export const HOUSE_SOUTHEAST_MASKS: Mask[] = [
+    ...HOUSE_EXTERIOR_MASKS,
+    { x: 400, y: 559, width: 64, height: 1 },
+    { x: 832, y: 559, width: 43, height: 2 },
+];
+
 // 📐 pin-once values — tuned on the first live run, then frozen.
 const PINS = {
     poses: {
@@ -100,7 +108,8 @@ export const scenario: Scenario = {
         for (const [name, pose] of Object.entries(PINS.poses)) {
             await setCamera(h, pose);
             await visual.capture({ name: `house-${name}`, expectedDayTime: NOON,
-                masks: name === 'interior' ? [] : HOUSE_EXTERIOR_MASKS });
+                masks: name === 'interior' ? []
+                    : name === 'se' ? HOUSE_SOUTHEAST_MASKS : HOUSE_EXTERIOR_MASKS });
         }
     },
 };

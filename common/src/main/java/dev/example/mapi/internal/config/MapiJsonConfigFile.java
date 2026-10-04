@@ -90,6 +90,39 @@ public final class MapiJsonConfigFile {
                 lanEnabled, origins, env, logger);
     }
 
+    /** Updates only the enabled flag, preserving all other JSON config values. */
+    public static void saveHttpEnabled(Path configDir, boolean enabled) {
+        Path file = configDir.resolve(JSON_FILE_NAME);
+        Path temporary = null;
+        try {
+            Object parsed = JsonReader.parse(Files.readString(file, StandardCharsets.UTF_8));
+            if (!(parsed instanceof Map<?, ?> document)) {
+                throw new MapiConfigException("mapi.json must contain a JSON object");
+            }
+            Map<String, Object> values = new LinkedHashMap<>();
+            document.forEach((key, value) -> values.put(String.valueOf(key), value));
+            values.put("http.enabled", enabled);
+            temporary = Files.createTempFile(configDir, ".mapi-", ".json.tmp");
+            Files.writeString(temporary, JsonWriter.write(values) + "\n", StandardCharsets.UTF_8);
+            try {
+                Files.move(temporary, file, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                Files.move(temporary, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException | IllegalArgumentException e) {
+            throw new MapiConfigException("Failed to save HTTP enabled flag in mapi.json");
+        } finally {
+            if (temporary != null) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException ignored) {
+                    // Preserve the original save outcome if temporary cleanup fails.
+                }
+            }
+        }
+    }
+
     private static boolean booleanValue(Object value, String key, boolean fallback) {
         if (value == null) {
             return fallback;

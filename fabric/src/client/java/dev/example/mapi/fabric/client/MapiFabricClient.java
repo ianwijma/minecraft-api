@@ -18,6 +18,7 @@ public final class MapiFabricClient implements ClientModInitializer {
      */
     @Override
     public void onInitializeClient() {
+        FabricMapiCommands.register();
         FabricClientBridge bridge = new FabricClientBridge();
         bridge.initialize();
         ClientBridgeHolder.set(bridge);

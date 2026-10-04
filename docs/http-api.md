@@ -6,6 +6,33 @@ built-in `com.sun.net.httpserver` (no bundled HTTP libraries).
 
 Machine-readable description: [`openapi.yaml`](openapi.yaml).
 
+## In-game controls
+
+On Fabric and NeoForge clients and dedicated server consoles, `/mapi status`
+(or `/mapi`) shows this Minecraft process's API enablement, actual listener
+state, loopback URL, and bearer-token credentials. On clients, click the URL
+or **Bearer token: [Click to copy]** to copy it. The client token is kept out of visible chat text and logs.
+The dedicated server console prints the token on an explicit status or enable
+command, so that output may be recorded in server logs. A blank token
+is explicitly reported as authentication disabled.
+
+`/mapi enable` starts the listener immediately and saves `http.enabled=true`
+in `config/mapi.json` (Fabric) or `config/mapi-common.toml` (NeoForge). If it
+is already running, it only shows the current connection details. Failed
+startup does not save enablement. `/mapi disable` saves `http.enabled=false`
+and stops the listener immediately; repeating it leaves the API disabled.
+Both choices survive game restarts without repeating the command.
+
+Client commands are local, available in singleplayer and multiplayer, and
+control your own Minecraft API process without sending credentials to other
+players or the multiplayer server. Server commands require the owner-level
+console context and are unavailable to players, command blocks, and RCON.
+In the console, type `mapi status`, `mapi enable`, or `mapi disable` (the
+leading slash is optional). Explicit commands override
+`MAPI_HTTP_ENABLED` for the current process; on the next process launch,
+environment variables take precedence again. Port and token environment
+overrides continue to apply to connection details.
+
 ## Lifecycle
 
 - **Clients:** starts with the game (available at the main menu, before any
@@ -16,7 +43,7 @@ Machine-readable description: [`openapi.yaml`](openapi.yaml).
 - **Dedicated servers:** starts when the server starts, stops with it, as
   before.
 - Port conflict → error log (`MAPI HTTP API: failed to bind ...`), the game
-  keeps running; no listener that session.
+  keeps running; `/mapi enable` can retry after the conflict is resolved.
 - If enabled without a usable token, the API refuses to start (explicit
   error log); the game is unaffected.
 
@@ -200,6 +227,13 @@ ends.
 | `GET /api/v1/server/queries/registries` | registry summaries (`id`, `size`) |
 | `GET /api/v1/server/queries/registry?registryId&max` | sorted entry ids (max ≤ 1000) |
 
+Registry summaries are immutable snapshots of the frozen built-in registries,
+collected on the server thread when world services initialize. Listing these
+summaries does not wait for server-thread scheduling, so a busy tick loop does
+not cause `SERVER_BUSY` for this metadata read. The active-world gate still
+applies. Entity, block, inventory, and registry-entry queries continue to use
+the bounded server-thread path.
+
 Queries never generate chunks; only loaded levels/entities are observable.
 Unknown dimensions → **400** `BAD_REQUEST` (never guessed). No world loaded
 → **409** `WORLD_NOT_LOADED`.
@@ -348,3 +382,9 @@ The API corpus verifies both computed lines and visible hover pixels.
 
 The bounded HTTP pool reserves ordinary request capacity while all eight allowed
 SSE streams are open. Stream subscriptions cannot starve commands or health reads.
+
+Screenshot and rendered-tooltip PNGs publish only after encoding completes.
+Publication uses an atomic file replacement where supported. Readers treat an
+empty or briefly absent publication target as the same pending GPU readback,
+within the original monotonic deadline; they do not schedule another capture.
+Other I/O failures and expired deadlines still fail the request.

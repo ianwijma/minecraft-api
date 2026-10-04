@@ -13,6 +13,10 @@ Exterior checkpoints mask two background horizon strips (x=0–399 and
 x=875–1279, y=450–579). Distant chunk meshes outside the 97 × 97 prepared
 stage can differ between fresh clients. The house silhouette remains
 unmasked, the interior uses no masks, and comparison tolerances are unchanged.
+The southeast pose also masks the narrow background horizon at x=400–463,
+y=559 and x=832–874, y=559–560. Both loader references keep the adjacent
+house walls outside those rectangles. Checkpoint settling uses the same masks
+as baseline comparison, with the original shimmer and comparison thresholds.
 
 Normal runs fail if a reference is missing and never modify it. Failures
 upload actual and diff PNGs with the packaged-smoke acceptance reports.

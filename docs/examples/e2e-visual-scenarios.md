@@ -201,7 +201,9 @@ Every screenshot assertion in every scenario follows this exact sequence:
 2. **Time assertion:** `/time query daytime` must equal the checkpoint's
    `expectedDayTime` (§1.1); fail before any capture otherwise.
 3. **Render settle:** capture twice 250 ms apart; accept renderer shimmer only
-   up to 0.05% changed pixels and max channel delta 24/255. Retry up to 6
+   up to 0.05% changed pixels and max channel delta 24/255 outside the
+   checkpoint's masks (the same rectangles used for baseline comparison).
+   Retry up to 6
    pairs with 1 s spacing. Failure ⇒ scenario fails `scene not stable` —
    never compared against a baseline in an unsettled state. Supervised smoke
    runs pin clouds off in their isolated profile for deterministic captures.

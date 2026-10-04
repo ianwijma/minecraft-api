@@ -91,6 +91,11 @@ final class NeoForgePlatform implements MapiPlatform {
     }
 
     @Override
+    public void saveHttpEnabled(boolean enabled) {
+        NeoForgeConfig.saveHttpEnabled(enabled);
+    }
+
+    @Override
     public dev.example.mapi.internal.config.MapiConfig loadConfig(java.nio.file.Path configDir,
             java.util.Map<String, String> env, org.slf4j.Logger logger) {
         return NeoForgeConfig.toMapiConfig(env, logger);
