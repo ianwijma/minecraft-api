@@ -37,6 +37,11 @@ preflight, all 48 operation cards, and dedicated-server capability gating.
 This same-device check does not establish hosted-page or Firefox/Safari
 compatibility; that browser matrix remains unverified.
 
+The activity event stream can be stopped independently, and removing a
+connection disposes its stream. Both paths abort the request and clean up its
+response reader; expected body-cancellation errors are observed during cleanup
+instead of surfacing as unhandled browser errors.
+
 ## Build and hosting
 
 See [`../dashboard/README.md`](../dashboard/README.md) for local development,

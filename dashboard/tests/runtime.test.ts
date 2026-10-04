@@ -55,6 +55,35 @@ test("native fetch transport sends bearer auth without forbidden Host and expose
   }
 });
 
+test("aborting an event stream observes rejected body cancellation", async () => {
+  const old = globalThis.fetch;
+  let cancelCalled = false;
+  globalThis.fetch = async () =>
+    new Response(
+      new ReadableStream<Uint8Array>({
+        cancel() {
+          cancelCalled = true;
+          return Promise.reject(new Error("body already errored by abort"));
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  const controller = new AbortController();
+  try {
+    const response = await createApiClient(profile).request(
+      "GET",
+      "/api/v1/events/stream",
+      { stream: true, timeoutMs: 0, signal: controller.signal },
+    );
+    assert.ok(response.data instanceof ReadableStream);
+    controller.abort();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(cancelCalled, true);
+  } finally {
+    globalThis.fetch = old;
+  }
+});
+
 test("equivalent reads coalesce and cancellation of one reader does not cancel the other", async () => {
   const old = globalThis.fetch;
   let calls = 0;

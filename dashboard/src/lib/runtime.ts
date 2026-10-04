@@ -169,7 +169,9 @@ function linkedStream(
   const reader = body.getReader();
   const onAbort = () => {
     controller.abort();
-    void reader.cancel();
+    // The fetch body may already be errored with the abort reason. This is a
+    // fire-and-forget cleanup path, so observe the cancellation rejection.
+    void reader.cancel().catch(() => {});
   };
   outer?.addEventListener("abort", onAbort, { once: true });
   const cleanup = () => outer?.removeEventListener("abort", onAbort);
