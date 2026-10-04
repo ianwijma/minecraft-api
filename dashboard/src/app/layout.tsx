@@ -8,6 +8,16 @@ export const metadata: Metadata = {
   description: "A local browser dashboard for Minecraft API instances.",
 };
 
+const enableVercelObservability = process.env.VERCEL === "1";
+
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="en"><body>{children}<Analytics /><SpeedInsights /></body></html>;
+  return (
+    <html lang="en">
+      <body>
+        {children}
+        {enableVercelObservability && <Analytics />}
+        {enableVercelObservability && <SpeedInsights />}
+      </body>
+    </html>
+  );
 }

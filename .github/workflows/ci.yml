@@ -308,6 +308,8 @@ jobs:
           test -f "$driver_path"
           echo "VK_ICD_FILENAMES=$driver_path" >> "$GITHUB_ENV"
           sha256sum "$driver_path" >> build/api-coverage/rendering.txt
+      - name: Test bounded retries for transient server-busy reads
+        run: node --experimental-strip-types --no-warnings --test e2e/api/suite.test.ts
       - name: Run complete corpus against fresh packaged games
         run: node --experimental-strip-types --no-warnings e2e/api/run.ts --loader ${{ matrix.loader }} --sdk ${{ matrix.sdk }}
         env:

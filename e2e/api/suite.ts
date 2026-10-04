@@ -37,18 +37,29 @@ export class Suite {
     async request(id: string, parameters: Record<string, any> = {}, body: any = {}, expected?: number): Promise<any> {
         const operation = this.operations.get(id);
         assert.ok(operation, `unknown operation ${id}`);
-        const trace: Trace = { id: this.trace.length + 1, operationId: id, environment: this.environment, parameters, body };
-        this.trace.push(trace);
-        try {
-            const result = await this.adapter.request(operation, parameters, body);
-            trace.status = result.status;
-            trace.response = result.body?.pngBase64 ? { ...result.body, pngBase64: '[stored separately]' } : result.body;
-            if (result.status >= 200 && result.status < 300 && this.active?.operationId === id) this.active.requestIds.push(trace.id);
-            if (expected !== undefined) assert.equal(result.status, expected, `${id}: ${JSON.stringify(result.body)}`);
-            else assert.ok(result.status >= 200 && result.status < 300, `${id}: HTTP ${result.status} ${JSON.stringify(result.body)}`);
-            if (result.status < 300) validateResponse(this.contract, operation, result.status, result.body);
-            return result.body;
-        } catch (error) { trace.error = String(error); throw error; }
+        const retryDeadline = Date.now() + 30_000;
+        let retryDelay = 100;
+        while (true) {
+            const trace: Trace = { id: this.trace.length + 1, operationId: id, environment: this.environment, parameters, body };
+            this.trace.push(trace);
+            try {
+                const result = await this.adapter.request(operation, parameters, body);
+                trace.status = result.status;
+                trace.response = result.body?.pngBase64 ? { ...result.body, pngBase64: '[stored separately]' } : result.body;
+                if (operation.method === 'GET' && expected !== 503 && result.status === 503
+                    && result.body.error?.code === 'SERVER_BUSY' && Date.now() < retryDeadline) {
+                    trace.expectedCondition = 'retrying read-only request after transient server busy response';
+                    await new Promise(resolve => setTimeout(resolve, retryDelay));
+                    retryDelay = Math.min(retryDelay * 2, 1000);
+                    continue;
+                }
+                if (result.status >= 200 && result.status < 300 && this.active?.operationId === id) this.active.requestIds.push(trace.id);
+                if (expected !== undefined) assert.equal(result.status, expected, `${id}: ${JSON.stringify(result.body)}`);
+                else assert.ok(result.status >= 200 && result.status < 300, `${id}: HTTP ${result.status} ${JSON.stringify(result.body)}`);
+                if (result.status < 300) validateResponse(this.contract, operation, result.status, result.body);
+                return result.body;
+            } catch (error) { trace.error = String(error); throw error; }
+        }
     }
     async outcome(id: string, parameters: Record<string, any> = {}, body: any = {}): Promise<Result> {
         const operation = this.operations.get(id)!;
