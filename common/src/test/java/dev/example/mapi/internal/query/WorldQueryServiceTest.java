@@ -111,7 +111,44 @@ class WorldQueryServiceTest {
         assertEquals(List.of(), service.registryEntries("minecraft:missing", 1000));
     }
 
-    private static final class FakeBackend implements WorldQueryBackend {
+    @Test
+    void registrySummariesRemainAvailableWhenServerThreadIsBusy() {
+        var summaries = new java.util.ArrayList<WorldQueryBackend.RegistrySummary>();
+        summaries.add(new WorldQueryBackend.RegistrySummary("minecraft:block", 2500));
+        int[] reads = {0};
+        var cached = new WorldQueryService(new FakeBackend() {
+            @Override
+            public List<RegistrySummary> registries() {
+                reads[0]++;
+                return summaries;
+            }
+        }, world, new ServerThreadRunner() {
+            @Override
+            public <T> T call(java.util.function.Supplier<T> task) {
+                throw new ProblemException(ProblemCode.SERVER_BUSY, "server thread stalled");
+            }
+        });
+        assertEquals(1, reads[0], "registry data captured once at service initialization");
+        summaries.clear();
+        assertEquals(ProblemCode.WORLD_NOT_LOADED,
+                assertThrows(ProblemException.class, cached::registries).code());
+        world.beginLoad();
+        assertEquals(ProblemCode.WORLD_NOT_LOADED,
+                assertThrows(ProblemException.class, cached::registries).code());
+        world.activated();
+        assertEquals(List.of(Map.of("id", "minecraft:block", "size", 2500)), cached.registries());
+        assertThrows(UnsupportedOperationException.class, () -> cached.registries().clear());
+        assertThrows(UnsupportedOperationException.class, () -> cached.registries().getFirst().clear());
+        assertEquals(ProblemCode.SERVER_BUSY,
+                assertThrows(ProblemException.class, () -> cached.players(1)).code(),
+                "live world observations still use the bounded server-thread path");
+        assertEquals(1, reads[0], "HTTP summary reads do not re-read live registries");
+        world.beginUnload();
+        assertEquals(ProblemCode.WORLD_NOT_LOADED,
+                assertThrows(ProblemException.class, cached::registries).code());
+    }
+
+    private static class FakeBackend implements WorldQueryBackend {
 
         @Override
         public List<PlayerRecord> players(int max) {

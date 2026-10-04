@@ -168,3 +168,9 @@ Investigate any remaining `SERVER_BUSY` or packaged visual-smoke failures;
 keep the first failure reports and do not loosen assertions or count retries
 as success. Update PR validation once final-revision CI passes. The separate
 reliability/lifecycle/performance/isolation campaigns remain outstanding.
+
+Built-in registry summaries are captured by the runtime on the server thread
+at world-service initialization and returned as immutable metadata thereafter.
+The `listRegistries` corpus assertion remains a single request; it no longer
+competes with integrated-server ticks for the 500 ms dispatch budget. Active
+world gating and bounded waits for live world queries remain in force.

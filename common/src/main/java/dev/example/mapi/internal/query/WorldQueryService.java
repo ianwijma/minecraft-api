@@ -24,8 +24,12 @@ public final class WorldQueryService {
     private final WorldQueryBackend backend;
     private final WorldLifecycleCoordinator world;
     private final ServerThreadRunner runner;
+    private final List<Map<String, Object>> registrySummaries;
 
     /**
+     * Captures frozen built-in registry summaries on the server thread during
+     * world-service initialization. Later summary reads need no game-thread work.
+     *
      * @param backend loader backend, never {@code null}
      * @param world   world-session gate, never {@code null}
      * @param runner  server-thread runner with bounded wait, never {@code null}
@@ -35,6 +39,9 @@ public final class WorldQueryService {
         this.backend = Objects.requireNonNull(backend, "backend");
         this.world = Objects.requireNonNull(world, "world");
         this.runner = Objects.requireNonNull(runner, "runner");
+        this.registrySummaries = backend.registries().stream()
+                .map(r -> Map.<String, Object>of("id", r.id(), "size", r.size()))
+                .toList();
     }
 
     /**
@@ -99,9 +106,7 @@ public final class WorldQueryService {
     /** @return built-in registry summaries */
     public List<Map<String, Object>> registries() {
         world.requireActive(Optional.empty());
-        return call(backend::registries).stream()
-                .map(r -> Map.<String, Object>of("id", r.id(), "size", r.size()))
-                .toList();
+        return registrySummaries;
     }
 
     /**

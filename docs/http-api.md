@@ -227,6 +227,13 @@ ends.
 | `GET /api/v1/server/queries/registries` | registry summaries (`id`, `size`) |
 | `GET /api/v1/server/queries/registry?registryId&max` | sorted entry ids (max ≤ 1000) |
 
+Registry summaries are immutable snapshots of the frozen built-in registries,
+collected on the server thread when world services initialize. Listing these
+summaries does not wait for server-thread scheduling, so a busy tick loop does
+not cause `SERVER_BUSY` for this metadata read. The active-world gate still
+applies. Entity, block, inventory, and registry-entry queries continue to use
+the bounded server-thread path.
+
 Queries never generate chunks; only loaded levels/entities are observable.
 Unknown dimensions → **400** `BAD_REQUEST` (never guessed). No world loaded
 → **409** `WORLD_NOT_LOADED`.
