@@ -96,6 +96,23 @@ export async function settleFixtureWorld(suite: Suite): Promise<void> {
     }, 'fixture completes 40 normal server ticks after chunk readiness', 120_000);
 }
 
+/**
+ * Confirm the server-thread status path is responsive before its asserted
+ * corpus case. This readiness probe is diagnostic only and earns no coverage.
+ */
+export async function awaitServerStatusReady(suite: Suite, timeoutMs = 120_000): Promise<void> {
+    await suite.poll(async () => {
+        const result = await suite.outcome('getServerStatus');
+        if (result.status === 503 && result.body.error?.code === 'SERVER_BUSY') {
+            suite.trace.at(-1)!.expectedCondition = 'server busy while awaiting status snapshot readiness';
+            return undefined;
+        }
+        assert.equal(result.status, 200, `server status readiness: ${JSON.stringify(result)}`);
+        assert.equal(result.body.running, true, 'server status readiness requires a running server');
+        return result;
+    }, result => result !== undefined, 'responsive server status snapshot', timeoutMs);
+}
+
 async function completedJob(suite: Suite, jobId: string): Promise<any> {
     return suite.poll(() => suite.request('getJob', { id: jobId }), job => {
         if (['FAILED', 'CANCELLED'].includes(job.state)) throw new Error(`job ${jobId} ${job.state}: ${JSON.stringify(job)}`);
@@ -390,6 +407,7 @@ export async function clientCorpus(suite: Suite, dedicated: Suite, client: GameP
         else await suite.request('holdKey', {}, { keyCode: 256, ticks: 1, leaseId });
     }
     await prepareWorld(suite, true);
+    await awaitServerStatusReady(suite);
     const tickLease = await serverCorpus(suite, true);
     leaseId = await inputLease(suite, leaseId);
     await suite.case('holdKey', async () => {
