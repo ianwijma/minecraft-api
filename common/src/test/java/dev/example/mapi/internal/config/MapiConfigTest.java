@@ -36,7 +36,7 @@ class MapiConfigTest {
         assertEquals(MapiConfig.DEFAULT_PORT, config.httpPort());
         assertNull(config.httpToken());
         assertEquals(MapiConfig.DEFAULT_RATE_LIMIT, config.rateLimitPerMinute());
-        assertTrue(config.httpAllowedOrigins().isEmpty());
+        assertEquals(MapiConfig.DEFAULT_ALLOWED_ORIGINS, config.httpAllowedOrigins());
     }
 
     @Test

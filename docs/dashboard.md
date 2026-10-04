@@ -9,14 +9,16 @@ simulated and never contacts a game.
 ## Browser access setup
 
 The MAPI listener remains disabled by default, binds to IPv4 loopback, and
-requires its bearer token. For a hosted dashboard, enable the API and configure
-the exact page origin in `http.allowedOrigins` (Fabric JSON or NeoForge TOML)
-or in `MAPI_HTTP_ALLOWED_ORIGINS` (comma-separated; overrides the file).
+requires its bearer token. `https://mapi.wij.ma` is included in new
+`http.allowedOrigins` configs on all platforms. Remove it to disable that
+dashboard origin, or configure additional exact origins in the list (Fabric
+JSON or NeoForge TOML) or in `MAPI_HTTP_ALLOWED_ORIGINS` (comma-separated;
+overrides the file).
 For example, a Pages URL such as
 `https://owner.github.io/minecraft-api/` has origin `https://owner.github.io`.
 The origin includes scheme, host, and optional non-default port, but not the
 repository path. Entries must be exact `http(s)` origins; wildcards, URL paths,
-and arbitrary preview domains are rejected. Leave the list empty to deny
+and arbitrary preview domains are rejected. Set the list empty to deny
 cross-origin browser access.
 
 Generate a strong token and configure it on the Minecraft instance. Enter the

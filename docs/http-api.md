@@ -59,21 +59,23 @@ runs that is `<runDir>/config/`. Environment variables override the file.
 | `http.token` | `MAPI_HTTP_TOKEN` | generated | bearer token (auto-generated on first run; env wins). **Empty = auth disabled** (dangerous; loud warning) |
 | `http.rateLimitPerMinute` | `MAPI_HTTP_RATE_LIMIT_PER_MINUTE` | `60` | per-client request budget |
 | `http.scopes` | `MAPI_HTTP_SCOPES` | all | comma-separated granted scopes (spec §14); absent/blank grants the full set |
-| `http.allowedOrigins` | `MAPI_HTTP_ALLOWED_ORIGINS` | empty | comma-separated exact browser origins allowed for cross-origin access; scheme, host, and optional port only |
+| `http.allowedOrigins` | `MAPI_HTTP_ALLOWED_ORIGINS` | `https://mapi.wij.ma` | comma-separated exact browser origins allowed for cross-origin access; scheme, host, and optional port only |
 | `client.connect.allowlist` | `MAPI_CLIENT_CONNECT_ALLOWLIST` | empty (deny all) | comma-separated exact requested hosts and explicit final IP:port approvals; IPv6 literals use brackets |
 | `server.lan.enabled` | `MAPI_SERVER_LAN_ENABLED` | `false` | allow LAN publication |
 
-The bind address is fixed to loopback and is not configurable. Browser access
-is separately opt-in: list the exact dashboard origin in
-`http.allowedOrigins` (or `MAPI_HTTP_ALLOWED_ORIGINS`). Entries must be full
+The bind address is fixed to loopback and is not configurable. The hosted MAPI
+dashboard origin `https://mapi.wij.ma` is included in new configurations on all
+platforms. You can remove it or add origins in `http.allowedOrigins` (or
+`MAPI_HTTP_ALLOWED_ORIGINS`, which overrides the file). Entries must be full
 `http://` or `https://` origins with no path, query, fragment, userinfo, or
 wildcard. For example, `https://owner.github.io` is the origin for a Pages
 site at `https://owner.github.io/minecraft-api/`; the repository path is not
 part of the origin. Multiple environment entries are comma-separated.
 Allowlisted browser origins receive only the CORS permissions needed by the
 dashboard. Local-network preflight permission is returned only when an
-allowlisted origin explicitly requests it. All API requests still require the
-bearer token and normal operation authorization.
+allowlisted origin explicitly requests it. Set the list empty to disable
+browser access. All API requests still require the bearer token and normal
+operation authorization.
 
 ## Endpoints (protocol version 1)
 

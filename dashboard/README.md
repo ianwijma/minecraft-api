@@ -61,10 +61,11 @@ hosted remotely. A remote Minecraft server is not reachable by entering its
 address: MAPI binds loopback. Serving this static dashboard does not create a
 relay or change that network boundary.
 
-Browser access is disabled unless the operator allows the exact origin in the
-MAPI instance config (`http.allowedOrigins`) or sets
-`MAPI_HTTP_ALLOWED_ORIGINS`. Origins contain scheme, host, and optional port;
-they exclude paths. For example, a project Pages site at
+The hosted dashboard origin `https://mapi.wij.ma` is included in new MAPI
+configs on every platform; operators can remove it. Additional exact origins
+can be configured in `http.allowedOrigins` or `MAPI_HTTP_ALLOWED_ORIGINS`.
+Origins contain scheme, host, and optional port; they exclude paths. For
+example, a project Pages site at
 `https://owner.github.io/minecraft-api/` uses origin `https://owner.github.io`.
 List each exact origin separately; wildcard and preview-domain patterns are
 not supported. See [`../docs/http-api.md`](../docs/http-api.md) for config

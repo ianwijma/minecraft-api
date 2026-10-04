@@ -51,8 +51,9 @@ public final class NeoForgeConfig {
 
     private static final ModConfigSpec.ConfigValue<List<? extends String>> HTTP_ALLOWED_ORIGINS = BUILDER
             .comment("Exact browser origins permitted for CORS (scheme, host, optional port; no paths or wildcards). "
-                    + "Empty disables cross-origin browser access.")
-            .defineList("http.allowedOrigins", List.of(), entry -> entry instanceof String s && !s.isBlank());
+                    + "The MAPI dashboard origin is included by default and can be removed.")
+            .defineList("http.allowedOrigins", MapiConfig.DEFAULT_ALLOWED_ORIGINS,
+                    entry -> entry instanceof String s && !s.isBlank());
 
     private static final ModConfigSpec.ConfigValue<List<? extends String>> CONNECT_ALLOWLIST = BUILDER
             .comment("Exact connection host[:port] and final literal IP:port targets (spec §9.2); "

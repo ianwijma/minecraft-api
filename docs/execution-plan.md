@@ -149,7 +149,8 @@ Spec §6, §13.2 · depends 1.4 · size M
 Spec §13.1 · depends 1.6 · size M
 - Fetch-based SSE with the normal bearer header (no query tokens/tickets);
   incremental parsing, reconnect, resume, auth-failure handling, gap
-  signaling. CORS remains disabled by default.
+  signaling. CORS defaults to the exact hosted dashboard origin; other browser
+  origins require explicit configuration.
 
 ### 1.8 Clock registry
 Spec §4.1, §4.3 · depends 1.1 · size S

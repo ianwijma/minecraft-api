@@ -9,9 +9,9 @@
     token = "REPLACED-AT-FIRST-RUN"
     rateLimitPerMinute = 60
     scopes = []
-    # Exact dashboard origins, e.g. "https://owner.github.io"; empty disables browser CORS.
+    # Exact dashboard origins; https://mapi.wij.ma is included by default and may be removed.
     # Pages repository paths do not belong here. Never use wildcards.
-    allowedOrigins = []
+    allowedOrigins = ["https://mapi.wij.ma"]
 [client.connect]
     allowlist = []
 [server.lan]

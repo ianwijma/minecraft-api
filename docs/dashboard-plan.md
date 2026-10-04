@@ -30,18 +30,20 @@ review snapshot; the generated production catalog is maintained from
 ## Prerequisite: browser connectivity
 
 The mod binds IPv4 loopback and authenticates every endpoint. Browser access
-requires explicit opt-in through `http.allowedOrigins` or
-`MAPI_HTTP_ALLOWED_ORIGINS`; an empty list preserves the default denial. The
-SDK generator removes the browser-forbidden Host header and supports
+uses the default exact origin `https://mapi.wij.ma`; additional origins can be
+configured through `http.allowedOrigins` or `MAPI_HTTP_ALLOWED_ORIGINS`, and an
+empty list disables browser access. The SDK generator removes the
+browser-forbidden Host header and supports
 authenticated streaming separately. Generated SDK output must not be edited by
 hand.
 
 First implementation milestone:
 
-- Add an **opt-in exact-origin allowlist** to MAPI configuration, disabled by
-  default. Retain loopback binding, Host validation, scopes, leases, and bearer
-  authentication. Do not allow wildcard origins or arbitrary Vercel preview
-  domains. The origin is scheme + host + port, without the Pages repository path.
+- Keep an exact-origin allowlist in MAPI configuration, defaulting to
+  `https://mapi.wij.ma` while allowing operators to remove it. Retain loopback
+  binding, Host validation, scopes, leases, and bearer authentication. Do not
+  allow wildcard origins or arbitrary Vercel preview domains. The origin is
+  scheme + host + port, without the Pages repository path.
 - Handle allowlisted OPTIONS preflights before bearer authentication, with no
   access to game operations. Advertise only the necessary GET/POST methods and
   Authorization/Content-Type headers. Emit exact Access-Control-Allow-Origin and
