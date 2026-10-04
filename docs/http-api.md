@@ -220,8 +220,11 @@ Absence from a diff is never a destruction claim.
 ≤ 4096 chars). Requires the `operations:unrestricted` grant — this is
 **administrative access** (spec §14): commands are not classified or made
 safe by the API, and dispatch completion is distinct from asynchronous
-effects. Response: `{"dispatched","success","failure"?,"resultCode"}` plus a
-`command.dispatched` event on the stream.
+effects. Response: `{"dispatched","success","failure"?,"resultCode"}`. The
+`command.dispatched` event on the stream carries `dispatched`, `success`,
+optional `failure`, and `resultCode`, so clients can correlate the event with
+the synchronous command result without including raw command text. Result
+codes are command-dependent and are not unique request identifiers.
 
 ### Jobs
 

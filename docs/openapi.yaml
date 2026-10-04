@@ -49,6 +49,9 @@ paths:
         event-type filter), world (worldSessionId filter), keepaliveSeconds
         (1-120, default 15). Comment lines carry keepalives and event-gap
         notices. Concurrency is capped (429 beyond the cap).
+        The command.dispatched event payload includes dispatched, success,
+        optional failure, and resultCode; it omits raw command text. Result
+        codes are command-dependent and are not unique request identifiers.
       parameters:
         - name: cursor
           in: query

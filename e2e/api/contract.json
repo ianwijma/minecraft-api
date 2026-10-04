@@ -1,5 +1,5 @@
 {
-  "sourceSha256": "382af937cf603ba6793e67fd5880f58a017e912c24344167d0ea6faafb30e542",
+  "sourceSha256": "8edd96751d238fd13f4cd1250e1927c0b57bc56baf05988e63e8d09038c8530a",
   "openapi": {
     "openapi": "3.1.0",
     "info": {
@@ -77,7 +77,7 @@
         "get": {
           "operationId": "streamEvents",
           "summary": "Server-Sent Events stream of runtime events (spec \u00a713)",
-          "description": "Long-lived text/event-stream. Bearer header required (no query-string tokens or stream tickets; no CORS headers). Query parameters: cursor (resume from sequence number, default latest), types (comma-separated event-type filter), world (worldSessionId filter), keepaliveSeconds (1-120, default 15). Comment lines carry keepalives and event-gap notices. Concurrency is capped (429 beyond the cap).\n",
+          "description": "Long-lived text/event-stream. Bearer header required (no query-string tokens or stream tickets; no CORS headers). Query parameters: cursor (resume from sequence number, default latest), types (comma-separated event-type filter), world (worldSessionId filter), keepaliveSeconds (1-120, default 15). Comment lines carry keepalives and event-gap notices. Concurrency is capped (429 beyond the cap). The command.dispatched event payload includes dispatched, success, optional failure, and resultCode; it omits raw command text. Result codes are command-dependent and are not unique request identifiers.\n",
           "parameters": [
             {
               "name": "cursor",

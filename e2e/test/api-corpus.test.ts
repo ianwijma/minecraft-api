@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { reserveOutput } from '../api/output.ts';
 import { Suite } from '../api/suite.ts';
-import { awaitServerStatusReady, metadata, settleFixtureWorld } from '../api/corpus.ts';
+import { awaitServerStatusReady, commandEventAfter, metadata, settleFixtureWorld } from '../api/corpus.ts';
 import { manifest } from '../api/manifest.ts';
 import { loadContract, missingCoverage, validateSchema } from '../api/coverage.ts';
 import { verifyFixture, verifyReport } from '../api/report.ts';
@@ -113,6 +113,22 @@ test('integrated status readiness fails on non-busy errors and bounded timeout',
     await assert.rejects(awaitServerStatusReady(busy, 1), /exceeded deadline/);
     assert.equal(calls, 1, 'busy retries stop at the readiness deadline');
     assert.equal(busy.evidence.length, 0);
+});
+test('SSE command correlation ignores stale failed replay events', () => {
+    const replay = [
+        { gap: false, id: '12', event: 'command.dispatched', data: { payload: { success: false, resultCode: 0 } } },
+        { gap: false, id: '13', event: 'command.dispatched', data: { payload: { success: true, resultCode: 425 } } },
+    ];
+    assert.equal(commandEventAfter(replay, 11, 6001), undefined, 'old replay events cannot satisfy the fresh command');
+    const fresh = { gap: false, id: '24', event: 'command.dispatched',
+        data: { payload: { success: true, resultCode: 6001 } } };
+    replay.push(fresh);
+    assert.equal(commandEventAfter(replay, 11, 6001), fresh);
+    assert.equal(commandEventAfter(replay, 24, 6002), undefined, 'resumed cursor excludes the prior command');
+    const resumed = { gap: false, id: '25', event: 'command.dispatched',
+        data: { payload: { success: true, resultCode: 6002 } } };
+    replay.push(resumed);
+    assert.equal(commandEventAfter(replay, 24, 6002), resumed);
 });
 test('diagnostic reruns preserve first-attempt evidence', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mapi-first-attempt-'));

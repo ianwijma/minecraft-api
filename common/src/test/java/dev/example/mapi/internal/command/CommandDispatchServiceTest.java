@@ -40,6 +40,7 @@ class CommandDispatchServiceTest {
                 new EventFilter(java.util.Set.of("command.dispatched"), Optional.empty()), 10).events();
         assertEquals(1, dispatched.size());
         assertEquals(true, dispatched.get(0).payload().get("success"));
+        assertEquals(2, dispatched.get(0).payload().get("resultCode"));
     }
 
     @Test
@@ -50,6 +51,11 @@ class CommandDispatchServiceTest {
         assertEquals(true, result.get("dispatched"));
         assertEquals(false, result.get("success"));
         assertEquals("unknown command: nope", result.get("failure"));
+        List<dev.example.mapi.internal.event.Event> dispatched = events().eventsAfter(0,
+                new EventFilter(java.util.Set.of("command.dispatched"), Optional.empty()), 10).events();
+        assertEquals(1, dispatched.size());
+        assertEquals(false, dispatched.get(0).payload().get("success"));
+        assertEquals(0, dispatched.get(0).payload().get("resultCode"));
     }
 
     @Test
