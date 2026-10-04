@@ -9,6 +9,9 @@
     token = "REPLACED-AT-FIRST-RUN"
     rateLimitPerMinute = 60
     scopes = []
+    # Exact dashboard origins, e.g. "https://owner.github.io"; empty disables browser CORS.
+    # Pages repository paths do not belong here. Never use wildcards.
+    allowedOrigins = []
 [client.connect]
     allowlist = []
 [server.lan]

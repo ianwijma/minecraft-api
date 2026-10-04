@@ -49,6 +49,11 @@ public final class NeoForgeConfig {
             .defineList("http.scopes", List.of(), entry -> entry instanceof String s
                     && !s.isBlank());
 
+    private static final ModConfigSpec.ConfigValue<List<? extends String>> HTTP_ALLOWED_ORIGINS = BUILDER
+            .comment("Exact browser origins permitted for CORS (scheme, host, optional port; no paths or wildcards). "
+                    + "Empty disables cross-origin browser access.")
+            .defineList("http.allowedOrigins", List.of(), entry -> entry instanceof String s && !s.isBlank());
+
     private static final ModConfigSpec.ConfigValue<List<? extends String>> CONNECT_ALLOWLIST = BUILDER
             .comment("Exact connection host[:port] and final literal IP:port targets (spec §9.2); "
                     + "IPv6 literals use brackets; empty list denies all connections")
@@ -79,6 +84,7 @@ public final class NeoForgeConfig {
         java.util.Set<dev.example.mapi.internal.operation.Scope> scopes =
                 parseScopes(HTTP_SCOPES.get());
         java.util.List<String> allowlist = List.copyOf(CONNECT_ALLOWLIST.get());
+        java.util.List<String> origins = List.copyOf(HTTP_ALLOWED_ORIGINS.get());
         return MapiConfig.fromValues(
                 HTTP_ENABLED.get(),
                 HTTP_PORT.get(),
@@ -87,6 +93,7 @@ public final class NeoForgeConfig {
                 scopes,
                 allowlist,
                 SERVER_LAN.get(),
+                origins,
                 env, logger);
     }
 

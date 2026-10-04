@@ -32,10 +32,21 @@ runs that is `<runDir>/config/`. Environment variables override the file.
 | `http.token` | `MAPI_HTTP_TOKEN` | generated | bearer token (auto-generated on first run; env wins). **Empty = auth disabled** (dangerous; loud warning) |
 | `http.rateLimitPerMinute` | `MAPI_HTTP_RATE_LIMIT_PER_MINUTE` | `60` | per-client request budget |
 | `http.scopes` | `MAPI_HTTP_SCOPES` | all | comma-separated granted scopes (spec §14); absent/blank grants the full set |
+| `http.allowedOrigins` | `MAPI_HTTP_ALLOWED_ORIGINS` | empty | comma-separated exact browser origins allowed for cross-origin access; scheme, host, and optional port only |
 | `client.connect.allowlist` | `MAPI_CLIENT_CONNECT_ALLOWLIST` | empty (deny all) | comma-separated exact requested hosts and explicit final IP:port approvals; IPv6 literals use brackets |
 | `server.lan.enabled` | `MAPI_SERVER_LAN_ENABLED` | `false` | allow LAN publication |
 
-The bind address is fixed to loopback and is not configurable.
+The bind address is fixed to loopback and is not configurable. Browser access
+is separately opt-in: list the exact dashboard origin in
+`http.allowedOrigins` (or `MAPI_HTTP_ALLOWED_ORIGINS`). Entries must be full
+`http://` or `https://` origins with no path, query, fragment, userinfo, or
+wildcard. For example, `https://owner.github.io` is the origin for a Pages
+site at `https://owner.github.io/minecraft-api/`; the repository path is not
+part of the origin. Multiple environment entries are comma-separated.
+Allowlisted browser origins receive only the CORS permissions needed by the
+dashboard. Local-network preflight permission is returned only when an
+allowlisted origin explicitly requests it. All API requests still require the
+bearer token and normal operation authorization.
 
 ## Endpoints (protocol version 1)
 
@@ -209,8 +220,11 @@ Absence from a diff is never a destruction claim.
 ≤ 4096 chars). Requires the `operations:unrestricted` grant — this is
 **administrative access** (spec §14): commands are not classified or made
 safe by the API, and dispatch completion is distinct from asynchronous
-effects. Response: `{"dispatched","success","failure"?,"resultCode"}` plus a
-`command.dispatched` event on the stream.
+effects. Response: `{"dispatched","success","failure"?,"resultCode"}`. The
+`command.dispatched` event on the stream carries `dispatched`, `success`,
+optional `failure`, and `resultCode`, so clients can correlate the event with
+the synchronous command result without including raw command text. Result
+codes are command-dependent and are not unique request identifiers.
 
 ### Jobs
 
@@ -226,7 +240,7 @@ effects. Response: `{"dispatched","success","failure"?,"resultCode"}` plus a
 | 400 | `BAD_REQUEST` | malformed body/parameters |
 | 401 | `UNAUTHORIZED` | missing/invalid bearer token (response includes `WWW-Authenticate: Bearer`) |
 | 403 | `FORBIDDEN_HOST` | Host header not loopback (`localhost`, `127.0.0.1`, `[::1]`) |
-| 403 | `FORBIDDEN_ORIGIN` | Origin header present but not the local listener origin; CORS stays disabled |
+| 403 | `FORBIDDEN_ORIGIN` | Origin header is not the local listener origin or an exact configured allowed origin |
 | 404 | `NOT_FOUND` | unknown path or resource |
 | 405 | `METHOD_NOT_ALLOWED` | method not supported by this endpoint (`Allow` header) |
 | 413 | `PAYLOAD_TOO_LARGE` | body above 8192 bytes |
@@ -253,7 +267,8 @@ Response headers always include `Content-Type: application/json; charset=utf-8`,
 
 `GET /api/v1/events/stream` — long-lived `text/event-stream` of runtime
 events (spec §13.1). The normal bearer header is required; there are no
-query-string tokens or stream tickets, and CORS stays disabled.
+query-string tokens or stream tickets. Cross-origin access is available only
+for exact origins in `http.allowedOrigins`.
 
 Query parameters:
 

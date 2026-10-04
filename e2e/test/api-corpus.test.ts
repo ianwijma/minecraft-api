@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { reserveOutput } from '../api/output.ts';
 import { Suite } from '../api/suite.ts';
-import { metadata, settleFixtureWorld } from '../api/corpus.ts';
+import { awaitServerStatusReady, commandEventAfter, metadata, settleFixtureWorld } from '../api/corpus.ts';
 import { manifest } from '../api/manifest.ts';
 import { loadContract, missingCoverage, validateSchema } from '../api/coverage.ts';
 import { verifyFixture, verifyReport } from '../api/report.ts';
@@ -78,6 +78,57 @@ test('fixture readiness cannot use busy or stopped clocks as progress', async ()
     await assert.rejects(settleFixtureWorld(fake as any), /normal ticking/);
     fake.outcome = async () => ({ status: 503, body: { error: { code: 'CAPABILITY_UNAVAILABLE' } } }) as any;
     await assert.rejects(settleFixtureWorld(fake as any), /fixture readiness/);
+});
+test('integrated status readiness records busy probes separately from coverage', async () => {
+    const replies = [
+        { status: 503, body: { error: { code: 'SERVER_BUSY', message: 'busy' } } },
+        { status: 200, body: { protocolVersion: 1, running: true, capturedAtEpochMs: 1,
+            startedAtEpochMs: 1, uptimeMs: 0, playerCount: 1, maxPlayers: 8, tickCount: 1,
+            averageTickTimeMs: 50, motd: '' } },
+    ];
+    let calls = 0;
+    const suite = new Suite({ request: async () => { calls++; return replies.shift()!; },
+        close() {}, subscribe: async () => { throw new Error('unused'); } }, contract, 'integrated', '/tmp');
+    await awaitServerStatusReady(suite);
+    assert.equal(calls, 2);
+    assert.equal(suite.trace[0].status, 503);
+    assert.match(suite.trace[0].expectedCondition!, /status snapshot readiness/);
+    assert.equal(suite.trace[1].status, 200);
+    assert.deepEqual(suite.evidence, [], 'readiness probes do not create coverage evidence');
+});
+test('integrated status readiness fails on non-busy errors and bounded timeout', async () => {
+    let calls = 0;
+    const forbidden = new Suite({ request: async () => {
+        calls++;
+        return { status: 401, body: { error: { code: 'UNAUTHORIZED', message: 'bad token' } } };
+    }, close() {}, subscribe: async () => { throw new Error('unused'); } }, contract, 'integrated', '/tmp');
+    await assert.rejects(awaitServerStatusReady(forbidden, 100), /server status readiness/);
+    assert.equal(calls, 1, 'unexpected errors fail immediately');
+
+    calls = 0;
+    const busy = new Suite({ request: async () => {
+        calls++;
+        return { status: 503, body: { error: { code: 'SERVER_BUSY', message: 'busy' } } };
+    }, close() {}, subscribe: async () => { throw new Error('unused'); } }, contract, 'integrated', '/tmp');
+    await assert.rejects(awaitServerStatusReady(busy, 1), /exceeded deadline/);
+    assert.equal(calls, 1, 'busy retries stop at the readiness deadline');
+    assert.equal(busy.evidence.length, 0);
+});
+test('SSE command correlation ignores stale failed replay events', () => {
+    const replay = [
+        { gap: false, id: '12', event: 'command.dispatched', data: { payload: { success: false, resultCode: 0 } } },
+        { gap: false, id: '13', event: 'command.dispatched', data: { payload: { success: true, resultCode: 425 } } },
+    ];
+    assert.equal(commandEventAfter(replay, 11, 6001), undefined, 'old replay events cannot satisfy the fresh command');
+    const fresh = { gap: false, id: '24', event: 'command.dispatched',
+        data: { payload: { success: true, resultCode: 6001 } } };
+    replay.push(fresh);
+    assert.equal(commandEventAfter(replay, 11, 6001), fresh);
+    assert.equal(commandEventAfter(replay, 24, 6002), undefined, 'resumed cursor excludes the prior command');
+    const resumed = { gap: false, id: '25', event: 'command.dispatched',
+        data: { payload: { success: true, resultCode: 6002 } } };
+    replay.push(resumed);
+    assert.equal(commandEventAfter(replay, 24, 6002), resumed);
 });
 test('diagnostic reruns preserve first-attempt evidence', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'mapi-first-attempt-'));

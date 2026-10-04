@@ -1,0 +1,1721 @@
+[
+  {
+    "id": "getHealth",
+    "label": "Health",
+    "group": "Instance & diagnostics",
+    "path": "/api/v1/health",
+    "method": "GET",
+    "summary": "Liveness/auth check",
+    "security": {},
+    "fields": [],
+    "bodySchema": {}
+  },
+  {
+    "id": "getInfo",
+    "label": "Version info",
+    "group": "Instance & diagnostics",
+    "path": "/api/v1/info",
+    "method": "GET",
+    "summary": "Mod, API, Minecraft, and platform versions",
+    "security": {},
+    "fields": [],
+    "bodySchema": {}
+  },
+  {
+    "id": "streamEvents",
+    "label": "Event stream",
+    "group": "Events, jobs & process",
+    "path": "/api/v1/events/stream",
+    "method": "GET",
+    "summary": "Server-Sent Events stream of runtime events (spec \u00a713)",
+    "security": {},
+    "fields": [
+      {
+        "name": "cursor",
+        "required": false,
+        "type": "integer",
+        "minimum": 0
+      },
+      {
+        "name": "types",
+        "required": false,
+        "type": "string"
+      },
+      {
+        "name": "world",
+        "required": false,
+        "type": "string"
+      },
+      {
+        "name": "keepaliveSeconds",
+        "required": false,
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 120,
+        "default": 15
+      }
+    ],
+    "bodySchema": {}
+  },
+  {
+    "id": "listOperations",
+    "label": "Operations",
+    "group": "Instance & diagnostics",
+    "path": "/api/v1/operations",
+    "method": "GET",
+    "summary": "Operation metadata registry (spec \u00a714)",
+    "security": {},
+    "fields": [],
+    "bodySchema": {}
+  },
+  {
+    "id": "getWorldInfo",
+    "label": "World state",
+    "group": "Instance & diagnostics",
+    "path": "/api/v1/server/world",
+    "method": "GET",
+    "summary": "World-session phase, capabilities, and named clocks",
+    "security": {},
+    "fields": [],
+    "bodySchema": {}
+  },
+  {
+    "id": "getTickState",
+    "label": "Tick state",
+    "group": "Tick control",
+    "path": "/api/v1/server/ticks",
+    "method": "GET",
+    "summary": "Tick-control state (available:false when unsupported, spec \u00a75)",
+    "security": {},
+    "fields": [],
+    "bodySchema": {}
+  },
+  {
+    "id": "acquireClientControlLease",
+    "label": "Acquire input lease",
+    "group": "Input & movement",
+    "path": "/api/v1/client/control/lease",
+    "method": "POST",
+    "summary": "Acquire or renew the exclusive client input lease",
+    "security": {
+      "requiredScopes": [],
+      "destructive": false,
+      "sideEffectClass": "local",
+      "requiresLease": false,
+      "supportedExecutionModes": []
+    },
+    "fields": [
+      {
+        "name": "leaseId",
+        "required": false,
+        "type": "string",
+        "description": "Current input lease ID to renew"
+      },
+      {
+        "name": "ttlSeconds",
+        "required": false,
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 300,
+        "default": 60
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "properties": {
+        "leaseId": {
+          "type": "string",
+          "description": "Current input lease ID to renew"
+        },
+        "ttlSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 300,
+          "default": 60
+        }
+      }
+    }
+  },
+  {
+    "id": "acquireTickLease",
+    "label": "Acquire tick lease",
+    "group": "Tick control",
+    "path": "/api/v1/server/ticks/lease",
+    "method": "POST",
+    "summary": "Acquire the exclusive tick-control lease",
+    "security": {
+      "requiredScopes": [
+        "server:tick-control"
+      ],
+      "destructive": false,
+      "sideEffectClass": "local",
+      "requiresLease": false,
+      "supportedExecutionModes": [
+        "privileged"
+      ]
+    },
+    "fields": [
+      {
+        "name": "ttlSeconds",
+        "required": false,
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3600,
+        "default": 300
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "properties": {
+        "ttlSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600,
+          "default": 300
+        }
+      }
+    }
+  },
+  {
+    "id": "freezeTicks",
+    "label": "Freeze",
+    "group": "Tick control",
+    "path": "/api/v1/server/ticks/freeze",
+    "method": "POST",
+    "summary": "Freeze the tick loop (lease-required, spec \u00a75)",
+    "security": {
+      "requiredScopes": [
+        "server:tick-control"
+      ],
+      "destructive": false,
+      "sideEffectClass": "game",
+      "requiresLease": true,
+      "supportedExecutionModes": [
+        "privileged"
+      ]
+    },
+    "fields": [
+      {
+        "name": "leaseId",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "leaseId"
+      ],
+      "properties": {
+        "leaseId": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "id": "unfreezeTicks",
+    "label": "Unfreeze",
+    "group": "Tick control",
+    "path": "/api/v1/server/ticks/unfreeze",
+    "method": "POST",
+    "summary": "Unfreeze the tick loop (lease-required)",
+    "security": {
+      "requiredScopes": [
+        "server:tick-control"
+      ],
+      "destructive": false,
+      "sideEffectClass": "game",
+      "requiresLease": true,
+      "supportedExecutionModes": [
+        "privileged"
+      ]
+    },
+    "fields": [
+      {
+        "name": "leaseId",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "leaseId"
+      ],
+      "properties": {
+        "leaseId": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "id": "setTickRate",
+    "label": "Set rate",
+    "group": "Tick control",
+    "path": "/api/v1/server/ticks/rate",
+    "method": "POST",
+    "summary": "Set the tick rate within configured bounds (lease-required)",
+    "security": {
+      "requiredScopes": [
+        "server:tick-control"
+      ],
+      "destructive": false,
+      "sideEffectClass": "game",
+      "requiresLease": true,
+      "supportedExecutionModes": [
+        "privileged"
+      ]
+    },
+    "fields": [],
+    "bodySchema": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/LeaseIdRequest"
+        },
+        {
+          "type": "object",
+          "required": [
+            "rate"
+          ],
+          "properties": {
+            "rate": {
+              "type": "number"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "stepTicks",
+    "label": "Step ticks",
+    "group": "Tick control",
+    "path": "/api/v1/server/ticks/step",
+    "method": "POST",
+    "summary": "Step a bounded number of simulation ticks (202 + job)",
+    "security": {
+      "requiredScopes": [
+        "server:tick-control"
+      ],
+      "destructive": false,
+      "sideEffectClass": "game",
+      "requiresLease": true,
+      "supportedExecutionModes": [
+        "privileged"
+      ]
+    },
+    "fields": [],
+    "bodySchema": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/LeaseIdRequest"
+        },
+        {
+          "type": "object",
+          "required": [
+            "ticks"
+          ],
+          "properties": {
+            "ticks": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            },
+            "label": {
+              "type": "string"
+            },
+            "executionMode": {
+              "type": "string",
+              "default": "privileged"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "stepAndObserve",
+    "label": "Step + observe",
+    "group": "Tick control",
+    "path": "/api/v1/server/ticks/step-and-observe",
+    "method": "POST",
+    "summary": "Step ticks and capture a snapshot at the completion boundary (202 + job)",
+    "security": {
+      "requiredScopes": [
+        "server:tick-control"
+      ],
+      "destructive": false,
+      "sideEffectClass": "game",
+      "requiresLease": true,
+      "supportedExecutionModes": [
+        "privileged"
+      ]
+    },
+    "fields": [],
+    "bodySchema": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/LeaseIdRequest"
+        },
+        {
+          "type": "object",
+          "required": [
+            "ticks"
+          ],
+          "properties": {
+            "ticks": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            },
+            "label": {
+              "type": "string"
+            },
+            "executionMode": {
+              "type": "string",
+              "default": "privileged"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "sprintTicks",
+    "label": "Sprint",
+    "group": "Tick control",
+    "path": "/api/v1/server/ticks/sprint",
+    "method": "POST",
+    "summary": "Request a bounded sprint (asynchronous in vanilla; poll tick state)",
+    "security": {
+      "requiredScopes": [
+        "server:tick-control"
+      ],
+      "destructive": false,
+      "sideEffectClass": "game",
+      "requiresLease": true,
+      "supportedExecutionModes": [
+        "privileged"
+      ]
+    },
+    "fields": [],
+    "bodySchema": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/LeaseIdRequest"
+        },
+        {
+          "type": "object",
+          "required": [
+            "ticks"
+          ],
+          "properties": {
+            "ticks": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10000
+            },
+            "label": {
+              "type": "string"
+            },
+            "executionMode": {
+              "type": "string",
+              "default": "privileged"
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "stopTickWork",
+    "label": "Stop tick work",
+    "group": "Tick control",
+    "path": "/api/v1/server/ticks/stop",
+    "method": "POST",
+    "summary": "Stop stepping/sprinting (lease-required)",
+    "security": {
+      "requiredScopes": [
+        "server:tick-control"
+      ],
+      "destructive": false,
+      "sideEffectClass": "game",
+      "requiresLease": true,
+      "supportedExecutionModes": [
+        "privileged"
+      ]
+    },
+    "fields": [
+      {
+        "name": "leaseId",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "leaseId"
+      ],
+      "properties": {
+        "leaseId": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "id": "queryPlayers",
+    "label": "Players",
+    "group": "World queries",
+    "path": "/api/v1/server/queries/players",
+    "method": "GET",
+    "summary": "Online players with non-empty inventory slots (bounded)",
+    "security": {},
+    "fields": [
+      {
+        "name": "max",
+        "required": false,
+        "type": "integer",
+        "minimum": 1,
+        "default": 20
+      }
+    ],
+    "bodySchema": {}
+  },
+  {
+    "id": "queryEntities",
+    "label": "Entities",
+    "group": "World queries",
+    "path": "/api/v1/server/queries/entities",
+    "method": "GET",
+    "summary": "Loaded entities within a bounded region",
+    "security": {},
+    "fields": [
+      {
+        "name": "dimension",
+        "required": false,
+        "type": "string",
+        "default": "minecraft:overworld"
+      },
+      {
+        "name": "x",
+        "required": false,
+        "type": "number"
+      },
+      {
+        "name": "y",
+        "required": false,
+        "type": "number"
+      },
+      {
+        "name": "z",
+        "required": false,
+        "type": "number"
+      },
+      {
+        "name": "radius",
+        "required": false,
+        "type": "integer",
+        "default": 32
+      },
+      {
+        "name": "max",
+        "required": false,
+        "type": "integer",
+        "default": 50
+      }
+    ],
+    "bodySchema": {}
+  },
+  {
+    "id": "queryBlock",
+    "label": "Block / NBT",
+    "group": "World queries",
+    "path": "/api/v1/server/queries/block",
+    "method": "GET",
+    "summary": "Block id and block-entity data at a position (typed NBT when present)",
+    "security": {},
+    "fields": [
+      {
+        "name": "dimension",
+        "required": false,
+        "type": "string",
+        "default": "minecraft:overworld"
+      },
+      {
+        "name": "x",
+        "required": false,
+        "type": "integer"
+      },
+      {
+        "name": "y",
+        "required": false,
+        "type": "integer"
+      },
+      {
+        "name": "z",
+        "required": false,
+        "type": "integer"
+      }
+    ],
+    "bodySchema": {}
+  },
+  {
+    "id": "listRegistries",
+    "label": "Registries",
+    "group": "World queries",
+    "path": "/api/v1/server/queries/registries",
+    "method": "GET",
+    "summary": "Registry summaries",
+    "security": {},
+    "fields": [],
+    "bodySchema": {}
+  },
+  {
+    "id": "queryRegistryEntries",
+    "label": "Registry entries",
+    "group": "World queries",
+    "path": "/api/v1/server/queries/registry",
+    "method": "GET",
+    "summary": "Sorted entry ids of one registry (bounded)",
+    "security": {},
+    "fields": [
+      {
+        "name": "registryId",
+        "required": true,
+        "type": "string"
+      },
+      {
+        "name": "max",
+        "required": false,
+        "type": "integer",
+        "default": 100
+      }
+    ],
+    "bodySchema": {}
+  },
+  {
+    "id": "captureSnapshot",
+    "label": "Capture snapshot",
+    "group": "Snapshots & commands",
+    "path": "/api/v1/server/snapshots",
+    "method": "POST",
+    "summary": "Capture and retain a bounded observation at the current boundary (spec \u00a712)",
+    "security": {
+      "requiredScopes": [],
+      "destructive": false,
+      "sideEffectClass": "read-only",
+      "requiresLease": false,
+      "supportedExecutionModes": []
+    },
+    "fields": [
+      {
+        "name": "label",
+        "required": true,
+        "type": "string"
+      },
+      {
+        "name": "maxPlayers",
+        "required": false,
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 100,
+        "default": 10
+      },
+      {
+        "name": "maxEntities",
+        "required": false,
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 512,
+        "default": 50
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "label"
+      ],
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "maxPlayers": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "default": 10
+        },
+        "maxEntities": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 512,
+          "default": 50
+        }
+      }
+    }
+  },
+  {
+    "id": "diffSnapshots",
+    "label": "Compare snapshots",
+    "group": "Snapshots & commands",
+    "path": "/api/v1/server/snapshot-diffs",
+    "method": "POST",
+    "summary": "Bounded path-level diff between two retained snapshots",
+    "security": {
+      "requiredScopes": [],
+      "destructive": false,
+      "sideEffectClass": "read-only",
+      "requiresLease": false,
+      "supportedExecutionModes": []
+    },
+    "fields": [
+      {
+        "name": "firstId",
+        "required": true,
+        "type": "string"
+      },
+      {
+        "name": "secondId",
+        "required": true,
+        "type": "string"
+      },
+      {
+        "name": "includePaths",
+        "required": false,
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      {
+        "name": "maxChanges",
+        "required": false,
+        "type": "integer",
+        "default": 1000
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "firstId",
+        "secondId"
+      ],
+      "properties": {
+        "firstId": {
+          "type": "string"
+        },
+        "secondId": {
+          "type": "string"
+        },
+        "includePaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "maxChanges": {
+          "type": "integer",
+          "default": 1000
+        }
+      }
+    }
+  },
+  {
+    "id": "dispatchCommand",
+    "label": "Run command",
+    "group": "Snapshots & commands",
+    "path": "/api/v1/server/commands",
+    "method": "POST",
+    "summary": "Dispatch a server command in the console context. Administrative access: requires the operations:unrestricted grant (spec \u00a714). Dispatch completion is distinct from asynchronous effects.\n",
+    "security": {
+      "requiredScopes": [
+        "operations:unrestricted"
+      ],
+      "destructive": false,
+      "sideEffectClass": "unrestricted",
+      "requiresLease": false,
+      "supportedExecutionModes": [
+        "privileged"
+      ]
+    },
+    "fields": [
+      {
+        "name": "command",
+        "required": true,
+        "type": "string",
+        "maxLength": 4096
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "command"
+      ],
+      "properties": {
+        "command": {
+          "type": "string",
+          "maxLength": 4096
+        }
+      }
+    }
+  },
+  {
+    "id": "getClientInfo",
+    "label": "Client info",
+    "group": "Instance & diagnostics",
+    "path": "/api/v1/client",
+    "method": "GET",
+    "summary": "Client bridge identity and capabilities. CAPABILITY_UNAVAILABLE semantics apply per feature on dedicated servers (no client bridge).\n",
+    "security": {},
+    "fields": [],
+    "bodySchema": {}
+  },
+  {
+    "id": "getWindowState",
+    "label": "Window state",
+    "group": "Window settings",
+    "path": "/api/v1/client/window",
+    "method": "GET",
+    "summary": "Window state with framebuffer/logical distinction (spec \u00a79.1)",
+    "security": {},
+    "fields": [],
+    "bodySchema": {}
+  },
+  {
+    "id": "captureScreenshot",
+    "label": "Screenshot",
+    "group": "Screen & capture",
+    "path": "/api/v1/client/screenshots",
+    "method": "GET",
+    "summary": "Screenshot capture with frame/scale metadata (spec \u00a720)",
+    "security": {},
+    "fields": [],
+    "bodySchema": {}
+  },
+  {
+    "id": "holdKey",
+    "label": "Hold key",
+    "group": "Input & movement",
+    "path": "/api/v1/client/actions/hold-key",
+    "method": "POST",
+    "summary": "Hold a key for N client ticks (raw-input only, spec \u00a73.4/\u00a74.2). Returns an action receipt; unsupported modes fail with EXECUTION_MODE_UNSUPPORTED (no silent fallback). Key-up is always dispatched before a deadline failure surfaces (release-all).\n",
+    "security": {
+      "requiredScopes": [],
+      "destructive": false,
+      "sideEffectClass": "local",
+      "requiresLease": true,
+      "supportedExecutionModes": [
+        "raw-input"
+      ]
+    },
+    "fields": [
+      {
+        "name": "leaseId",
+        "required": true,
+        "type": "string"
+      },
+      {
+        "name": "keyCode",
+        "required": true,
+        "type": "integer"
+      },
+      {
+        "name": "ticks",
+        "required": true,
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3600
+      },
+      {
+        "name": "executionMode",
+        "required": false,
+        "type": "string",
+        "default": "raw-input"
+      },
+      {
+        "name": "deadlineEpochMs",
+        "required": false,
+        "type": "integer"
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "keyCode",
+        "ticks",
+        "leaseId"
+      ],
+      "properties": {
+        "leaseId": {
+          "type": "string"
+        },
+        "keyCode": {
+          "type": "integer"
+        },
+        "ticks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600
+        },
+        "executionMode": {
+          "type": "string",
+          "default": "raw-input"
+        },
+        "deadlineEpochMs": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  {
+    "id": "setWindowed",
+    "label": "Window size",
+    "group": "Window settings",
+    "path": "/api/v1/client/window/set-windowed",
+    "method": "POST",
+    "summary": "Set windowed dimensions (OS may adjust; effective values returned, spec \u00a79.1)",
+    "security": {
+      "requiredScopes": [
+        "client:settings"
+      ],
+      "destructive": false,
+      "sideEffectClass": "local",
+      "requiresLease": false,
+      "supportedExecutionModes": []
+    },
+    "fields": [
+      {
+        "name": "width",
+        "required": true,
+        "type": "integer",
+        "minimum": 320,
+        "maximum": 3840
+      },
+      {
+        "name": "height",
+        "required": true,
+        "type": "integer",
+        "minimum": 240,
+        "maximum": 2160
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "width",
+        "height"
+      ],
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 320,
+          "maximum": 3840
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 240,
+          "maximum": 2160
+        }
+      }
+    }
+  },
+  {
+    "id": "setFullscreen",
+    "label": "Fullscreen",
+    "group": "Window settings",
+    "path": "/api/v1/client/window/set-fullscreen",
+    "method": "POST",
+    "summary": "Request fullscreen on/off. 26.2 exposes no public setter on the window: the actual state is returned and the window revision bumps, never assumed (spec \u00a79.1 honesty rule).\n",
+    "security": {
+      "requiredScopes": [
+        "client:settings"
+      ],
+      "destructive": false,
+      "sideEffectClass": "local",
+      "requiresLease": false,
+      "supportedExecutionModes": []
+    },
+    "fields": [
+      {
+        "name": "fullscreen",
+        "required": true,
+        "type": "boolean"
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "fullscreen"
+      ],
+      "properties": {
+        "fullscreen": {
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  {
+    "id": "setGuiScale",
+    "label": "GUI scale",
+    "group": "Window settings",
+    "path": "/api/v1/client/window/set-gui-scale",
+    "method": "POST",
+    "summary": "Set GUI scale (0 = auto, 1..4)",
+    "security": {
+      "requiredScopes": [
+        "client:settings"
+      ],
+      "destructive": false,
+      "sideEffectClass": "local",
+      "requiresLease": false,
+      "supportedExecutionModes": []
+    },
+    "fields": [
+      {
+        "name": "guiScale",
+        "required": true,
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 4
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "guiScale"
+      ],
+      "properties": {
+        "guiScale": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4
+        }
+      }
+    }
+  },
+  {
+    "id": "moveWaypoints",
+    "label": "Move waypoints",
+    "group": "Input & movement",
+    "path": "/api/v1/client/movement/waypoints",
+    "method": "POST",
+    "summary": "Execute straight-line waypoints (raw-input; required mod, spec \u00a716). No teleport fallback. Receipt reports per-leg boundaries; effects verified separately via world queries.\n",
+    "security": {
+      "requiredScopes": [],
+      "destructive": false,
+      "sideEffectClass": "local",
+      "requiresLease": true,
+      "supportedExecutionModes": [
+        "raw-input"
+      ]
+    },
+    "fields": [
+      {
+        "name": "leaseId",
+        "required": true,
+        "type": "string"
+      },
+      {
+        "name": "waypoints",
+        "required": true,
+        "type": "array",
+        "minItems": 1,
+        "maxItems": 64,
+        "items": {
+          "type": "object",
+          "properties": {
+            "yaw": {
+              "type": "number",
+              "default": 0
+            },
+            "pitch": {
+              "type": "number",
+              "default": 0,
+              "minimum": -90,
+              "maximum": 90
+            },
+            "ticks": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 3600,
+              "default": 20
+            }
+          }
+        }
+      },
+      {
+        "name": "executionMode",
+        "required": false,
+        "type": "string",
+        "default": "raw-input"
+      },
+      {
+        "name": "deadlineEpochMs",
+        "required": false,
+        "type": "integer"
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "waypoints",
+        "leaseId"
+      ],
+      "properties": {
+        "leaseId": {
+          "type": "string"
+        },
+        "waypoints": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "properties": {
+              "yaw": {
+                "type": "number",
+                "default": 0
+              },
+              "pitch": {
+                "type": "number",
+                "default": 0,
+                "minimum": -90,
+                "maximum": 90
+              },
+              "ticks": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3600,
+                "default": 20
+              }
+            }
+          }
+        },
+        "executionMode": {
+          "type": "string",
+          "default": "raw-input"
+        },
+        "deadlineEpochMs": {
+          "type": "integer"
+        }
+      }
+    }
+  },
+  {
+    "id": "publishLan",
+    "label": "Publish LAN",
+    "group": "Worlds & multiplayer",
+    "path": "/api/v1/server/lan",
+    "method": "POST",
+    "summary": "Publish the integrated server to LAN (spec \u00a79.3; network exposure, distinct server:publish scope). Disabled unless server.lan.enabled. The game port is exposed independently of API authentication.\n",
+    "security": {
+      "requiredScopes": [
+        "server:publish"
+      ],
+      "destructive": false,
+      "sideEffectClass": "game",
+      "requiresLease": true,
+      "supportedExecutionModes": [
+        "privileged"
+      ]
+    },
+    "fields": [],
+    "bodySchema": {
+      "allOf": [
+        {
+          "$ref": "#/components/schemas/LeaseIdRequest"
+        },
+        {
+          "$ref": "#/components/schemas/LanPublishRequest"
+        }
+      ]
+    }
+  },
+  {
+    "id": "unpublishLan",
+    "label": "Unpublish LAN",
+    "group": "Worlds & multiplayer",
+    "path": "/api/v1/server/lan/stop",
+    "method": "POST",
+    "summary": "Unpublish LAN (spec \u00a79.3; requires the tick-control lease)",
+    "security": {
+      "requiredScopes": [
+        "server:publish"
+      ],
+      "destructive": false,
+      "sideEffectClass": "game",
+      "requiresLease": true,
+      "supportedExecutionModes": [
+        "privileged"
+      ]
+    },
+    "fields": [
+      {
+        "name": "leaseId",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "leaseId"
+      ],
+      "properties": {
+        "leaseId": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "id": "inspectInventory",
+    "label": "Inspect inventory",
+    "group": "Inventory",
+    "path": "/api/v1/client/inventory",
+    "method": "GET",
+    "summary": "Player inventory menu slots (\u00a710.3): non-empty slots with itemId and count, carried-stack size, container id.\n",
+    "security": {},
+    "fields": [],
+    "bodySchema": {}
+  },
+  {
+    "id": "clickInventory",
+    "label": "Click slot",
+    "group": "Inventory",
+    "path": "/api/v1/client/inventory/click",
+    "method": "POST",
+    "summary": "Container click (client-logic mode, \u00a73.1/\u00a710.3): dispatches through client logic. The response reports dispatch acceptance; it does not verify the resulting server state.\n",
+    "security": {
+      "requiredScopes": [],
+      "destructive": false,
+      "sideEffectClass": "game",
+      "requiresLease": true,
+      "supportedExecutionModes": [
+        "client-logic"
+      ]
+    },
+    "fields": [
+      {
+        "name": "leaseId",
+        "required": true,
+        "type": "string"
+      },
+      {
+        "name": "executionMode",
+        "required": true,
+        "type": "string",
+        "enum": [
+          "client-logic"
+        ],
+        "default": "client-logic"
+      },
+      {
+        "name": "slot",
+        "required": true,
+        "type": "integer",
+        "minimum": 0,
+        "description": "0=result, 1-4=craft, 5-8=armor, 9-44=main, 45=offhand"
+      },
+      {
+        "name": "button",
+        "required": false,
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 2,
+        "default": 0
+      },
+      {
+        "name": "containerInput",
+        "required": false,
+        "type": "string",
+        "enum": [
+          "PICKUP",
+          "QUICK_MOVE",
+          "SWAP",
+          "CLONE",
+          "THROW",
+          "QUICK_CRAFT",
+          "PICKUP_ALL"
+        ],
+        "default": "PICKUP"
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "slot",
+        "leaseId",
+        "executionMode"
+      ],
+      "properties": {
+        "leaseId": {
+          "type": "string"
+        },
+        "executionMode": {
+          "type": "string",
+          "enum": [
+            "client-logic"
+          ],
+          "default": "client-logic"
+        },
+        "slot": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "0=result, 1-4=craft, 5-8=armor, 9-44=main, 45=offhand"
+        },
+        "button": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2,
+          "default": 0
+        },
+        "containerInput": {
+          "type": "string",
+          "enum": [
+            "PICKUP",
+            "QUICK_MOVE",
+            "SWAP",
+            "CLONE",
+            "THROW",
+            "QUICK_CRAFT",
+            "PICKUP_ALL"
+          ],
+          "default": "PICKUP"
+        }
+      }
+    }
+  },
+  {
+    "id": "getTooltip",
+    "label": "Tooltip text",
+    "group": "Inventory",
+    "path": "/api/v1/client/inventory/tooltip",
+    "method": "GET",
+    "summary": "Computed tooltip lines for a slot's item (\u00a710.2: calculated without reproducing hover \u2014 rendered capture is a separate path). Includes item name, durability, enchantments, and lore.\n",
+    "security": {},
+    "fields": [
+      {
+        "name": "slot",
+        "required": true,
+        "type": "integer",
+        "minimum": 0
+      }
+    ],
+    "bodySchema": {}
+  },
+  {
+    "id": "captureRenderedTooltip",
+    "label": "Rendered tooltip",
+    "group": "Inventory",
+    "path": "/api/v1/client/inventory/tooltip-rendered",
+    "method": "POST",
+    "summary": "Rendered tooltip capture (\u00a710.2): opens the inventory, hovers over the slot, captures a screenshot showing the tooltip as the game actually displayed it. Returns both the visual evidence and the computed lines.\n",
+    "security": {
+      "requiredScopes": [],
+      "destructive": false,
+      "sideEffectClass": "local",
+      "requiresLease": true,
+      "supportedExecutionModes": []
+    },
+    "fields": [
+      {
+        "name": "leaseId",
+        "required": true,
+        "type": "string"
+      },
+      {
+        "name": "slot",
+        "required": true,
+        "type": "integer",
+        "minimum": 0
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "slot",
+        "leaseId"
+      ],
+      "properties": {
+        "leaseId": {
+          "type": "string"
+        },
+        "slot": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "inspectScreen",
+    "label": "Inspect screen",
+    "group": "Screen & capture",
+    "path": "/api/v1/client/screen",
+    "method": "GET",
+    "summary": "Inspect the active screen's widgets (\u00a710.1-lite: recognized widget structures with rendered text and bounds). Empty at in-world state.\n",
+    "security": {},
+    "fields": [],
+    "bodySchema": {}
+  },
+  {
+    "id": "clickScreen",
+    "label": "Click screen",
+    "group": "Screen & capture",
+    "path": "/api/v1/client/actions/click",
+    "method": "POST",
+    "summary": "Click the active screen at GUI coordinates through client logic. Requires the exclusive input lease; returns dispatch and consumed state.\n",
+    "security": {
+      "requiredScopes": [],
+      "destructive": false,
+      "sideEffectClass": "local",
+      "requiresLease": true,
+      "supportedExecutionModes": [
+        "client-logic"
+      ]
+    },
+    "fields": [
+      {
+        "name": "leaseId",
+        "required": true,
+        "type": "string"
+      },
+      {
+        "name": "executionMode",
+        "required": true,
+        "type": "string",
+        "enum": [
+          "client-logic"
+        ],
+        "default": "client-logic"
+      },
+      {
+        "name": "x",
+        "required": true,
+        "type": "integer",
+        "minimum": 0
+      },
+      {
+        "name": "y",
+        "required": true,
+        "type": "integer",
+        "minimum": 0
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "x",
+        "y",
+        "leaseId",
+        "executionMode"
+      ],
+      "properties": {
+        "leaseId": {
+          "type": "string"
+        },
+        "executionMode": {
+          "type": "string",
+          "enum": [
+            "client-logic"
+          ],
+          "default": "client-logic"
+        },
+        "x": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "y": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  {
+    "id": "listWorlds",
+    "label": "List worlds",
+    "group": "Worlds & multiplayer",
+    "path": "/api/v1/client/worlds",
+    "method": "GET",
+    "summary": "Saved singleplayer worlds",
+    "security": {},
+    "fields": [],
+    "bodySchema": {}
+  },
+  {
+    "id": "loadWorld",
+    "label": "Load world",
+    "group": "Worlds & multiplayer",
+    "path": "/api/v1/client/worlds/load",
+    "method": "POST",
+    "summary": "Load a saved world (202; loads asynchronously \u2014 poll GET /api/v1/server/world for phase ACTIVE).\n",
+    "security": {
+      "requiredScopes": [],
+      "destructive": false,
+      "sideEffectClass": "game",
+      "requiresLease": false,
+      "supportedExecutionModes": []
+    },
+    "fields": [
+      {
+        "name": "levelId",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "levelId"
+      ],
+      "properties": {
+        "levelId": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  {
+    "id": "createWorld",
+    "label": "Create world",
+    "group": "Worlds & multiplayer",
+    "path": "/api/v1/client/worlds/create",
+    "method": "POST",
+    "summary": "Create a fresh world with vanilla defaults and a NORMAL preset (202; async \u2014 poll /server/world for phase ACTIVE). Creation over an existing id fails; never overwrites.\n",
+    "security": {
+      "requiredScopes": [],
+      "destructive": false,
+      "sideEffectClass": "game",
+      "requiresLease": false,
+      "supportedExecutionModes": []
+    },
+    "fields": [
+      {
+        "name": "levelId",
+        "required": true,
+        "type": "string"
+      },
+      {
+        "name": "gamemode",
+        "required": false,
+        "type": "string",
+        "enum": [
+          "survival",
+          "creative",
+          "adventure",
+          "spectator"
+        ],
+        "default": "survival"
+      },
+      {
+        "name": "seed",
+        "required": false,
+        "type": "integer",
+        "description": "random when omitted"
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "levelId"
+      ],
+      "properties": {
+        "levelId": {
+          "type": "string"
+        },
+        "gamemode": {
+          "type": "string",
+          "enum": [
+            "survival",
+            "creative",
+            "adventure",
+            "spectator"
+          ],
+          "default": "survival"
+        },
+        "seed": {
+          "type": "integer",
+          "description": "random when omitted"
+        }
+      }
+    }
+  },
+  {
+    "id": "deleteWorld",
+    "label": "Delete world",
+    "group": "Worlds & multiplayer",
+    "path": "/api/v1/client/worlds/delete",
+    "method": "POST",
+    "summary": "Delete a saved world (destructive: requires operations:destructive grant AND \"confirm\": true, spec \u00a714).\n",
+    "security": {
+      "requiredScopes": [
+        "operations:destructive"
+      ],
+      "destructive": true,
+      "sideEffectClass": "game",
+      "requiresLease": false,
+      "supportedExecutionModes": []
+    },
+    "fields": [
+      {
+        "name": "levelId",
+        "required": true,
+        "type": "string"
+      },
+      {
+        "name": "confirm",
+        "required": true,
+        "type": "boolean",
+        "description": "must be exactly true"
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "levelId",
+        "confirm"
+      ],
+      "properties": {
+        "levelId": {
+          "type": "string"
+        },
+        "confirm": {
+          "type": "boolean",
+          "description": "must be exactly true"
+        }
+      }
+    }
+  },
+  {
+    "id": "connectServer",
+    "label": "Join server",
+    "group": "Worlds & multiplayer",
+    "path": "/api/v1/client/connect",
+    "method": "POST",
+    "summary": "Join a server through the vanilla connect flow (\u00a79.2; requires client:connect scope and the client.connect.allowlist \u2014 empty list denies all).\n",
+    "security": {
+      "requiredScopes": [
+        "client:connect"
+      ],
+      "destructive": false,
+      "sideEffectClass": "game",
+      "requiresLease": true,
+      "supportedExecutionModes": [
+        "privileged"
+      ]
+    },
+    "fields": [
+      {
+        "name": "address",
+        "required": true,
+        "type": "string",
+        "description": "host[:port]"
+      },
+      {
+        "name": "leaseId",
+        "required": true,
+        "type": "string",
+        "description": "Current input lease ID"
+      }
+    ],
+    "bodySchema": {
+      "type": "object",
+      "required": [
+        "address",
+        "leaseId"
+      ],
+      "properties": {
+        "address": {
+          "type": "string",
+          "description": "host[:port]"
+        },
+        "leaseId": {
+          "type": "string",
+          "description": "Current input lease ID"
+        }
+      }
+    }
+  },
+  {
+    "id": "readLogs",
+    "label": "Read logs",
+    "group": "Events, jobs & process",
+    "path": "/api/v1/logs",
+    "method": "GET",
+    "summary": "Bounded log capture with cursor reads and explicit gaps (spec \u00a717.1)",
+    "security": {},
+    "fields": [
+      {
+        "name": "cursor",
+        "required": false,
+        "type": "integer",
+        "minimum": 0,
+        "default": 0
+      },
+      {
+        "name": "limit",
+        "required": false,
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 1000,
+        "default": 200
+      }
+    ],
+    "bodySchema": {}
+  },
+  {
+    "id": "requestShutdown",
+    "label": "Shutdown",
+    "group": "Events, jobs & process",
+    "path": "/api/v1/process/shutdown",
+    "method": "POST",
+    "summary": "Request graceful local shutdown (administrative, spec \u00a71.1/\u00a714: operations:unrestricted). CAPABILITY_UNAVAILABLE until the loader adapter implements it.\n",
+    "security": {
+      "requiredScopes": [
+        "operations:unrestricted"
+      ],
+      "destructive": false,
+      "sideEffectClass": "unrestricted",
+      "requiresLease": false,
+      "supportedExecutionModes": [
+        "privileged"
+      ]
+    },
+    "fields": [],
+    "bodySchema": {}
+  },
+  {
+    "id": "getJob",
+    "label": "Inspect job",
+    "group": "Events, jobs & process",
+    "path": "/api/v1/jobs/{id}",
+    "method": "GET",
+    "summary": "Job view (state, milestones, failure, result)",
+    "security": {},
+    "fields": [
+      {
+        "name": "id",
+        "required": true,
+        "type": "string"
+      }
+    ],
+    "bodySchema": {}
+  },
+  {
+    "id": "getServerStatus",
+    "label": "Server status",
+    "group": "Instance & diagnostics",
+    "path": "/api/v1/server/status",
+    "method": "GET",
+    "summary": "Read-only server status snapshot",
+    "security": {},
+    "fields": [],
+    "bodySchema": {}
+  }
+]

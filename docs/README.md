@@ -23,6 +23,9 @@
 | [`architecture.md`](architecture.md) | Modules, boundaries, data flow |
 | [`development.md`](development.md) | Commands, dev runs, smoke tests, IDE |
 | [`api.md`](api.md) | Public Java API contract and versioning |
+| [`dashboard-plan.md`](dashboard-plan.md) | Static Next.js dashboard design, implementation status, browser access and acceptance plan |
+| [`dashboard.md`](dashboard.md) | Production dashboard setup, browser access and hosting guide |
+| [`dashboard-preview/index.html`](dashboard-preview/index.html) | Interactive simulated connection/action design preview |
 | [`http-api.md`](http-api.md) | HTTP endpoints, schemas, curl examples |
 | [`security.md`](security.md) | HTTP security model and secrets handling |
 | [`llm-workflow.md`](llm-workflow.md) | Coding-agent workflow + context generation |

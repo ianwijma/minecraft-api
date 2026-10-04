@@ -63,6 +63,7 @@ public final class CommandDispatchService {
         eventPayload.put("dispatched", result.dispatched());
         eventPayload.put("success", result.success());
         result.failureMessage().ifPresent(value -> eventPayload.put("failure", value));
+        eventPayload.put("resultCode", result.resultCode());
         events.publish("command.dispatched", Optional.empty(), eventPayload);
 
         Map<String, Object> map = new LinkedHashMap<>();

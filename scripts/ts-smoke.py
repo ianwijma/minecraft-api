@@ -31,6 +31,7 @@ class Fake(BaseHTTPRequestHandler):
             return
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
+        self.send_header("X-MAPI-Protocol-Version", "1")
         self.end_headers()
         self.wfile.write(b'{"ok":true}')
 
@@ -46,7 +47,7 @@ script = f"""
 import {{ MapiClient, MapiError }} from {json.dumps(module_url)};
 const client = new MapiClient('http://127.0.0.1:{server.server_port}', '{TOKEN}');
 const health = await client.getHealth();
-if (!health.ok || health.body.ok !== true) throw new Error('health request failed');
+if (!health.ok || health.body.ok !== true || health.headers['x-mapi-protocol-version'] !== '1') throw new Error('health request failed');
 await client.getJob('job a/x');
 await client.readLogs();
 await client.readLogs(0, 10);
@@ -62,7 +63,17 @@ try {{
   throw new Error('expected MapiError');
 }} catch (error) {{
   if (!(error instanceof MapiError) || error.status !== 401 || error.code !== 'UNAUTHORIZED') throw error;
+  if (error.body.error.code !== 'UNAUTHORIZED' || error.headers['content-type'] !== 'application/json') throw new Error('structured error details missing');
 }}
+const realFetch = globalThis.fetch;
+let captured;
+globalThis.fetch = async (_url, options) => {{
+  captured = options;
+  return new Response('{{"ok":true}}', {{status: 200, headers: {{'Content-Type':'application/json'}}}});
+}};
+await client.get('/browser-check');
+if (Object.keys(captured.headers).some(key => key.toLowerCase() === 'host')) throw new Error('SDK sets forbidden Host header');
+globalThis.fetch = realFetch;
 console.log('TS SDK offline smoke PASS');
 """
 

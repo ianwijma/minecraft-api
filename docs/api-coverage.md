@@ -123,6 +123,20 @@ immediately. Mutations and ordinary asserted reads are never retried.
 Probes enter the request trace before invoking the SDK, so transport failures
 remain visible even when no HTTP response arrives.
 
+After integrated-world setup, a separate bounded `/server/status` prerequisite
+probe waits for the server-thread snapshot path to respond. This handles the
+short startup interval where world metadata is available while the render and
+server threads are still catching up. Only `503 SERVER_BUSY` is retried, with
+each response labeled in the trace and excluded from coverage; any other status
+fails immediately. The asserted `getServerStatus` corpus request remains a
+single attempt, and the API's 500 ms snapshot bound is unchanged.
+
+The command-event cursor case tolerates older retained events delivered after a
+new stream opens: it waits for the event whose `resultCode` matches the fresh
+command response, and independently requires successful dispatch and a sequence
+after the cursor. The resume case applies the same correlation to its next
+command. Raw command text is not copied into event payloads.
+
 The live corpus also uncovered and fixes an HTTP worker-pool starvation defect:
 long-lived SSE connections occupied both core threads while normal requests
 queued behind them. The bounded worker pool now reserves ordinary-request

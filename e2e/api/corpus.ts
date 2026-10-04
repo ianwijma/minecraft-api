@@ -96,11 +96,33 @@ export async function settleFixtureWorld(suite: Suite): Promise<void> {
     }, 'fixture completes 40 normal server ticks after chunk readiness', 120_000);
 }
 
+/**
+ * Confirm the server-thread status path is responsive before its asserted
+ * corpus case. This readiness probe is diagnostic only and earns no coverage.
+ */
+export async function awaitServerStatusReady(suite: Suite, timeoutMs = 120_000): Promise<void> {
+    await suite.poll(async () => {
+        const result = await suite.outcome('getServerStatus');
+        if (result.status === 503 && result.body.error?.code === 'SERVER_BUSY') {
+            suite.trace.at(-1)!.expectedCondition = 'server busy while awaiting status snapshot readiness';
+            return undefined;
+        }
+        assert.equal(result.status, 200, `server status readiness: ${JSON.stringify(result)}`);
+        assert.equal(result.body.running, true, 'server status readiness requires a running server');
+        return result;
+    }, result => result !== undefined, 'responsive server status snapshot', timeoutMs);
+}
+
 async function completedJob(suite: Suite, jobId: string): Promise<any> {
     return suite.poll(() => suite.request('getJob', { id: jobId }), job => {
         if (['FAILED', 'CANCELLED'].includes(job.state)) throw new Error(`job ${jobId} ${job.state}: ${JSON.stringify(job)}`);
         return job.state === 'SUCCEEDED';
     }, `job ${jobId}`, 65_000);
+}
+
+export function commandEventAfter(events: any[], cursor: number, resultCode: number): any | undefined {
+    return events.find(event => !event.gap && event.event === 'command.dispatched'
+        && Number(event.id) > cursor && event.data?.payload?.resultCode === resultCode);
 }
 
 export async function serverCorpus(suite: Suite, player: boolean): Promise<string> {
@@ -158,17 +180,25 @@ export async function serverCorpus(suite: Suite, player: boolean): Promise<strin
         } finally { await history.close(); }
         const stream = await suite.subscribe(cursor!, ['command.dispatched']);
         try {
-            await suite.command('time set 6001');
-            await suite.poll(async () => stream.events, events => events.some(event => !event.gap && Number(event.id) > cursor!), 'new command event');
-            const event = stream.events.find(event => !event.gap && Number(event.id) > cursor!);
-            suite.expect(event.event === 'command.dispatched' && event.data.payload.success, 'post-cursor command event has successful dispatch evidence');
+            const freshCommand = await suite.command('time set 6001');
+            await suite.poll(async () => stream.events,
+                events => Boolean(commandEventAfter(events, cursor!, freshCommand.resultCode)), 'new command event');
+            const event = commandEventAfter(stream.events, cursor!, freshCommand.resultCode);
+            suite.expect(Boolean(event) && event.event === 'command.dispatched'
+                && event.data.payload.success && event.data.payload.resultCode === freshCommand.resultCode,
+            'post-cursor event correlates to the successful command response');
             suite.expect(stream.events.every(item => item.gap || item.event === 'command.dispatched'), 'event-type filter excludes other events');
             suite.expect(stream.errors.length === 0, 'event stream has no transport errors');
             const resumed = await suite.subscribe(Number(event.id), ['command.dispatched']);
             try {
-                await suite.command('time set 6002');
-                await suite.poll(async () => resumed.events, events => events.some(item => !item.gap), 'resumed command event');
+                const resumedCommand = await suite.command('time set 6002');
+                await suite.poll(async () => resumed.events,
+                    events => Boolean(commandEventAfter(events, Number(event.id), resumedCommand.resultCode)), 'resumed command event');
+                const resumedEvent = commandEventAfter(resumed.events, Number(event.id), resumedCommand.resultCode);
                 suite.expect(resumed.events.every(item => item.gap || Number(item.id) > Number(event.id)), 'resume excludes previously consumed event');
+                suite.expect(Boolean(resumedEvent) && resumedEvent.data.payload.success
+                    && resumedEvent.data.payload.resultCode === resumedCommand.resultCode,
+                'resumed event correlates to the fresh successful command response');
             } finally { await resumed.close(); }
         } finally { await stream.close(); }
     });
@@ -390,6 +420,7 @@ export async function clientCorpus(suite: Suite, dedicated: Suite, client: GameP
         else await suite.request('holdKey', {}, { keyCode: 256, ticks: 1, leaseId });
     }
     await prepareWorld(suite, true);
+    await awaitServerStatusReady(suite);
     const tickLease = await serverCorpus(suite, true);
     leaseId = await inputLease(suite, leaseId);
     await suite.case('holdKey', async () => {

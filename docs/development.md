@@ -149,6 +149,16 @@ scripts/verify-published-api.sh        # publishes + compiles the example agains
   snapshot for coding agents)
 - `./gradlew validateManifest` keeps `project.manifest.json` honest (it is
   also part of `verify`).
+- The browser dashboard lives in `dashboard/`; see [`dashboard.md`](dashboard.md)
+  for local static build and hosting instructions. Dashboard CI runs
+  `npm ci`, `npm run typecheck`, `npm run test`, verifies the generated
+  48-operation catalog, and runs the Chromium browser acceptance against root
+  and subpath static exports. A separate local Chromium smoke connected the
+  static `/preview` export to a live Fabric 26.2 server; hosted and other-browser
+  compatibility remains unverified.
+- The optional GitHub Pages workflow is manually triggered and requires the
+  repository Pages source to be set to GitHub Actions. Static deployment is
+  separate from CI checks; no deployment runs on pushes or pull requests.
 
 ## Gradle notes
 

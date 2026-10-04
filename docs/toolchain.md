@@ -4,6 +4,27 @@ Verification date: **2026-09-13**. Every version below was checked against the
 official source listed. Do not bump anything without re-verification, and
 never silently change the Minecraft target (26.2) — ask the owner first.
 
+The separate browser dashboard toolchain was verified and pinned on
+**2026-10-04** in `dashboard/package.json` and `dashboard/package-lock.json`:
+
+| Component | Version | Source |
+| --- | --- | --- |
+| Node.js (CI) | 22 | [Node.js release schedule](https://github.com/nodejs/release#release-schedule) |
+| Next.js | 16.3.8 | [npm registry](https://www.npmjs.com/package/next) |
+| React / React DOM | 19.3.0 | [npm registry](https://www.npmjs.com/package/react) |
+| Tailwind CSS / PostCSS integration | 4.3.3 | [npm registry](https://www.npmjs.com/package/tailwindcss) |
+| TypeScript | 7.0.2 | [npm registry](https://www.npmjs.com/package/typescript) |
+| Playwright | 1.63.0 | [npm registry](https://www.npmjs.com/package/playwright) |
+| tsx | 4.23.15 | [npm registry](https://www.npmjs.com/package/tsx) |
+| `@types/react` | 19.3.0 | [npm registry](https://www.npmjs.com/package/@types/react) |
+| `@types/node` | 26.6.4 | [npm registry](https://www.npmjs.com/package/@types/node) |
+
+The dashboard uses a static Next.js export (`output: "export"`) with
+`NEXT_PUBLIC_BASE_PATH` for project Pages paths. Keep the lockfile in sync;
+CI installs with `npm ci`, runs unit/type checks, and exercises root and
+representative subpath exports in Chromium. The manual Pages workflow builds
+the repository-specific `/minecraft-api` path.
+
 | Component | Version | Source |
 | --- | --- | --- |
 | Minecraft (target) | **26.2** (latest release; releaseTime 2026-06-16) | https://piston-meta.mojang.com/mc/game/version_manifest_v2.json |

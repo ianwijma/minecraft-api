@@ -26,6 +26,15 @@ product. [The execution plan](docs/execution-plan.md) separates implemented
 surfaces from remaining fixture, parity, and release acceptance work. The mod
 works independently of the runner, an LLM, or an IDE.
 
+## Browser dashboard
+
+The [static browser dashboard](docs/dashboard.md) connects directly to the
+local MAPI listener. Configure its exact origin in MAPI before using a hosted
+copy; loopback and bearer-token defaults remain in force. See the
+[dashboard setup and hosting guide](dashboard/README.md). The separate
+[interactive design preview](docs/dashboard-preview/index.html) uses simulated
+data and never contacts Minecraft.
+
 ## Prerequisites
 
 - **JDK 25** (Temurin recommended). Minecraft 26.2 requires Java 25; Gradle
@@ -136,8 +145,8 @@ curl -s -H "Authorization: Bearer $MAPI_HTTP_TOKEN" http://127.0.0.1:25586/api/v
 ```
 
 Defaults: loopback-only bind, bearer token required on every endpoint,
-60 req/min rate limit, no CORS. Full details: `docs/http-api.md` and
-`docs/security.md`.
+60 req/min rate limit, and cross-origin browser access disabled until exact
+origins are configured. Full details: `docs/http-api.md` and `docs/security.md`.
 
 ## How an LLM should start working here
 

@@ -14,9 +14,13 @@ repository.
 - **Host validation.** Requests whose `Host` header is not `localhost`,
   `127.0.0.1`, or `[::1]` are rejected with 403 `FORBIDDEN_HOST` (DNS
   rebinding defense). The listener itself binds the IPv4 loopback.
-- **CORS disabled.** No `Access-Control-*` response headers are ever
-  emitted. A request carrying an `Origin` that is not the local listener
-  origin is rejected (403 `FORBIDDEN_ORIGIN`).
+- **Browser origins are opt-in.** `http.allowedOrigins` (or
+  `MAPI_HTTP_ALLOWED_ORIGINS`) accepts only exact `http(s)` origins, with no
+  wildcards. Empty is the default. Preflight is restricted to those origins
+  and the API's required methods/headers; local-network preflight permission
+  is sent only when such a request explicitly asks for it. Responses include
+  CORS headers only for an allowed origin. A foreign origin is rejected with
+  403 `FORBIDDEN_ORIGIN`.
 - **Bearer token required on every endpoint by default**, including
   `/health`. Tokens are compared with constant-time `MessageDigest.isEqual`.
   Explicitly short tokens (< 16 chars) are refused at startup.
@@ -79,7 +83,8 @@ scopes/destructive/intent select the authorization.
 
 - **In scope:** a local user/process reading basic server status without the
   token; scripts hammering the port; malicious web pages in a local browser
-  (blocked by Host/Origin checks + no CORS).
+  (blocked unless the operator explicitly allowlists that exact origin; bearer
+  authentication and operation authorization still apply).
 - **Out of scope:** remote attackers (cannot reach a loopback socket),
   malicious mods on the same server (they can call the Java API directly —
   the Java API exposes no secrets), and physical access.

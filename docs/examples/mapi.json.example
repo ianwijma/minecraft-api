@@ -4,6 +4,7 @@
   "http.token": "auto-generated-at-first-run",
   "http.rateLimitPerMinute": 60,
   "http.scopes": [],
+  "http.allowedOrigins": [],
   "client.connect.allowlist": [],
   "server.lan.enabled": false
 }

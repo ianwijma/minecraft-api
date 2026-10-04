@@ -45,10 +45,13 @@ class EventStreamTest {
     private int port;
 
     private void startServer() throws Exception {
+        startServer(new MapiConfig(true, freePort(), TOKEN, 10_000));
+    }
+
+    private void startServer(MapiConfig config) throws Exception {
         platform = new TestPlatform(LOG);
         runtime = new MapiRuntime(platform);
-        server = new HttpApiServer(
-                new MapiConfig(true, freePort(), TOKEN, 10_000), runtime, LOG);
+        server = new HttpApiServer(config, runtime, LOG);
         assertTrue(server.start());
         port = server.boundAddress().getPort();
     }
@@ -94,6 +97,24 @@ class EventStreamTest {
                 HttpResponse.BodyHandlers.ofString());
         assertEquals(401, response.statusCode());
         assertTrue(response.body().contains("\"UNAUTHORIZED\""));
+    }
+
+    @Test
+    void allowedOriginCorsHeadersArePresentOnSseResponse() throws Exception {
+        String origin = "https://dashboard.example.test";
+        startServer(new MapiConfig(true, freePort(), TOKEN, 10_000, java.util.Set.of(),
+                List.of(), false, List.of(origin)));
+        var response = client.send(HttpRequest.newBuilder()
+                .uri(URI.create("http://127.0.0.1:" + port + "/api/v1/events/stream?keepaliveSeconds=1"))
+                .timeout(Duration.ofSeconds(5)).header("Origin", origin)
+                .header("Authorization", "Bearer " + TOKEN).GET().build(),
+                HttpResponse.BodyHandlers.ofInputStream());
+        try (InputStream body = response.body()) {
+            assertEquals(200, response.statusCode());
+            assertEquals(origin, response.headers().firstValue("Access-Control-Allow-Origin").orElseThrow());
+            assertTrue(response.headers().firstValue("Vary").orElse("").contains("Origin"));
+            assertEquals("1", response.headers().firstValue("X-MAPI-Protocol-Version").orElseThrow());
+        }
     }
 
     @Test
