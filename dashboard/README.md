@@ -16,6 +16,9 @@ npm run test
 npm run build
 ```
 
+The test command uses Node's built-in test runner with one test at a time, so it
+works with the supported Node.js 22 runtime.
+
 `npm run test:browser` installs no browser by itself; install Chromium with
 `npx playwright install chromium` first. It builds root and subpath exports and
 checks their browser connection flow against a local fixture API.
