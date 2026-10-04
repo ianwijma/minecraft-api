@@ -14,6 +14,7 @@ export interface Trace {
     parameters?: any;
     body?: any;
     response?: any;
+    expectedCondition?: string;
 }
 
 export class Suite {
@@ -51,14 +52,18 @@ export class Suite {
     }
     async outcome(id: string, parameters: Record<string, any> = {}, body: any = {}): Promise<Result> {
         const operation = this.operations.get(id)!;
-        const result = await this.adapter.request(operation, parameters, body);
-        this.trace.push({ id: this.trace.length + 1, operationId: id, environment: this.environment,
-            status: result.status, parameters, body, response: result.body });
-        if (result.status >= 200 && result.status < 300) {
-            validateResponse(this.contract, operation, result.status, result.body);
-            if (this.active?.operationId === id) this.active.requestIds.push(this.trace.length);
-        }
-        return result;
+        const trace: Trace = { id: this.trace.length + 1, operationId: id, environment: this.environment, parameters, body };
+        this.trace.push(trace);
+        try {
+            const result = await this.adapter.request(operation, parameters, body);
+            trace.status = result.status;
+            trace.response = result.body?.pngBase64 ? { ...result.body, pngBase64: '[stored separately]' } : result.body;
+            if (result.status >= 200 && result.status < 300) {
+                validateResponse(this.contract, operation, result.status, result.body);
+                if (this.active?.operationId === id) this.active.requestIds.push(trace.id);
+            }
+            return result;
+        } catch (error) { trace.error = String(error); throw error; }
     }
     expect(condition: boolean, detail: string): void {
         assert.ok(condition, detail);
@@ -87,6 +92,19 @@ export class Suite {
             await new Promise(resolve => setTimeout(resolve, 100));
         }
         throw new Error(`${label} exceeded deadline; last=${JSON.stringify(latest)}`);
+    }
+    async pollRead(id: string, parameters: Record<string, any>, ready: (value: any) => boolean,
+        label: string, timeoutMs = 30_000): Promise<any> {
+        assert.equal(this.operations.get(id)?.method, 'GET', 'progress polling must never repeat mutations');
+        return this.poll(async () => {
+            const result = await this.outcome(id, parameters);
+            if (result.status === 503 && result.body.error?.code === 'SERVER_BUSY') {
+                this.trace.at(-1)!.expectedCondition = `server busy while awaiting ${label}`;
+                return undefined;
+            }
+            assert.equal(result.status, 200, `${id} progress probe: ${JSON.stringify(result)}`);
+            return result.body;
+        }, value => value !== undefined && ready(value), label, timeoutMs);
     }
     async subscribe(cursor: number, types: string[], world?: string): Promise<Subscription> {
         const trace: Trace = { id: this.trace.length + 1, operationId: 'streamEvents', environment: this.environment, parameters: { cursor, types, world } };

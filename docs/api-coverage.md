@@ -111,6 +111,18 @@ unchanged. Step-and-observe captures within the completion server-thread pass;
 its result and milestone use the actual retained observation boundary, avoiding
 drift from server-loop ticks that continue while simulation is frozen.
 
+After fixture teleportation and edits, preparation observes all nine forced
+chunks as loaded and forty normal server ticks before starting assertions.
+Only this prerequisite phase accepts an explicitly recorded `SERVER_BUSY`
+readiness probe and restarts its progress window; other errors fail. During
+asynchronous sprint, join, movement, or inventory completion, explicit GET
+progress probes also treat `SERVER_BUSY` as pending until the original polling
+deadline. Each busy response is labeled in the trace and earns no successful
+coverage. Other errors, failed assertions, and expired progress deadlines fail
+immediately. Mutations and ordinary asserted reads are never retried.
+Probes enter the request trace before invoking the SDK, so transport failures
+remain visible even when no HTTP response arrives.
+
 The live corpus also uncovered and fixes an HTTP worker-pool starvation defect:
 long-lived SSE connections occupied both core threads while normal requests
 queued behind them. The bounded worker pool now reserves ordinary-request

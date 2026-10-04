@@ -75,6 +75,24 @@ export async function prepareWorld(suite: Suite, player: boolean): Promise<void>
             result => result.entities.some((entity: any) => entity.typeId === 'minecraft:player'), 'fixture lane entity section loaded');
     }
     await suite.command('summon pig 0 65 0 {NoAI:1b,Tags:["mapi-api-fixture"]}');
+    await settleFixtureWorld(suite);
+}
+
+export async function settleFixtureWorld(suite: Suite): Promise<void> {
+    const loaded = [-16, 0, 16].flatMap(x => [-16, 0, 16].map(z => `if loaded ${x} 65 ${z}`)).join(' ');
+    await suite.poll(() => suite.command(`execute ${loaded} run time query daytime`, false),
+        result => result.success === true, 'all forced fixture chunks loaded', 120_000);
+    let firstTick: number | undefined;
+    await suite.poll(async () => suite.outcome('getTickState'), result => {
+        if (result.status === 503 && result.body.error?.code === 'SERVER_BUSY') {
+            firstTick = undefined;
+            return false;
+        }
+        assert.equal(result.status, 200, `fixture readiness: ${JSON.stringify(result)}`);
+        assert.ok(result.body.available && !result.body.frozen && !result.body.sprinting, 'fixture needs normal ticking');
+        firstTick ??= result.body.tickCount;
+        return result.body.tickCount >= firstTick! + 40;
+    }, 'fixture completes 40 normal server ticks after chunk readiness', 120_000);
 }
 
 async function completedJob(suite: Suite, jobId: string): Promise<any> {
@@ -204,7 +222,7 @@ export async function serverCorpus(suite: Suite, player: boolean): Promise<strin
     await suite.case('sprintTicks', async () => {
         const before = await suite.request('getTickState');
         await suite.request('sprintTicks', {}, { leaseId, ticks: 5 });
-        const state = await suite.poll(() => suite.request('getTickState'), state => !state.sprinting && state.tickCount > before.tickCount, 'bounded sprint completion');
+        const state = await suite.pollRead('getTickState', {}, state => !state.sprinting && state.tickCount > before.tickCount, 'bounded sprint completion');
         suite.expect(state.tickCount >= before.tickCount + 5, 'sprint advances at least the requested simulation ticks');
     });
     await suite.case('stopTickWork', async () => {
@@ -360,7 +378,7 @@ export async function clientCorpus(suite: Suite, dedicated: Suite, client: GameP
     await suite.case('createWorld', async () => {
         await suite.request('createWorld', {}, { levelId: WORLD_ID, gamemode: 'creative', seed: 20260919 }, 202);
         await worldReady(suite);
-        await suite.poll(() => suite.request('queryPlayers', { max: 1 }), result => result.players.length === 1, 'integrated player joined', 120_000);
+        await suite.pollRead('queryPlayers', { max: 1 }, result => result.players.length === 1, 'integrated player joined', 120_000);
         suite.expect((await suite.request('getWorldInfo')).phase === 'ACTIVE', 'creation admission reaches active world');
     });
     leaseId = await inputLease(suite, leaseId);
@@ -413,7 +431,7 @@ export async function clientCorpus(suite: Suite, dedicated: Suite, client: GameP
         const pickup = await suite.request('clickInventory', {}, { slot: 36, button: 0, containerInput: 'PICKUP', executionMode: 'client-logic', leaseId });
         suite.expect(pickup.dispatched && pickup.effectVerified === false, 'receipt distinguishes dispatch from server confirmation');
         await suite.request('clickInventory', {}, { slot: 37, button: 0, containerInput: 'PICKUP', executionMode: 'client-logic', leaseId });
-        const players = await suite.poll(() => suite.request('queryPlayers', { max: 1 }), result => result.players[0].inventory.some((item: any) => item.slot === 1 && item.itemId === 'minecraft:diamond' && item.count === 3), 'server inventory movement');
+        const players = await suite.pollRead('queryPlayers', { max: 1 }, result => result.players[0].inventory.some((item: any) => item.slot === 1 && item.itemId === 'minecraft:diamond' && item.count === 3), 'server inventory movement');
         suite.expect(players.players[0].inventory.some((item: any) => item.slot === 1 && item.itemId === 'minecraft:diamond'), 'server confirms moved stack in inventory slot 1');
         suite.expect((await suite.request('inspectInventory')).carriedCount === 0, 'cursor stack is empty after placement');
     });
@@ -423,7 +441,7 @@ export async function clientCorpus(suite: Suite, dedicated: Suite, client: GameP
     await suite.case('moveWaypoints', async () => {
         const before = (await suite.request('queryPlayers', { max: 1 })).players[0];
         const receipt = await suite.request('moveWaypoints', {}, { leaseId, waypoints: [{ yaw: 0, pitch: 0, ticks: 5 }] });
-        const after = (await suite.poll(() => suite.request('queryPlayers', { max: 1 }), result => result.players[0].z > before.z + 0.1, 'raw movement effect')).players[0];
+        const after = (await suite.pollRead('queryPlayers', { max: 1 }, result => result.players[0].z > before.z + 0.1, 'raw movement effect')).players[0];
         suite.expect(after.z > before.z + 0.1 && after.z < before.z + 4, 'player moved forward within bounded lane');
         suite.expect(receipt.actualMode === 'raw-input', 'movement reports raw execution without teleport fallback');
     });
@@ -451,7 +469,7 @@ export async function clientCorpus(suite: Suite, dedicated: Suite, client: GameP
     await suite.case('loadWorld', async () => {
         await suite.request('loadWorld', {}, { levelId: WORLD_ID }, 202);
         await worldReady(suite);
-        await suite.poll(() => suite.request('queryPlayers', { max: 1 }), result => result.players.length === 1, 'reloaded player joined', 120_000);
+        await suite.pollRead('queryPlayers', { max: 1 }, result => result.players.length === 1, 'reloaded player joined', 120_000);
         const world = await suite.request('getWorldInfo');
         const block = await suite.request('queryBlock', { dimension: DIMENSION, x: 3, y: 65, z: 3 });
         suite.expect(world.worldSessionId !== sessionBefore && block.blockId === 'minecraft:gold_block', 'reload has new session and persists fixture block');
@@ -471,7 +489,7 @@ export async function clientCorpus(suite: Suite, dedicated: Suite, client: GameP
     await suite.case('connectServer', async () => {
         const address = `127.0.0.1:${server.gamePort}`;
         await suite.request('connectServer', {}, { address, leaseId }, 202);
-        const result = await dedicated.poll(() => dedicated.request('queryPlayers', { max: 2 }), result => result.players.length === 1, 'authoritative multiplayer join', 120_000);
+        const result = await dedicated.pollRead('queryPlayers', { max: 2 }, result => result.players.length === 1, 'authoritative multiplayer join', 120_000);
         const player = result.players[0];
         suite.expect(Boolean(player.uuid) && Boolean(player.name), 'dedicated server observes authoritative player identity');
         await dedicated.command(`give ${player.name} minecraft:emerald 7`);
