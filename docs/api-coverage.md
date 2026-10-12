@@ -87,8 +87,12 @@ are evidence; this suite never creates visual baselines automatically.
 `api-e2e` runs all six SDK/loader combinations on every PR with Ubuntu 24.04,
 Xvfb, and software rendering. Mesa and Xvfb versions are pinned from the CI
 runner’s verified package provenance (run 37134645012); Lavapipe is installed
-explicitly and its ICD is discovered from the package manifest. It records
-installed rendering package versions and the ICD digest;
+explicitly. `scripts/ci-install-rendering.sh` aligns all Mesa packages already
+installed on the hosted runner to the pinned version, allowing downgrades when
+the runner image ships newer libraries. This preserves Mesa's exact-version
+dependencies without changing the verified rendering versions. The Lavapipe
+ICD is discovered from the package manifest. It records installed rendering
+package versions, the complete Mesa package set, and the ICD digest;
 semantic assertions are primary functional evidence. The `Complete API coverage
 (required)` aggregate is enforced by branch protection on `develop`, including
 administrator merges. It fails
