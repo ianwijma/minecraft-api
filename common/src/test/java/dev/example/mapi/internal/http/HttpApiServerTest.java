@@ -17,6 +17,7 @@ import dev.example.mapi.internal.problem.ProblemException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.BindException;
 import java.net.Socket;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -51,6 +52,16 @@ class HttpApiServerTest {
     private MapiRuntime runtime;
     private HttpApiServer server;
     private int port;
+
+    @Test
+    void onlyAddressInUseBindErrorsPermitPortRetry() {
+        assertTrue(HttpApiServer.isPortConflict(new BindException("Address already in use")));
+        assertTrue(HttpApiServer.isPortConflict(new BindException("Address already in use: bind")));
+        assertFalse(HttpApiServer.isPortConflict(new BindException("Permission denied")));
+        assertFalse(HttpApiServer.isPortConflict(new BindException("Cannot assign requested address")));
+        assertFalse(HttpApiServer.isPortConflict(new BindException()));
+        assertFalse(HttpApiServer.isPortConflict(new IOException("Address already in use")));
+    }
 
     private void startServer(MapiConfig config) {
         platform = new TestPlatform(LOG);

@@ -110,18 +110,66 @@ class MapiControlCommandTest {
     }
 
     @Test
-    void failedBindDoesNotPersistEnablementAndCanBeRetried() throws Exception {
-        int port;
+    void occupiedPortRetriesAndReportsActualConnectionWithoutChangingConfiguredPort() throws Exception {
         try (var occupied = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
-            port = occupied.getLocalPort();
+            int port = occupied.getLocalPort();
             initialize(port);
+            assertEquals(1, execute("enable"));
+            var connection = connections.getLast();
+            assertTrue(connection.running());
+            assertNotEquals(port, URI.create(connection.url()).getPort());
+            assertEquals(TOKEN, connection.token());
+            assertEquals(1, platform.saves);
+            assertEquals(port, MapiJsonConfigFile.load(configDir, Map.of(), LOG).httpPort());
+            assertEquals(1, execute("status"));
+            assertEquals(connection, connections.getLast());
+            assertEquals(1, execute("enable"));
+            assertEquals(connection, connections.getLast());
+            assertEquals(1, platform.saves);
+            assertTrue(feedback.isEmpty(), "successful fallback must not show an error");
+            try (HttpClient client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()) {
+                var request = HttpRequest.newBuilder(URI.create(connection.url() + "/api/v1/health"))
+                        .header("Authorization", "Bearer " + TOKEN).timeout(Duration.ofSeconds(5));
+                assertEquals(401, client.send(HttpRequest.newBuilder(request.build().uri())
+                        .timeout(Duration.ofSeconds(5)).build(), HttpResponse.BodyHandlers.ofString()).statusCode());
+                assertEquals(200, client.send(request.header("Origin", connection.url()).build(),
+                        HttpResponse.BodyHandlers.ofString()).statusCode());
+                assertEquals(403, client.send(request.setHeader("Origin", "http://127.0.0.1:" + port).build(),
+                        HttpResponse.BodyHandlers.ofString()).statusCode());
+            }
+            assertEquals(1, execute("disable"));
+            assertFalse(runtime.httpRunning());
+            assertEquals("http://127.0.0.1:" + port, runtime.httpConnection().url());
+        }
+    }
+
+    @Test
+    void automaticStartupKeepsConfiguredPortButExplicitEnableCanRecover() throws Exception {
+        try (var occupied = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
+            initialize(occupied.getLocalPort());
+            MapiJsonConfigFile.saveHttpEnabled(configDir, true);
+            platform.clientLifecycleListener().onClientStopping();
+            runtime = new MapiRuntime(platform);
+            platform.clientLifecycleListener().onClientStarted();
+            assertFalse(runtime.httpRunning());
+            assertEquals(1, execute("enable"));
+            assertTrue(runtime.httpRunning());
+        }
+    }
+
+    @Test
+    void failedSaveAfterPortRetryRollsBackAndCanBeRetried() throws Exception {
+        try (var occupied = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
+            initialize(occupied.getLocalPort());
+            platform.failSave = true;
             assertEquals(0, execute("enable"));
             assertFalse(runtime.httpRunning());
             assertFalse(runtime.httpConnection().enabled());
             assertEquals(0, platform.saves);
+            platform.failSave = false;
+            assertEquals(1, execute("enable"));
+            assertTrue(runtime.httpRunning());
         }
-        assertEquals(1, execute("enable"));
-        assertTrue(runtime.httpRunning());
     }
 
     @Test

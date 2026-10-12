@@ -19,6 +19,7 @@ import dev.example.mapi.internal.problem.ProblemException;
 import dev.example.mapi.internal.problem.ProblemJson;
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.BindException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -81,6 +82,7 @@ public final class HttpApiServer {
     private final HttpApiRoutes routes;
 
     private HttpServer httpServer;
+    private int listenerPort;
     private ThreadPoolExecutor workers;
     private java.util.concurrent.Semaphore streamPermits;
     private EventStreamHandler streamHandler;
@@ -94,6 +96,7 @@ public final class HttpApiServer {
         this.config = config;
         this.runtime = runtime;
         this.logger = logger;
+        this.listenerPort = config.httpPort();
         this.rateLimiter = new RateLimiter(config.rateLimitPerMinute());
         this.scopeGrants = config::grantedScopes;
         this.serverApi = new ServerApiHandler(this);
@@ -139,6 +142,17 @@ public final class HttpApiServer {
      * @return true if the listener is running
      */
     public boolean start() {
+        return start(false);
+    }
+
+    /**
+     * Starts the listener, optionally retrying an occupied port once with an
+     * OS-assigned loopback port. Other failures are reported without retrying.
+     *
+     * @param retryPortConflict whether an occupied configured port may be replaced
+     * @return true if the listener is running
+     */
+    public boolean start(boolean retryPortConflict) {
         AtomicInteger counter = new AtomicInteger();
         ThreadFactory factory = task -> {
             Thread thread = new Thread(task, "mapi-http-" + counter.incrementAndGet());
@@ -161,14 +175,24 @@ public final class HttpApiServer {
             // would make 127.0.0.1 clients unable to connect. 127.0.0.1 is
             // deterministic on every platform and matches the documented
             // endpoint URLs.
-            httpServer = HttpServer.create(new InetSocketAddress(InetAddress.getByName("127.0.0.1"),
-                    config.httpPort()), BACKLOG);
+            InetAddress loopback = InetAddress.getByName("127.0.0.1");
+            try {
+                httpServer = HttpServer.create(new InetSocketAddress(loopback, config.httpPort()), BACKLOG);
+            } catch (IOException e) {
+                if (!retryPortConflict || !isPortConflict(e)) {
+                    throw e;
+                }
+                logger.info("MAPI HTTP API: port {} is in use; retrying with an available loopback port",
+                        config.httpPort());
+                httpServer = HttpServer.create(new InetSocketAddress(loopback, 0), BACKLOG);
+            }
         } catch (IOException e) {
-            logger.error("MAPI HTTP API: failed to bind 127.0.0.1:{} ({}). Port conflict? Change http.port or "
-                    + "stop the other listener. The game will keep running.", config.httpPort(), e.toString());
+            logger.error("MAPI HTTP API: failed to start listener for 127.0.0.1:{} ({}). "
+                    + "The game will keep running.", config.httpPort(), e.toString());
             shutdownWorkers();
             return false;
         }
+        listenerPort = httpServer.getAddress().getPort();
         httpServer.createContext("/", this::dispatch);
         streamPermits = new java.util.concurrent.Semaphore(EventStreamHandler.MAX_CONCURRENT_STREAMS);
         streamHandler = new EventStreamHandler(runtime.eventBus());
@@ -176,12 +200,17 @@ public final class HttpApiServer {
         httpServer.start();
         if (config.authRequired()) {
             logger.info("MAPI HTTP API listening on http://127.0.0.1:{} (loopback only, bearer token required)",
-                    config.httpPort());
+                    listenerPort);
         } else {
             logger.warn("MAPI HTTP API listening on http://127.0.0.1:{} (loopback only, "
-                    + "AUTHENTICATION DISABLED - blank http.token)", config.httpPort());
+                    + "AUTHENTICATION DISABLED - blank http.token)", listenerPort);
         }
         return true;
+    }
+
+    static boolean isPortConflict(IOException error) {
+        return error instanceof BindException && error.getMessage() != null
+                && error.getMessage().toLowerCase(Locale.ROOT).contains("address already in use");
     }
 
     /**
@@ -607,8 +636,8 @@ public final class HttpApiServer {
     }
 
     private boolean isAllowedOrigin(String origin) {
-        String expected = "http://localhost:" + config.httpPort();
-        String alt = "http://127.0.0.1:" + config.httpPort();
+        String expected = "http://localhost:" + listenerPort;
+        String alt = "http://127.0.0.1:" + listenerPort;
         return origin.equals(expected) || origin.equals(alt) || configuredOrigin(origin);
     }
 

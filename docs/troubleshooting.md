@@ -28,9 +28,12 @@ Run `./gradlew formatApply`, inspect the diff, then `./gradlew verify`.
 
 ## Runtime (dev runs)
 
-**`MAPI HTTP API: failed to bind 127.0.0.1:25586`**
-Port in use. Change `http.port` or stop the other listener; the game keeps
-running without the API.
+**`MAPI HTTP API: failed to start listener for 127.0.0.1:25586`**
+Check the logged cause. For a port in use during automatic startup, run
+`/mapi enable` to retry on a free loopback port; the returned connection URL
+shows the actual port. Change `http.port` or stop the other listener if you
+need a fixed port. Other failures are reported without a port retry, and
+the game keeps running without the API.
 
 **`MAPI: HTTP API not started: ...`**
 The config refused startup: missing token, token < 16 chars, invalid port.
