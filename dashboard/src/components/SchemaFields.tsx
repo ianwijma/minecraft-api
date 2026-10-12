@@ -3,10 +3,11 @@
 import { useMemo, useState, type ChangeEvent } from "react";
 import type { JsonSchema, Operation } from "../lib/catalog";
 import { defaultFor, formSchema, initializeFormValues, isRequired, resolvedSchema, validateFormValue, type FormValues } from "../lib/forms";
+import { HoldKeyControl } from "./HoldKeyControl";
 
 type Props = { operation: Operation; initialValues?: FormValues; onValuesChange?: (values: FormValues) => void };
 
-function ValueControl({ schema: inputSchema, value, onChange, label }: { schema: JsonSchema; value: unknown; onChange: (next: unknown) => void; label: string }) {
+function ValueControl({ schema: inputSchema, value, onChange, label, holdKey = false }: { schema: JsonSchema; value: unknown; onChange: (next: unknown) => void; label: string; holdKey?: boolean }) {
   const [newName, setNewName] = useState("");
   const [newType, setNewType] = useState("string");
   const [dynamicError, setDynamicError] = useState("");
@@ -24,7 +25,7 @@ function ValueControl({ schema: inputSchema, value, onChange, label }: { schema:
         return <div className="schema-field" key={key}>
           <div className="schema-field-label">{!required && <label><input type="checkbox" aria-label={`Include ${key}`} checked={included} onChange={(event) => { if (event.target.checked) write(key, defaultFor(child)); else { const next = { ...objectValue }; delete next[key]; onChange(next); } }} /> Include</label>}
             <strong>{key}</strong><span>{required ? "Required" : "Optional"}</span></div>
-          {included && <ValueControl schema={child} label={`${label}.${key}`} value={objectValue[key] ?? defaultFor(child)} onChange={(next) => write(key, next)} />}
+          {included && (holdKey && key === "keyCode" ? <HoldKeyControl label={`${label}.${key}`} value={objectValue[key]} onChange={(next) => write(key, next)} /> : <ValueControl schema={child} label={`${label}.${key}`} value={objectValue[key] ?? defaultFor(child)} onChange={(next) => write(key, next)} />)}
           {child.description && <small className="schema-description">{child.description}</small>}
         </div>;
       })}
@@ -76,7 +77,7 @@ export function SchemaFields({ operation, initialValues = {}, onValuesChange }: 
   const errors: string[] = [];
   try { validateFormValue(schema, values, "Request"); } catch (error) { errors.push(error instanceof Error ? error.message : "Check the request fields."); }
   const hasControls = Object.keys(schema.properties ?? {}).length > 0 || schema.additionalProperties !== false;
-  return <div className="schema-fields">{hasControls ? <ValueControl schema={schema} label="Request" value={values} onChange={set} /> : <p className="schema-no-fields">No request fields are needed for this operation.</p>}
+  return <div className="schema-fields">{hasControls ? <ValueControl schema={schema} label="Request" value={values} onChange={set} holdKey={operation.id === "holdKey"} /> : <p className="schema-no-fields">No request fields are needed for this operation.</p>}
     {errors.length > 0 && <p className="schema-validation" role="status">{errors[0]}</p>}
   </div>;
 }

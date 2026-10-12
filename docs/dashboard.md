@@ -46,6 +46,16 @@ instead of surfacing as unhandled browser errors.
 
 ## Build and hosting
 
+The Hold key action offers a **Key code / Character** toggle. Character mode
+converts a single A–Z letter (case-insensitive), digit, space, or unshifted
+punctuation key (`' , - . / ; = [ \ ]` and backtick) to its GLFW key code and
+shows the result. Switching modes preserves representable keys; special key
+codes require a new character when switching to Character mode. Empty,
+multiple, shifted-symbol, or unsupported characters cannot be run. This is a
+key hold without Shift, not text entry or keyboard-layout translation. Requests,
+drafts, and presets continue to store the numeric `keyCode`; use Key code mode
+for special keys such as Enter or arrow keys.
+
 See [`../dashboard/README.md`](../dashboard/README.md) for local development,
 GitHub Pages, and Vercel setup. Both use static export. The Pages workflow is
 manual and publishing also requires selecting Actions as the Pages source in

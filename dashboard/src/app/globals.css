@@ -147,6 +147,8 @@ dialog::backdrop { background:#17271fb3; backdrop-filter:blur(2px); }
 .payload-image img { display:block; max-width:100%; max-height:160px; object-fit:contain; }
 .payload-empty,.action-history-empty { color:var(--muted); font-size:11px; }
 .schema-field { margin:12px 0; }
+.key-input-toggle { display:flex; gap:6px; margin-bottom:8px; }
+.key-input-toggle button[aria-pressed="true"] { background:var(--green); color:white; }
 .schema-field-label { display:flex; justify-content:space-between; align-items:baseline; gap:7px; margin-bottom:5px; font-size:12px; font-weight:650; }
 .schema-description { margin:4px 0; font-size:11px; }
 .schema-dynamic-field,.schema-array { padding:11px; border:1px solid var(--line); border-radius:7px; }

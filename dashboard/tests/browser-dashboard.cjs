@@ -225,6 +225,47 @@ async function checkStaticExport(browser, label, staticDir, basePath, screenshot
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.getByRole('button', { name: 'Close action' }).click();
 
+    await openOperation(page, 'holdKey');
+    const holdDialog = page.getByRole('dialog');
+    await holdDialog.getByLabel('Request.keyCode', { exact: true }).fill('87');
+    await holdDialog.getByLabel('Request.ticks', { exact: true }).fill('5');
+    await holdDialog.getByRole('button', { name: 'Character', exact: true }).click();
+    const characterInput = holdDialog.getByLabel('Key character', { exact: true });
+    if (await characterInput.inputValue() !== 'w') throw new Error('Key code did not convert back to a character');
+    await characterInput.fill('W');
+    await holdDialog.getByText('Key code: 87', { exact: true }).waitFor();
+    const holdPath = '/api/v1/client/actions/hold-key';
+    const holdCountBefore = postCalls(fixture.state.calls, holdPath).length;
+    const holdRun = holdDialog.getByRole('button', { name: 'Run action', exact: true });
+    await holdRun.click();
+    await waitFor(() => postCalls(fixture.state.calls, holdPath).length === holdCountBefore + 1, 'character hold-key request');
+    const holdCall = postCalls(fixture.state.calls, holdPath).at(-1);
+    if (holdCall.body.keyCode !== 87 || holdCall.body.ticks !== 5 || Object.hasOwn(holdCall.body, 'character')) throw new Error('Character hold did not send the numeric key code');
+    for (const invalid of ['', 'ww', 'é', '!']) {
+      await characterInput.fill(invalid);
+      await holdRun.click();
+      if (postCalls(fixture.state.calls, holdPath).length !== holdCountBefore + 1) throw new Error('Invalid character dispatched a hold-key request');
+    }
+    await characterInput.fill(' ');
+    await holdDialog.getByText('Key code: 32 (Space)', { exact: true }).waitFor();
+    await holdDialog.getByRole('button', { name: 'Key code', exact: true }).click();
+    if (await holdDialog.getByLabel('Request.keyCode', { exact: true }).inputValue() !== '32') throw new Error('Switching to key code lost the converted character');
+    await holdDialog.getByLabel('Request.keyCode', { exact: true }).fill('257');
+    await holdRun.click();
+    await waitFor(() => postCalls(fixture.state.calls, holdPath).length === holdCountBefore + 2, 'special-key hold request');
+    if (postCalls(fixture.state.calls, holdPath).at(-1).body.keyCode !== 257) throw new Error('Special numeric key codes stopped working');
+    await holdDialog.getByRole('button', { name: 'Character', exact: true }).click();
+    if (await characterInput.inputValue() !== '') throw new Error('A special key code became a printable character');
+    await holdRun.click();
+    if (postCalls(fixture.state.calls, holdPath).length !== holdCountBefore + 2) throw new Error('An unrepresentable key dispatched in character mode');
+    await characterInput.fill('w');
+    await holdDialog.getByRole('button', { name: 'Save preset', exact: true }).click();
+    await holdDialog.getByText('Preset saved.', { exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Close action' }).click();
+    await openOperation(page, 'holdKey');
+    if (await page.getByRole('dialog').getByLabel('Request.keyCode', { exact: true }).inputValue() !== '87') throw new Error('Converted numeric key draft did not survive reopening');
+    await page.getByRole('button', { name: 'Close action' }).click();
+
     fixture.state.mode = 'delete-error';
     await openOperation(page, 'deleteWorld');
     const deleteDialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Delete world', exact: true }) });
