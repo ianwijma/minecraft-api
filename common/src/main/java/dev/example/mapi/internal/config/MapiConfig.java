@@ -24,6 +24,8 @@ import org.slf4j.Logger;
  *   <tr><td>http.scopes</td><td>MAPI_HTTP_SCOPES</td><td>all</td><td>Comma-separated granted scopes (spec §14); absent/blank grants the full set</td></tr>
  *   <tr><td>http.allowedOrigins</td><td>MAPI_HTTP_ALLOWED_ORIGINS</td><td>https://mapi.wij.ma</td><td>Exact browser origins permitted to use CORS</td></tr>
  *   <tr><td>client.connect.allowlist</td><td>MAPI_CLIENT_CONNECT_ALLOWLIST</td><td>empty (deny all)</td><td>Exact requested names and explicit final IP:port pins, including bracketed IPv6 (spec §9.2)</td></tr>
+ *   <tr><td>http.allowedOriginsEnabled</td><td>MAPI_HTTP_ALLOWED_ORIGINS_ENABLED</td><td>true</td><td>Enforce browser-origin membership</td></tr>
+ *   <tr><td>client.connect.allowlistEnabled</td><td>MAPI_CLIENT_CONNECT_ALLOWLIST_ENABLED</td><td>true</td><td>Enforce Minecraft target membership</td></tr>
  *   <tr><td>server.lan.enabled</td><td>MAPI_SERVER_LAN_ENABLED</td><td>false</td><td>Whether integrated-server LAN publication is permitted (spec §9.3)</td></tr>
  * </table>
  *
@@ -34,7 +36,15 @@ public record MapiConfig(
         boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute,
         java.util.Set<dev.example.mapi.internal.operation.Scope> httpScopes,
         java.util.List<String> clientConnectAllowlist, boolean serverLanEnabled,
-        java.util.List<String> httpAllowedOrigins) {
+        java.util.List<String> httpAllowedOrigins, boolean clientConnectAllowlistEnabled, boolean httpAllowedOriginsEnabled) {
+
+    public MapiConfig(boolean httpEnabled, int httpPort, String httpToken, int rateLimitPerMinute,
+            java.util.Set<dev.example.mapi.internal.operation.Scope> httpScopes,
+            java.util.List<String> clientConnectAllowlist, boolean serverLanEnabled,
+            java.util.List<String> httpAllowedOrigins) {
+        this(httpEnabled, httpPort, httpToken, rateLimitPerMinute, httpScopes,
+                clientConnectAllowlist, serverLanEnabled, httpAllowedOrigins, true, true);
+    }
 
     /** Default hosted dashboard origin; operators can remove it from config. */
     public static final java.util.List<String> DEFAULT_ALLOWED_ORIGINS =
@@ -131,7 +141,9 @@ public record MapiConfig(
                 false, logger);
 
         return fromValues(enabled, port, token, rateLimit, scopes, allowlist, lanEnabled,
-                origins, env, logger);
+                origins, readBool(file, env, "client.connect.allowlistEnabled", "MAPI_CLIENT_CONNECT_ALLOWLIST_ENABLED", true, logger),
+                readBool(file, env, "http.allowedOriginsEnabled", "MAPI_HTTP_ALLOWED_ORIGINS_ENABLED", true, logger),
+                env, logger);
     }
 
     /**
@@ -183,6 +195,22 @@ public record MapiConfig(
             java.util.Set<dev.example.mapi.internal.operation.Scope> scopes,
             java.util.List<String> allowlist, boolean lanEnabled, java.util.List<String> origins,
             Map<String, String> env, Logger logger) {
+        return fromValues(enabled, port, token, rateLimit, scopes, allowlist, lanEnabled,
+                origins, true, true, env, logger);
+    }
+
+    /** Validates all config values, including the allow-list enforcement switch. */
+    public static MapiConfig fromValues(
+            boolean enabled, int port, String token, int rateLimit,
+            java.util.Set<dev.example.mapi.internal.operation.Scope> scopes,
+            java.util.List<String> allowlist, boolean lanEnabled, java.util.List<String> origins,
+            boolean clientConnectAllowlistEnabled, boolean httpAllowedOriginsEnabled, Map<String, String> env, Logger logger) {
+        if (env.containsKey("MAPI_CLIENT_CONNECT_ALLOWLIST_ENABLED")) {
+            clientConnectAllowlistEnabled = readBooleanText(env.get("MAPI_CLIENT_CONNECT_ALLOWLIST_ENABLED"), "MAPI_CLIENT_CONNECT_ALLOWLIST_ENABLED");
+        }
+        if (env.containsKey("MAPI_HTTP_ALLOWED_ORIGINS_ENABLED")) {
+            httpAllowedOriginsEnabled = readBooleanText(env.get("MAPI_HTTP_ALLOWED_ORIGINS_ENABLED"), "MAPI_HTTP_ALLOWED_ORIGINS_ENABLED");
+        }
         if (env.containsKey("MAPI_HTTP_ENABLED")) {
             enabled = readBooleanText(env.get("MAPI_HTTP_ENABLED"), "MAPI_HTTP_ENABLED");
         }
@@ -233,7 +261,7 @@ public record MapiConfig(
             }
         }
         return new MapiConfig(enabled, port, token == null ? null : token.trim(), rateLimit, scopes,
-                allowlist, lanEnabled, origins);
+                allowlist, lanEnabled, origins, clientConnectAllowlistEnabled, httpAllowedOriginsEnabled);
     }
 
     /**
@@ -247,21 +275,49 @@ public record MapiConfig(
 
     /** Updates only the enabled flag in the fallback properties config. */
     public static void saveHttpEnabled(Path configDir, boolean enabled) {
+        saveValues(configDir, Map.of("http.enabled", Boolean.toString(enabled)));
+    }
+
+    /** Saves allow-list controls while preserving unrelated properties. */
+    public static void saveAllowLists(Path configDir, MapiConfig config) {
+        saveValues(configDir, Map.of("client.connect.allowlistEnabled", Boolean.toString(config.clientConnectAllowlistEnabled()),
+                "http.allowedOriginsEnabled", Boolean.toString(config.httpAllowedOriginsEnabled()),
+                "http.allowedOrigins", String.join(",", config.httpAllowedOrigins()),
+                "client.connect.allowlist", String.join(",", config.clientConnectAllowlist())));
+    }
+
+    private static void saveValues(Path configDir, Map<String, String> updates) {
         Path file = configDir.resolve(CONFIG_FILE_NAME);
         Properties values = new Properties();
+        Path temporary = null;
         try {
             if (Files.exists(file)) {
                 try (InputStream in = Files.newInputStream(file)) {
                     values.load(in);
                 }
             }
-            values.setProperty("http.enabled", Boolean.toString(enabled));
+            updates.forEach(values::setProperty);
             Files.createDirectories(configDir);
-            try (var out = Files.newOutputStream(file)) {
+            temporary = Files.createTempFile(configDir, ".mapi-", ".properties.tmp");
+            try (var out = Files.newOutputStream(temporary)) {
                 values.store(out, "MAPI configuration");
             }
+            try {
+                Files.move(temporary, file, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+                Files.move(temporary, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (IOException e) {
-            throw new MapiConfigException("Failed to save HTTP enabled flag");
+            throw new MapiConfigException("Failed to save MAPI configuration");
+        } finally {
+            if (temporary != null) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException ignored) {
+                    // Preserve the original save outcome if temporary cleanup fails.
+                }
+            }
         }
     }
 
@@ -408,7 +464,7 @@ public record MapiConfig(
 
     private static final java.util.Set<String> KNOWN_KEYS = java.util.Set.of(
             "http.enabled", "http.port", "http.token", "http.rateLimitPerMinute", "http.scopes",
-            "client.connect.allowlist", "server.lan.enabled", "http.allowedOrigins");
+            "client.connect.allowlist", "server.lan.enabled", "http.allowedOrigins", "client.connect.allowlistEnabled", "http.allowedOriginsEnabled");
 
     private static String effective(Properties file, Map<String, String> env, String fileKey, String envKey) {
         String fromEnv = env.get(envKey);

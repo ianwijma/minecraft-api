@@ -131,7 +131,10 @@ A runnable consumer example lives in `example-consumer/`.
 
 Client and dedicated console API controls: `/mapi status` shows the local connection URL and
 bearer token (click to copy on clients); `/mapi enable` starts the API and saves enablement;
-`/mapi disable` stops it and saves disablement. See [in-game controls](docs/http-api.md#in-game-controls).
+`/mapi disable` stops it and saves disablement.
+`/mapi allowedOrigins` manages browser sources and `/mapi allowList` manages Minecraft
+connection targets; both support `add`, `remove`, `enable`, and `disable`, apply
+immediately, and persist across restarts. See [in-game controls](docs/http-api.md#in-game-controls).
 
 The HTTP API is **off by default**. To enable it through environment variables for a session:
 

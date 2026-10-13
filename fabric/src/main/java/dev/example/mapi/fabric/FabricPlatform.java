@@ -80,6 +80,11 @@ final class FabricPlatform implements MapiPlatform {
     }
 
     @Override
+    public void saveAllowLists(dev.example.mapi.internal.config.MapiConfig config) {
+        dev.example.mapi.internal.config.MapiJsonConfigFile.saveAllowLists(configDir(), config);
+    }
+
+    @Override
     public dev.example.mapi.internal.config.MapiConfig loadConfig(java.nio.file.Path configDir,
             java.util.Map<String, String> env, org.slf4j.Logger logger) {
         return FabricConfig.load(configDir, env, logger);

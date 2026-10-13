@@ -197,6 +197,107 @@ class MapiControlCommandTest {
         assertTrue(feedback.stream().noneMatch(text -> text.contains("short-secret")));
     }
 
+    private int listCommand(String list, String action, String site) {
+        return MapiControlCommand.executeAllowList(runtime, list, action, site, feedback::add);
+    }
+
+    private int browserStatus(String origin, boolean preflight) throws Exception {
+        try (var client = HttpClient.newHttpClient()) {
+            var request = HttpRequest.newBuilder(URI.create(runtime.httpConnection().url() + "/api/v1/health"))
+                    .header("Origin", origin).header("Authorization", "Bearer " + TOKEN);
+            if (preflight) request.method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+                    .header("Access-Control-Request-Method", "GET");
+            var response = client.send(request.build(), HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200 || response.statusCode() == 204) {
+                assertEquals(origin, response.headers().firstValue("Access-Control-Allow-Origin").orElseThrow());
+            }
+            return response.statusCode();
+        }
+    }
+
+    @Test
+    void browserCommandsApplyToRunningListenerAndPersistIndependently() throws Exception {
+        initialize(freePort());
+        assertEquals(1, execute("enable"));
+        var connection = runtime.httpConnection();
+        String origin = "https://new.example";
+        assertEquals(403, browserStatus(origin, false));
+        assertEquals(1, listCommand("allowedOrigins", "add", "HTTPS://NEW.EXAMPLE:443"));
+        assertEquals(1, listCommand("allowedOrigins", "add", origin));
+        assertEquals(1, runtime.config().httpAllowedOrigins().stream().filter(origin::equals).count());
+        assertEquals(200, browserStatus(origin, false));
+        assertEquals(204, browserStatus(origin, true));
+        assertEquals(1, listCommand("allowedOrigins", "remove", origin));
+        assertEquals(403, browserStatus(origin, true));
+        assertEquals(1, listCommand("allowedOrigins", "disable", null));
+        assertEquals(200, browserStatus(origin, false));
+        assertEquals(204, browserStatus(origin, true));
+        assertEquals(403, browserStatus("null", true));
+        assertTrue(runtime.config().clientConnectAllowlistEnabled());
+        try (var client = HttpClient.newHttpClient()) {
+            var response = client.send(HttpRequest.newBuilder(URI.create(connection.url() + "/api/v1/health"))
+                    .header("Origin", origin).build(), HttpResponse.BodyHandlers.ofString());
+            assertEquals(401, response.statusCode(), "disabling origin enforcement preserves authentication");
+        }
+        assertEquals(connection, runtime.httpConnection(), "list commands keep the listener and credentials");
+        platform.clientLifecycleListener().onClientStopping();
+        runtime = new MapiRuntime(platform);
+        platform.clientLifecycleListener().onClientStarted();
+        assertEquals(200, browserStatus(origin, false));
+        assertFalse(runtime.config().httpAllowedOriginsEnabled());
+        assertEquals(1, listCommand("allowedOrigins", "enable", null));
+        assertEquals(403, browserStatus(origin, false));
+        var saved = MapiJsonConfigFile.load(configDir, Map.of(), LOG);
+        assertTrue(saved.httpAllowedOriginsEnabled());
+        assertTrue(saved.clientConnectAllowlistEnabled());
+        assertEquals(TOKEN, saved.httpToken());
+        assertEquals(42L, ((Map<?, ?>) JsonReader.parse(Files.readString(configDir.resolve("mapi.json")))).get("future.option"));
+    }
+
+    @Test
+    void targetCommandsWorkWithHttpOffAndSurviveHttpAndProcessRestarts() throws Exception {
+        initialize(freePort());
+        assertEquals(1, listCommand("allowList", "add", "PLAY.EXAMPLE:25565"));
+        assertEquals(1, listCommand("allowList", "add", "play.example:25565"));
+        assertEquals(1, listCommand("allowList", "add", "[2001:db8::1]:25565"));
+        assertEquals(1, listCommand("allowList", "disable", null));
+        assertFalse(runtime.httpRunning());
+        assertEquals(1, execute("enable"));
+        assertFalse(runtime.config().clientConnectAllowlistEnabled());
+        assertTrue(runtime.config().httpAllowedOriginsEnabled());
+        assertEquals(List.of("play.example:25565", "[2001:db8::1]:25565"), runtime.config().clientConnectAllowlist());
+        assertEquals(1, execute("disable"));
+        assertEquals(1, execute("enable"));
+        assertFalse(runtime.config().clientConnectAllowlistEnabled());
+        assertEquals(1, listCommand("allowList", "remove", "PLAY.EXAMPLE:25565"));
+        assertEquals(1, listCommand("allowList", "enable", null));
+        platform.clientLifecycleListener().onClientStopping();
+        runtime = new MapiRuntime(platform);
+        platform.clientLifecycleListener().onClientStarted();
+        assertTrue(runtime.config().clientConnectAllowlistEnabled());
+        assertEquals(List.of("[2001:db8::1]:25565"), runtime.config().clientConnectAllowlist());
+    }
+
+    @Test
+    void invalidEntriesAndFailedSavesLeaveDiskAndRuntimeUnchanged() throws Exception {
+        initialize(freePort());
+        assertEquals(1, execute("enable"));
+        var before = runtime.config();
+        String disk = Files.readString(configDir.resolve("mapi.json"));
+        for (String site : List.of("bad host!", "host:65536", "host:0", "a,b")) {
+            assertEquals(0, listCommand("allowList", "add", site));
+        }
+        for (String site : List.of("https://example/path", "https://*.example", "null", "https://a,https://b")) {
+            assertEquals(0, listCommand("allowedOrigins", "add", site));
+        }
+        platform.failSave = true;
+        assertEquals(0, listCommand("allowedOrigins", "disable", null));
+        assertEquals(0, listCommand("allowList", "add", "play.example"));
+        assertEquals(before, runtime.config());
+        assertEquals(disk, Files.readString(configDir.resolve("mapi.json")));
+        assertTrue(feedback.stream().noneMatch(text -> text.contains(TOKEN)));
+    }
+
     private final class ConfigPlatform extends MapiRuntimeTest.TestPlatform {
         int saves;
         boolean failSave;
@@ -213,6 +314,12 @@ class MapiControlCommandTest {
         @Override
         public MapiConfig loadConfig(Path dir, Map<String, String> env, Logger logger) {
             return MapiJsonConfigFile.load(dir, env, logger);
+        }
+
+        @Override
+        public void saveAllowLists(MapiConfig config) {
+            if (failSave) throw new MapiConfigException("simulated write failure");
+            MapiJsonConfigFile.saveAllowLists(configDir, config);
         }
 
         @Override

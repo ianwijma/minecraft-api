@@ -14,7 +14,7 @@ repository.
 - **Host validation.** Requests whose `Host` header is not `localhost`,
   `127.0.0.1`, or `[::1]` are rejected with 403 `FORBIDDEN_HOST` (DNS
   rebinding defense). The listener itself binds the IPv4 loopback.
-- **Browser origins use an exact allowlist.** The hosted dashboard origin
+- **Browser origins use an exact allowlist by default.** The hosted dashboard origin
   `https://mapi.wij.ma` is included in new configs by default and can be
   removed. `http.allowedOrigins` (or `MAPI_HTTP_ALLOWED_ORIGINS`) accepts only
   exact `http(s)` origins, with no wildcards. Preflight is restricted to those
@@ -149,3 +149,9 @@ thread is never blocked by network work.
 If a token leaks: generate a new one
 (`python3 -c "import secrets; print(secrets.token_urlsafe(32))"`), update the
 env/config, restart the server session. Tokens are per-instance by design.
+
+Local `/mapi allowedOrigins disable` and `/mapi allowList disable` commands can
+independently bypass browser-origin or Minecraft target membership checks. Their
+`enable` commands restore enforcement with the retained entries. These explicit
+operator settings persist in native config; they do not disable bearer-token,
+scope, lease, or loopback protections. See [in-game controls](http-api.md#in-game-controls).

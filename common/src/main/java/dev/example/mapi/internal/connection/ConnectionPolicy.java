@@ -29,11 +29,15 @@ public final class ConnectionPolicy {
     private ConnectionPolicy() {}
 
     /** Immutable authorization and allowlist snapshot propagated with API work. */
-    public record RequestContext(Set<Scope> grants, List<String> allowlist, Runnable requireControl) {
+    public record RequestContext(Set<Scope> grants, List<String> allowlist, Runnable requireControl, boolean allowlistEnabled) {
         public RequestContext {
             grants = Set.copyOf(Objects.requireNonNull(grants, "grants"));
             allowlist = List.copyOf(Objects.requireNonNull(allowlist, "allowlist"));
             requireControl = requireControl == null ? () -> {} : requireControl;
+        }
+
+        public RequestContext(Set<Scope> grants, List<String> allowlist, Runnable requireControl) {
+            this(grants, allowlist, requireControl, true);
         }
 
         public RequestContext(Set<Scope> grants, List<String> allowlist) {
@@ -132,7 +136,7 @@ public final class ConnectionPolicy {
         }
         requireConnectScope(context);
         context.requireControl().run();
-        if (!matchesRequestedTarget(host, port, context.allowlist())) {
+        if (context.allowlistEnabled() && !matchesRequestedTarget(host, port, context.allowlist())) {
             throw new ProblemException(ProblemCode.INSUFFICIENT_SCOPE,
                     "requested connection target is not allowed",
                     Map.of("host", normalizeHost(host), "port", port));
@@ -180,7 +184,7 @@ public final class ConnectionPolicy {
             return;
         }
         RequestContext context = REQUEST_CONTEXT.get();
-        if (context == null || !matchesRequestedTarget(host, port, context.allowlist())) {
+        if (context == null || (context.allowlistEnabled() && !matchesRequestedTarget(host, port, context.allowlist()))) {
             throw new IllegalStateException("MAPI connection policy rejected resolver target "
                     + normalizeHost(host) + ":" + port);
         }
@@ -198,7 +202,7 @@ public final class ConnectionPolicy {
         RequestContext context = REQUEST_CONTEXT.get();
         String normalizedIp = normalizeIp(ip);
         if (context == null || session.lastHost == null || session.lastPort != port
-                || !hasExactIpPort(normalizedIp, port, context.allowlist())) {
+                || (context.allowlistEnabled() && !hasExactIpPort(normalizedIp, port, context.allowlist()))) {
             throw new IllegalStateException("MAPI connection policy rejected resolved destination "
                     + normalizedIp + ":" + port);
         }

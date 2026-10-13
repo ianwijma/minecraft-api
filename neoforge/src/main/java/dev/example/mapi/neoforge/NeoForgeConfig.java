@@ -61,6 +61,14 @@ public final class NeoForgeConfig {
             .defineList("client.connect.allowlist", List.of(), entry -> entry instanceof String s
                     && s.matches("(?:[A-Za-z0-9.\\-]+|\\[[0-9A-Fa-f:.]+\\])(:[0-9]{1,5})?"));
 
+    private static final ModConfigSpec.BooleanValue CONNECT_ALLOWLIST_ENABLED = BUILDER
+            .comment("Enforce Minecraft connection allow list")
+            .define("client.connect.allowlistEnabled", true);
+
+    private static final ModConfigSpec.BooleanValue ORIGINS_ENABLED = BUILDER
+            .comment("Enforce browser-origin allow list")
+            .define("http.allowedOriginsEnabled", true);
+
     private static final ModConfigSpec.BooleanValue SERVER_LAN = BUILDER
             .comment("Whether integrated-server LAN publication is permitted (spec §9.3)")
             .define("server.lan.enabled", false);
@@ -95,7 +103,7 @@ public final class NeoForgeConfig {
                 allowlist,
                 SERVER_LAN.get(),
                 origins,
-                env, logger);
+                CONNECT_ALLOWLIST_ENABLED.get(), ORIGINS_ENABLED.get(), env, logger);
     }
 
     /** Persists the HTTP enabled flag using NeoForge's native config. */
@@ -106,6 +114,27 @@ public final class NeoForgeConfig {
             SPEC.save();
         } catch (RuntimeException e) {
             HTTP_ENABLED.set(previous);
+            throw e;
+        }
+    }
+
+    /** Persists allow-list changes using NeoForge's native config. */
+    public static void saveAllowLists(MapiConfig config) {
+        boolean previousEnabled = CONNECT_ALLOWLIST_ENABLED.get();
+        boolean previousOriginsEnabled = ORIGINS_ENABLED.get();
+        var previousOrigins = HTTP_ALLOWED_ORIGINS.get();
+        var previousTargets = CONNECT_ALLOWLIST.get();
+        try {
+            CONNECT_ALLOWLIST_ENABLED.set(config.clientConnectAllowlistEnabled());
+            ORIGINS_ENABLED.set(config.httpAllowedOriginsEnabled());
+            HTTP_ALLOWED_ORIGINS.set(config.httpAllowedOrigins());
+            CONNECT_ALLOWLIST.set(config.clientConnectAllowlist());
+            SPEC.save();
+        } catch (RuntimeException e) {
+            CONNECT_ALLOWLIST_ENABLED.set(previousEnabled);
+            ORIGINS_ENABLED.set(previousOriginsEnabled);
+            HTTP_ALLOWED_ORIGINS.set(previousOrigins);
+            CONNECT_ALLOWLIST.set(previousTargets);
             throw e;
         }
     }

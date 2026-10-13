@@ -1,5 +1,6 @@
 package dev.example.mapi.neoforge.client;
 
+import com.mojang.brigadier.arguments.StringArgumentType;
 import dev.example.mapi.api.MapiApi;
 import dev.example.mapi.internal.MapiRuntime;
 import dev.example.mapi.internal.command.MapiControlCommand;
@@ -25,6 +26,22 @@ public final class NeoForgeMapiCommands {
             for (String action : new String[]{"status", "enable", "disable"}) {
                 root.then(Commands.literal(action)
                         .executes(command -> run(action, command.getSource()::sendSystemMessage)));
+            }
+            for (String list : new String[]{"allowedOrigins", "allowList"}) {
+                var listRoot = Commands.literal(list);
+                for (String action : new String[]{"enable", "disable"}) {
+                    listRoot.then(Commands.literal(action).executes(command ->
+                            MapiControlCommand.executeAllowList((MapiRuntime) MapiApi.require(),
+                                    list, action, null, text -> command.getSource().sendSystemMessage(Component.literal(text)))));
+                }
+                for (String action : new String[]{"add", "remove"}) {
+                    listRoot.then(Commands.literal(action)
+                            .then(Commands.argument("site", StringArgumentType.greedyString())
+                                    .executes(command -> MapiControlCommand.executeAllowList(
+                                            (MapiRuntime) MapiApi.require(), list, action,
+                                            StringArgumentType.getString(command, "site"), text -> command.getSource().sendSystemMessage(Component.literal(text))))));
+                }
+                root.then(listRoot);
             }
             event.getDispatcher().register(root);
         });

@@ -30,6 +30,30 @@ class MapiConfigTest {
     }
 
     @Test
+    void listSwitchesDefaultToEnforcedAndEnvironmentOverridesSavedValues() throws IOException {
+        assertTrue(load(Map.of()).clientConnectAllowlistEnabled());
+        assertTrue(load(Map.of()).httpAllowedOriginsEnabled());
+        writeFile("http.token=test-preserved-token-0123456789\nfuture.option=42\n");
+        var config = MapiConfig.fromValues(false, 25586, "test-preserved-token-0123456789", 60,
+                java.util.Set.of(), java.util.List.of("play.example:25565"), false,
+                java.util.List.of("https://tools.example"), false, false, Map.of(), LOG);
+        MapiConfig.saveAllowLists(configDir, config);
+        var saved = load(Map.of());
+        assertFalse(saved.clientConnectAllowlistEnabled());
+        assertFalse(saved.httpAllowedOriginsEnabled());
+        assertEquals(config.clientConnectAllowlist(), saved.clientConnectAllowlist());
+        assertEquals(config.httpAllowedOrigins(), saved.httpAllowedOrigins());
+        assertEquals(config.httpToken(), saved.httpToken());
+        assertTrue(Files.readString(configDir.resolve(MapiConfig.CONFIG_FILE_NAME)).contains("future.option=42"));
+        var overridden = load(Map.of("MAPI_HTTP_ALLOWED_ORIGINS_ENABLED", "true"));
+        assertTrue(overridden.httpAllowedOriginsEnabled());
+        assertFalse(overridden.clientConnectAllowlistEnabled());
+        assertTrue(load(Map.of("MAPI_CLIENT_CONNECT_ALLOWLIST_ENABLED", "true")).clientConnectAllowlistEnabled());
+        assertThrows(MapiConfigException.class, () -> load(Map.of("MAPI_HTTP_ALLOWED_ORIGINS_ENABLED", "maybe")));
+        assertThrows(MapiConfigException.class, () -> load(Map.of("MAPI_CLIENT_CONNECT_ALLOWLIST_ENABLED", "maybe")));
+    }
+
+    @Test
     void defaultsDisableHttp() {
         MapiConfig config = load(Map.of());
         assertFalse(config.httpEnabled());
