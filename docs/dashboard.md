@@ -28,6 +28,9 @@ token out of URLs, screenshots, pasted logs, build settings, and shared
 devices. Remembered credentials are stored in browser localStorage, which is
 not encrypted secret storage. The setup screen permits disabling persistence.
 
+The new-connection dialog is centered in the viewport on desktop, scrolls
+when space is limited, and fills the screen on mobile.
+
 Local-network browser rules vary. In particular, an HTTPS dashboard calling
 an HTTP loopback API may be blocked by the browser even when the origin is
 allowlisted. A remote dashboard host does not make a remote Minecraft server's
