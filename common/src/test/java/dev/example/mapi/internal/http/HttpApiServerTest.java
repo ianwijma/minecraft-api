@@ -375,6 +375,57 @@ class HttpApiServerTest {
     }
 
     @Test
+    void listCommandsUpdateHttpConnectionContextsWithoutChangingQueuedPolicy() throws Exception {
+        MapiConfig config = enabledConfig();
+        platform = new TestPlatform(LOG) {
+            @Override
+            public MapiConfig loadConfig(Path configDir, Map<String, String> env, Logger logger) {
+                return config;
+            }
+
+            @Override
+            public void saveAllowLists(MapiConfig updated) {
+            }
+        };
+        runtime = new MapiRuntime(platform);
+        platform.clientLifecycleListener().onClientStarted();
+        server = new HttpApiServer(config, runtime, LOG);
+        var lease = runtime.leases().acquire("input", "http:test", 60_000);
+        var captured = new java.util.concurrent.atomic.AtomicReference<ConnectionPolicy.RequestContext>();
+        var handler = new ClientApiHandler(server).withApiControl((exchange, body, grants) -> {
+            captured.set(ConnectionPolicy.currentContext());
+            captured.get().requireControl().run();
+        });
+        var body = Map.<String, Object>of("leaseId", lease.id());
+        var grants = java.util.Set.of(Scope.CLIENT_CONNECT);
+        handler.handle(null, body, grants);
+        var enforced = captured.get();
+        runtime.updateAllowList("allowList", "disable", null);
+        handler.handle(null, body, grants);
+        var disabled = captured.get();
+        assertTrue(enforced.allowlistEnabled());
+        assertFalse(disabled.allowlistEnabled());
+        assertEquals(grants, disabled.grants());
+        ConnectionPolicy.withContext(enforced, () -> assertThrows(ProblemException.class,
+                () -> ConnectionPolicy.captureConnect(new Object(), "unlisted.example", 25565)));
+        runtime.updateAllowList("allowList", "enable", null);
+        ConnectionPolicy.wrap(disabled, () -> assertTrue(ConnectionPolicy.captureConnect(
+                new Object(), "unlisted.example", 25565))).run();
+        handler.handle(null, body, grants);
+        ConnectionPolicy.withContext(captured.get(), () -> assertThrows(ProblemException.class,
+                () -> ConnectionPolicy.captureConnect(new Object(), "unlisted.example", 25565)));
+        runtime.updateAllowList("allowList", "add", "unlisted.example:25565");
+        handler.handle(null, body, grants);
+        ConnectionPolicy.withContext(captured.get(), () -> assertTrue(ConnectionPolicy.captureConnect(
+                new Object(), "unlisted.example", 25565)));
+        runtime.updateAllowList("allowList", "remove", "unlisted.example:25565");
+        handler.handle(null, body, grants);
+        ConnectionPolicy.withContext(captured.get(), () -> assertThrows(ProblemException.class,
+                () -> ConnectionPolicy.captureConnect(new Object(), "unlisted.example", 25565)));
+        assertEquals(null, ConnectionPolicy.currentContext(), "queued tasks restore thread-local authorization");
+    }
+
+    @Test
     void clientPolicyContextRechecksLeaseAfterItExpires() throws Exception {
         MapiConfig config = enabledConfig();
         platform = new TestPlatform(LOG) {

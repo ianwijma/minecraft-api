@@ -279,6 +279,46 @@ class MapiControlCommandTest {
     }
 
     @Test
+    void disablingAndReenablingEachListRetainsEntriesAcrossRestarts() throws Exception {
+        initialize(freePort());
+        String origin = "https://retained.example";
+        String target = "retained.example:25565";
+        assertEquals(1, listCommand("allowedOrigins", "add", origin));
+        assertEquals(1, listCommand("allowList", "add", target));
+        for (String list : List.of("allowedOrigins", "allowList")) {
+            assertEquals(1, listCommand(list, "disable", null));
+        }
+        platform.clientLifecycleListener().onClientStopping();
+        runtime = new MapiRuntime(platform);
+        platform.clientLifecycleListener().onClientStarted();
+        assertEquals(1, execute("enable"));
+        assertFalse(runtime.config().httpAllowedOriginsEnabled());
+        assertFalse(runtime.config().clientConnectAllowlistEnabled());
+        assertTrue(runtime.config().httpAllowedOrigins().contains(origin));
+        assertEquals(List.of(target), runtime.config().clientConnectAllowlist());
+        assertEquals(200, browserStatus("https://other.example", false));
+        assertEquals(1, listCommand("allowedOrigins", "enable", null));
+        assertEquals(200, browserStatus(origin, false));
+        assertEquals(403, browserStatus("https://other.example", false));
+        assertFalse(runtime.config().clientConnectAllowlistEnabled(), "origin controls leave target enforcement alone");
+        assertEquals(1, listCommand("allowList", "enable", null));
+        for (String list : List.of("allowedOrigins", "allowList")) {
+            assertEquals(1, listCommand(list, "remove", list.equals("allowedOrigins")
+                    ? "https://absent.example" : "absent.example:25565"));
+        }
+        platform.clientLifecycleListener().onClientStopping();
+        runtime = new MapiRuntime(platform);
+        platform.clientLifecycleListener().onClientStarted();
+        var restored = runtime.config();
+        assertTrue(restored.httpAllowedOriginsEnabled());
+        assertTrue(restored.clientConnectAllowlistEnabled());
+        assertTrue(restored.httpAllowedOrigins().contains(origin));
+        assertEquals(List.of(target), restored.clientConnectAllowlist());
+        assertEquals(204, browserStatus(origin, true));
+        assertEquals(403, browserStatus("https://other.example", true));
+    }
+
+    @Test
     void invalidEntriesAndFailedSavesLeaveDiskAndRuntimeUnchanged() throws Exception {
         initialize(freePort());
         assertEquals(1, execute("enable"));

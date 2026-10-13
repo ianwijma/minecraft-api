@@ -68,7 +68,9 @@ restart is needed. These controls are client-local or dedicated-console-only.
 Explicit commands override environment values for this process; environment
 variables win again on the next launch. Failed validation or saving leaves the
 active policy unchanged. In-flight connection work keeps its captured policy;
-new API work uses the updated policy.
+new API work uses the updated policy. Regression tests exercise list retention across
+restart and re-enablement, live HTTP handler policy capture after commands, and
+the original policy retained by queued connection work.
 
 ## Lifecycle
 
