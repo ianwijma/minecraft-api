@@ -6,12 +6,33 @@ import * as path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { reserveOutput } from '../api/output.ts';
 import { Suite } from '../api/suite.ts';
-import { awaitServerStatusReady, commandEventAfter, metadata, settleFixtureWorld } from '../api/corpus.ts';
+import { awaitServerStatusReady, commandEventAfter, metadata, settleFixtureWorld, verifyFixtureSnapshotDiff } from '../api/corpus.ts';
 import { manifest } from '../api/manifest.ts';
 import { loadContract, missingCoverage, validateSchema } from '../api/coverage.ts';
 import { verifyFixture, verifyReport } from '../api/report.ts';
 
 const contract = loadContract();
+test('snapshot fixture comparison excludes ambient entity churn without relaxing bounds', async () => {
+    const records = [
+        ...Array.from({ length: 60 }, (_, i) => ({ path: `entities.ambient-${i}.x`, kind: 'changed', before: 0, after: 1 })),
+        { path: 'entities.fixture.x', kind: 'changed', before: 0, after: 3 },
+    ];
+    const fake = {
+        request: async (id: string, parameters: any, body: any) => {
+            assert.equal(id, 'diffSnapshots');
+            assert.equal(body.firstId, 'before');
+            assert.equal(body.secondId, 'after');
+            const selected = records.filter(record => body.includePaths.some((pattern: string) => record.path.startsWith(pattern.slice(0, -1))));
+            return { records: selected.slice(0, body.maxChanges), truncated: selected.length > body.maxChanges };
+        },
+        expect: (condition: boolean, message: string) => assert.ok(condition, message),
+    };
+    await verifyFixtureSnapshotDiff(fake as any, 'before', 'after', 'fixture');
+    await assert.rejects(verifyFixtureSnapshotDiff(fake as any, 'before', 'after', 'missing'), /intentional entity movement/);
+    fake.request = async () => ({ records: [records.at(-1)!], truncated: true });
+    await assert.rejects(verifyFixtureSnapshotDiff(fake as any, 'before', 'after', 'fixture'), /requested bounds/);
+});
+
 test('failed transport probes remain in the request trace', async () => {
     const suite = new Suite({ request: async () => { throw new Error('deliberate transport deadline'); },
         close() {}, subscribe: async () => { throw new Error('unused'); } }, contract, 'menu', '/tmp');

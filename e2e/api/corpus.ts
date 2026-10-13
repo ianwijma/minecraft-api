@@ -278,10 +278,7 @@ export async function serverCorpus(suite: Suite, player: boolean): Promise<strin
     await suite.case('diffSnapshots', async () => {
         await suite.command('tp @e[tag=mapi-api-fixture,limit=1] 3 65 0');
         const second = await suite.request('captureSnapshot', {}, { label: 'api-after', maxPlayers: 2, maxEntities: 50 });
-        const diff = await suite.request('diffSnapshots', {}, { firstId, secondId: second.snapshotId, includePaths: ['entities.*'], maxChanges: 50 });
-        const change = diff.records.find((record: any) => record.path === `entities.${pig.uuid}.x`);
-        suite.expect(change?.kind === 'changed' && JSON.stringify(change.before) !== JSON.stringify(change.after), 'intentional entity movement appears in structural diff');
-        suite.expect(!diff.truncated && diff.records.length <= 50, 'diff respects requested bounds');
+        await verifyFixtureSnapshotDiff(suite, firstId, second.snapshotId, pig.uuid);
     });
     for (const [id, parameters, body, status, code] of [
         ['queryBlock', { ...blockParameters, dimension: 'invalid:missing' }, {}, 400, 'BAD_REQUEST'],
@@ -296,6 +293,15 @@ export async function serverCorpus(suite: Suite, player: boolean): Promise<strin
         assert.equal(result.body.error.code, code);
     }
     return leaseId;
+}
+
+export async function verifyFixtureSnapshotDiff(suite: Suite, firstId: string, secondId: string, entityId: string): Promise<void> {
+    const diff = await suite.request('diffSnapshots', {}, {
+        firstId, secondId, includePaths: [`entities.${entityId}.*`], maxChanges: 50,
+    });
+    const change = diff.records.find((record: any) => record.path === `entities.${entityId}.x`);
+    suite.expect(change?.kind === 'changed' && JSON.stringify(change.before) !== JSON.stringify(change.after), 'intentional entity movement appears in structural diff');
+    suite.expect(!diff.truncated && diff.records.length <= 50, 'diff respects requested bounds');
 }
 
 async function inputLease(suite: Suite, current?: string): Promise<string> {

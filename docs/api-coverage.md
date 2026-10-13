@@ -83,6 +83,8 @@ kinds, and shuts down last through its SDK. The runtime JAR SHA-256 must match
 the built distributable. Bounded polling observes game state instead of assuming
 that tick freeze pauses input, rendering, or network traffic. Live screenshots
 are evidence; this suite never creates visual baselines automatically.
+The snapshot movement comparison includes only the fixture entity's paths so
+ambient mob changes cannot exhaust its diff bound or hide the intended change.
 
 `api-e2e` runs all six SDK/loader combinations on every PR with Ubuntu 24.04,
 Xvfb, and software rendering. Mesa and Xvfb versions are pinned from the CI
