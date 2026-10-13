@@ -103,7 +103,7 @@ p { margin:0 0 18px; color:var(--muted); }
 .hidden { display:none !important; }
 dialog { max-height:calc(100dvh - 28px); padding:24px; overflow:hidden; border:1px solid var(--line); border-radius:12px; background:white; color:var(--ink); box-shadow:0 25px 90px #14281f55; }
 dialog::backdrop { background:#17271fb3; backdrop-filter:blur(2px); }
-.connection-dialog { width:min(1080px,calc(100% - 28px)); overflow:auto; }
+.connection-dialog { width:min(1080px,calc(100% - 28px)); margin:auto; overflow:auto; }
 .dialog-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
 .remove-dialog { width:min(450px,calc(100% - 28px)); }
 .remove-dialog .form-actions { justify-content:flex-end; }
