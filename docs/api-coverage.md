@@ -88,7 +88,10 @@ are evidence; this suite never creates visual baselines automatically.
 Xvfb, and software rendering. Mesa and Xvfb versions are pinned from the CI
 runner’s verified package provenance (run 37134645012); Lavapipe is installed
 explicitly and its ICD is discovered from the package manifest. It records
-installed rendering package versions and the ICD digest;
+installed rendering package versions and the ICD digest. The Mesa dependency
+packages (GBM, Gallium, EGL, and GLX) share the same pin; installation explicitly
+allows downgrades when a runner image preinstalls a newer Mesa revision. This
+keeps the verified renderer version rather than following runner updates;
 semantic assertions are primary functional evidence. The `Complete API coverage
 (required)` aggregate is enforced by branch protection on `develop`, including
 administrator merges. It fails
