@@ -36,9 +36,10 @@ public final class NeoForgeMapiCommands {
                     feedback.accept(Component.literal("Minecraft API: "
                             + (connection.enabled() ? "enabled" : "disabled")
                             + " (listener " + (connection.running() ? "running" : "stopped") + ")"));
-                    feedback.accept(Component.literal("URL: " + connection.url())
-                            .withStyle(style -> style.withClickEvent(
-                                    new ClickEvent.CopyToClipboard(connection.url()))));
+                    feedback.accept(Component.literal("MAPI address: " + connection.url() + " [Click to copy]")
+                            .withStyle(style -> style.withColor(ChatFormatting.AQUA)
+                                    .withUnderlined(true)
+                                    .withClickEvent(new ClickEvent.CopyToClipboard(connection.url()))));
                     String token = connection.token();
                     if (token == null) {
                         feedback.accept(Component.literal("Bearer token: not configured"));

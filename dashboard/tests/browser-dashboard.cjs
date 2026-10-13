@@ -299,6 +299,14 @@ async function checkStaticExport(browser, label, staticDir, basePath, screenshot
     await page.getByTestId('add-connection').click();
     const connectionDialog = page.getByTestId('connection-dialog');
     await connectionDialog.waitFor({ state: 'visible' });
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 900, height: 600 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      const bounds = await connectionDialog.boundingBox();
+      if (!bounds || Math.abs(bounds.x + bounds.width / 2 - viewport.width / 2) > 1 || Math.abs(bounds.y + bounds.height / 2 - viewport.height / 2) > 1) {
+        throw new Error(`Connection dialog is not centered at ${viewport.width}×${viewport.height}: ${JSON.stringify(bounds)}`);
+      }
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
     if (await page.getByTestId('connection-tab').count() !== tabCountBeforePopup) throw new Error('Opening the + popup created a pending connection tab');
     await connectionDialog.getByRole('button', { name: 'Cancel' }).click();
     if (await page.getByTestId('connection-tab').count() !== tabCountBeforePopup) throw new Error('Canceling the + popup changed connection tabs');

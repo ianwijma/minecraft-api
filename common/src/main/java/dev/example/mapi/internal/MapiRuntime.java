@@ -484,8 +484,9 @@ public final class MapiRuntime implements Mapi {
     /** Returns current listener state and resolved connection credentials. */
     public synchronized HttpConnection httpConnection() {
         var loaded = httpServer != null ? config : loadHttpConfig();
+        int port = httpServer != null ? httpServer.boundAddress().getPort() : loaded.httpPort();
         return new HttpConnection(loaded.httpEnabled(), httpRunning(),
-                "http://127.0.0.1:" + loaded.httpPort(), loaded.httpToken());
+                "http://127.0.0.1:" + port, loaded.httpToken());
     }
 
     /** Starts the listener immediately and persists enablement after a successful bind. */
@@ -498,7 +499,7 @@ public final class MapiRuntime implements Mapi {
         httpEnabledOverride = true;
         try {
             var loaded = loadHttpConfig();
-            if (!startHttp(loaded)) {
+            if (!startHttp(loaded, true)) {
                 throw new IllegalStateException("Could not start the Minecraft API server; check the port and server log.");
             }
             platform.saveHttpEnabled(true);
@@ -551,11 +552,15 @@ public final class MapiRuntime implements Mapi {
     }
 
     private boolean startHttp(dev.example.mapi.internal.config.MapiConfig loaded) {
+        return startHttp(loaded, false);
+    }
+
+    private boolean startHttp(dev.example.mapi.internal.config.MapiConfig loaded, boolean retryPortConflict) {
         this.config = loaded;
         logCapture.setSecrets(java.util.List.of(loaded.httpToken() == null ? "" : loaded.httpToken()));
         platform.attachLogCapture(logCapture);
         HttpApiServer candidate = new HttpApiServer(loaded, this, platform.logger());
-        if (candidate.start()) {
+        if (candidate.start(retryPortConflict)) {
             httpServer = candidate;
             return true;
         }
