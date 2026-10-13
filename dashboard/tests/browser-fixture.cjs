@@ -43,7 +43,7 @@ function createFixture(staticDir, basePath = '') {
     let body;
     try { body = chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : undefined; } catch { body = null; }
     const url = new URL(req.url, 'http://127.0.0.1');
-    state.calls.push({ method: req.method, path: url.pathname, query: Object.fromEntries(url.searchParams), body, authorization: req.headers.authorization, origin });
+    state.calls.push({ at: Date.now(), method: req.method, path: url.pathname, query: Object.fromEntries(url.searchParams), body, authorization: req.headers.authorization, origin });
     const json = (status, value, extra = {}) => {
       res.writeHead(status, { 'Content-Type': 'application/json', 'X-MAPI-Protocol-Version': '1', ...extra });
       res.end(JSON.stringify(value));

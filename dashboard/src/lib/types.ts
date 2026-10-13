@@ -78,6 +78,7 @@ export interface RuntimeEvent {
   data?: unknown;
 }
 export interface RunOptions {
+  scheduled?: boolean;
   signal?: AbortSignal;
   confirmDestructive?: boolean;
   timeoutMs?: number;

@@ -58,3 +58,50 @@ catalog, TypeScript types, and root/representative-subpath static exports in
 Chromium. The manual Pages workflow builds the repository-specific subpath.
 Live MAPI behavior and hosted browser compatibility remain separate
 acceptance work.
+
+## Connection timeline
+
+Each connected workspace has an **Actions / Timeline** view switch. Timeline
+uses the same generated operation catalog, schema fields, capabilities and
+connection runtime as Actions. Create named tracks, add actions at the playhead
+or drag them from the library, and drag clips between tracks or along the ruler.
+The inspector provides precise start ticks and the existing request fields.
+Hold-key clips use their `ticks` field for their displayed duration; other calls
+are markers, since dispatch does not necessarily describe their game duration.
+
+All tracks share a browser clock: **20 ticks = 1 second**. Playback starts from
+zero and schedules overlapping actions independently in stable track/clip
+order for equal start times. HTTP arrival/execution order is not guaranteed. It assumes steady 20 TPS game execution. HTTP
+requests are separate and are not an atomic game-tick batch. Asynchronous calls
+show admission responses without delaying the timeline for job completion.
+Dependent actions must be spaced to allow their effects to complete. The API
+serializes key holds, so overlapping hold-key clips across tracks are rejected
+before playback. Long holds receive a fresh duration-aware deadline when none
+is supplied, and a request timeout that covers the clip. Playback
+results also appear in the connection's normal history.
+
+Sequences and drafts are stored per connection in browser localStorage. Save,
+load, duplicate, delete saved sequences, and import/export JSON through the
+editor. Drafts survive view switches and reloads. Tokens, confirmation flags and
+managed runtime IDs are excluded from saved/exported action parameters. Review
+imported sequences and re-enter context-specific IDs before use. Destructive
+clips require fresh confirmation for each playback. Removing a connection
+removes its saved library and draft too.
+
+The initial editor supports up to 240 seconds and 200 actions per sequence.
+Input/tick leases are prepared before the playback clock starts. Scheduled calls
+skip the normal one-second transport pacing, while sharing its conservative
+60-request rolling budget and server Retry-After state. They fail immediately
+when that budget is exhausted rather than shifting scheduled actions. Server
+rate limits continue to apply. Background capability checks, lease calls and
+other dashboard requests consume this same budget.
+
+Keep the browser tab visible. Hiding it, switching views/connections,
+disconnecting, or pressing Stop aborts playback. Browser dispatch delays over
+250 ms stop overdue actions instead of issuing a catch-up burst. Errors stop
+future dispatch; a request already sent to Minecraft may have taken effect.
+Stop does not undo actions or guarantee cancellation of game jobs. Bounded
+input actions finish or release through the existing API's deadline/lease
+behaviour. This first version provides Play from start and Stop; pause/resume,
+world rewinding, durable unattended execution, and game-tick scheduling are not
+implemented.
