@@ -46,7 +46,9 @@ instead of surfacing as unhandled browser errors.
 
 ## Build and hosting
 
-The Hold key action offers a **Key code / Character** toggle. Character mode
+The Hold key action offers a **Key code / Character** segmented toggle with a
+highlighted selected mode. Both modes use a bordered, full-width input, and
+character conversion and help text appear below the field. Character mode
 converts a single A–Z letter (case-insensitive), digit, space, or unshifted
 punctuation key (`' , - . / ; = [ \ ]` and backtick) to its GLFW key code and
 shows the result. Switching modes preserves representable keys; special key
