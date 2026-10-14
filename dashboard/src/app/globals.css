@@ -147,6 +147,13 @@ dialog::backdrop { background:#17271fb3; backdrop-filter:blur(2px); }
 .payload-image img { display:block; max-width:100%; max-height:160px; object-fit:contain; }
 .payload-empty,.action-history-empty { color:var(--muted); font-size:11px; }
 .schema-field { margin:12px 0; }
+.hold-key-control { display:grid; gap:8px; }
+.key-input-toggle { display:inline-flex; justify-self:start; gap:3px; padding:3px; border:1px solid #cfd8cc; border-radius:9px; background:#edf1e8; }
+.key-input-toggle button { min-height:34px; padding:6px 14px; border:1px solid transparent; border-radius:6px; color:var(--ink); font-size:12px; font-weight:600; }
+.key-input-toggle button:hover { background:#e0e8d9; }
+.key-input-toggle button[aria-pressed="true"] { border-color:var(--green-dark); background:var(--green); color:white; box-shadow:0 1px 3px #20372b26; }
+.key-input-help .schema-description { display:block; margin:0; color:var(--muted); }
+.key-input-help .schema-description + .schema-description { margin-top:4px; }
 .schema-field-label { display:flex; justify-content:space-between; align-items:baseline; gap:7px; margin-bottom:5px; font-size:12px; font-weight:650; }
 .schema-description { margin:4px 0; font-size:11px; }
 .schema-dynamic-field,.schema-array { padding:11px; border:1px solid var(--line); border-radius:7px; }

@@ -58,6 +58,8 @@ jobs:
           python-version: "3.x"
       - name: Test stdlib Python SDK against a loopback fake API
         run: python -m unittest discover -s sdk/python -p 'test_*.py'
+      - name: Test rendering package installer
+        run: python -m unittest discover -s scripts -p 'test_ci_install_rendering.py'
       - name: Install generator YAML parser
         run: |
           python -m venv /tmp/mapi-sdk-venv
@@ -293,23 +295,15 @@ jobs:
           python-version: "3.12"
       - uses: gradle/actions/setup-gradle@v4
       - name: Install pinned software rendering environment
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes --allow-downgrades --no-install-recommends \
-            "mesa-vulkan-drivers=$MAPI_MESA_VERSION" \
-            "libgl1-mesa-dri=$MAPI_MESA_VERSION" \
-            "libgbm1=$MAPI_MESA_VERSION" \
-            "mesa-libgallium=$MAPI_MESA_VERSION" \
-            "libegl-mesa0=$MAPI_MESA_VERSION" \
-            "libglx-mesa0=$MAPI_MESA_VERSION" \
-            "xvfb=$MAPI_XVFB_VERSION"
+        run: bash scripts/ci-install-rendering.sh
       - name: Build release artifacts and acceptance fixtures
         run: ./gradlew :${{ matrix.loader }}:build :fixture-fabric:jar :fixture-neoforge:jar :sdk:apiWorkerJar --console=plain
       - name: Record rendering environment
         run: |
           mkdir -p build/api-coverage
           uname -a > build/api-coverage/rendering.txt
-          dpkg-query -W xvfb libgl1-mesa-dri mesa-vulkan-drivers libgbm1 mesa-libgallium libegl-mesa0 libglx-mesa0 >> build/api-coverage/rendering.txt
+          dpkg-query -W xvfb libgl1-mesa-dri mesa-vulkan-drivers >> build/api-coverage/rendering.txt
+          dpkg-query -W -f='${binary:Package}\t${source:Package}\t${Version}\n' | awk '$2 == "mesa"' >> build/api-coverage/rendering.txt
           driver_path=$(dpkg -L mesa-vulkan-drivers | grep -E '/lvp_icd[^/]*\.json$')
           test "$(printf '%s\n' "$driver_path" | wc -l)" -eq 1
           test -f "$driver_path"

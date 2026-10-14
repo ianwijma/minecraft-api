@@ -83,15 +83,18 @@ kinds, and shuts down last through its SDK. The runtime JAR SHA-256 must match
 the built distributable. Bounded polling observes game state instead of assuming
 that tick freeze pauses input, rendering, or network traffic. Live screenshots
 are evidence; this suite never creates visual baselines automatically.
+The snapshot movement comparison includes only the fixture entity's paths so
+ambient mob changes cannot exhaust its diff bound or hide the intended change.
 
 `api-e2e` runs all six SDK/loader combinations on every PR with Ubuntu 24.04,
 Xvfb, and software rendering. Mesa and Xvfb versions are pinned from the CI
 runner’s verified package provenance (run 37134645012); Lavapipe is installed
-explicitly and its ICD is discovered from the package manifest. It records
-installed rendering package versions and the ICD digest. The Mesa dependency
-packages (GBM, Gallium, EGL, and GLX) share the same pin; installation explicitly
-allows downgrades when a runner image preinstalls a newer Mesa revision. This
-keeps the verified renderer version rather than following runner updates;
+explicitly. `scripts/ci-install-rendering.sh` aligns all Mesa packages already
+installed on the hosted runner to the pinned version, allowing downgrades when
+the runner image ships newer libraries. This preserves Mesa's exact-version
+dependencies without changing the verified rendering versions. The Lavapipe
+ICD is discovered from the package manifest. It records installed rendering
+package versions, the complete Mesa package set, and the ICD digest;
 semantic assertions are primary functional evidence. The `Complete API coverage
 (required)` aggregate is enforced by branch protection on `develop`, including
 administrator merges. It fails
