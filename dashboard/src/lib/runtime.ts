@@ -121,8 +121,17 @@ function joinJob<T>(job: Job, signal?: AbortSignal): Promise<T> {
     );
   });
 }
-async function budget(key: string, signal?: AbortSignal): Promise<void> {
+async function budget(key: string, signal?: AbortSignal, scheduled = false): Promise<void> {
   const b = bucketFor(key);
+  if (scheduled) {
+    if (signal?.aborted) throw abortError();
+    const now = Date.now();
+    b.recent = b.recent.filter((time) => now - time < 60_000);
+    if (b.retryAt > now || b.recent.length >= 60)
+      throw new MapiApiError(429, "RATE_LIMITED", "Timeline stopped: request budget exhausted. Space actions farther apart or retry later.");
+    b.recent.push(now);
+    return;
+  }
   let release!: () => void;
   const previous = b.queue;
   b.queue = new Promise<void>((r) => (release = r));
@@ -260,6 +269,7 @@ export interface ApiClient {
       signal?: AbortSignal;
       timeoutMs?: number;
       stream?: boolean;
+      scheduled?: boolean;
     },
   ): Promise<ApiResponse<T>>;
   profile: ConnectionProfile;
@@ -287,6 +297,7 @@ export function createApiClient(profile: ConnectionProfile): ApiClient {
       signal?: AbortSignal;
       timeoutMs?: number;
       stream?: boolean;
+      scheduled?: boolean;
     } = {},
   ): Promise<ApiResponse<T>> {
     const fullPath = path.startsWith("/") ? path : `${API_PREFIX}/${path}`;
@@ -309,7 +320,7 @@ export function createApiClient(profile: ConnectionProfile): ApiClient {
           : redactValue(options.body, new WeakSet(), profile.token),
     };
     const cacheKey = `${key}|${method}|${fullPath}|${JSON.stringify(options.query ?? {})}|${JSON.stringify(options.body ?? null)}`;
-    const shareable = method === "GET" && !options.stream;
+    const shareable = method === "GET" && !options.stream && !options.scheduled;
     if (shareable) {
       const pending = inFlightGets.get(cacheKey);
       if (pending) return joinJob<ApiResponse<T>>(pending, options.signal);
@@ -324,7 +335,8 @@ export function createApiClient(profile: ConnectionProfile): ApiClient {
         ? undefined
         : setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000);
       try {
-        await budget(key, controller.signal);
+        if (outer?.aborted) throw abortError();
+        await budget(key, controller.signal, options.scheduled);
         const response = await fetch(
           safeEndpoint(cleanProfile.baseUrl, fullPath, options.query),
           {
@@ -516,6 +528,7 @@ function makeLeaseManager(client: ApiClient) {
     topic: LeaseTopic,
     ttlSeconds?: number,
     signal?: AbortSignal,
+    scheduled?: boolean,
   ): Promise<
     | { reused: true; lease: HeldLease }
     | { reused: false; lease: HeldLease; response: ApiResponse }
@@ -538,6 +551,7 @@ function makeLeaseManager(client: ApiClient) {
         const response = await leaseRequest("POST", route(topic), {
           body,
           signal,
+          scheduled,
           timeoutMs: 10_000,
         });
         const data = response.data as any;
@@ -721,6 +735,7 @@ function subscribeEndpointEvents(
               query,
               signal: hub!.controller.signal,
               stream: true,
+              scheduled: options.scheduled === true,
               timeoutMs: 0,
             },
           );
@@ -833,6 +848,7 @@ export function createConnectionRuntime(
       const outer = options.signal;
       const abort = () => ctl.abort();
       outer?.addEventListener("abort", abort, { once: true });
+      if (outer?.aborted) ctl.abort();
       try {
         return await baseClient.request(method, path, {
           ...options,
@@ -979,6 +995,8 @@ export function createConnectionRuntime(
         ? "tick-control"
         : undefined;
     const body = operation.method === "POST" ? { ...vals } : undefined;
+    if (options.scheduled && operation.id === "holdKey" && body && body.deadlineEpochMs === undefined && typeof body.ticks === "number")
+      body.deadlineEpochMs = Date.now() + body.ticks * 50 + 10_000;
     if (body && "leaseId" in body) delete (body as any).leaseId;
     const topic = operation.security.requiresLease
       ? operation.path.includes("/ticks/") || operation.path.includes("/lan")
@@ -1000,6 +1018,7 @@ export function createConnectionRuntime(
           body,
           signal: options.signal,
           timeoutMs: options.timeoutMs,
+          scheduled: options.scheduled,
         });
       let result: ApiResponse;
       if (acquisitionTopic) {
@@ -1007,6 +1026,7 @@ export function createConnectionRuntime(
           acquisitionTopic,
           typeof vals.ttlSeconds === "number" ? vals.ttlSeconds : undefined,
           options.signal,
+          options.scheduled,
         );
         if (acquired.reused) {
           return {
@@ -1034,6 +1054,8 @@ export function createConnectionRuntime(
         result = acquired.response;
         request = result.request;
       } else if (topic) {
+        if (options.scheduled && leases.getState(topic).state !== "ready")
+          throw new Error("Timeline lease expired or changed. Stop and prepare playback again.");
         result = await leases.withLease(topic, (leaseId) => {
           const payload = { ...((body as any) ?? {}), leaseId };
           request.body = redactValue(payload, new WeakSet(), profile.token);
@@ -1042,12 +1064,14 @@ export function createConnectionRuntime(
             body: payload,
             signal: options.signal,
             timeoutMs: options.timeoutMs,
+            scheduled: options.scheduled,
           });
         });
       } else result = await run();
       let responseData: any = result.data;
       let completionError: ApiErrorSnapshot | undefined;
       if (
+        !options.scheduled &&
         result.status === 202 &&
         responseData &&
         typeof responseData === "object"

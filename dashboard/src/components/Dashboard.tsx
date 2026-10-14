@@ -12,6 +12,7 @@ import { ActionModal, clearActionDrafts } from "./ActionModal";
 import ConnectionDialog, { type ConnectOutcome } from "./ConnectionDialog";
 import RemovalDialog from "./RemovalDialog";
 import ResponseInspector from "./ResponseInspector";
+import TimelineEditor from "./TimelineEditor";
 
 const initialState: PersistedState = { version: 1, profiles: [], selectedId: null, saveTokens: true };
 type ConnectionState = "disconnected" | "connecting" | "connected" | "error";
@@ -53,6 +54,7 @@ export default function Dashboard() {
   const [dialogProfile, setDialogProfile] = useState<ConnectionProfile | undefined>();
   const [removeTargetId, setRemoveTargetId] = useState<string | null>(null);
   const [action, setAction] = useState<(typeof operations)[number] | null>(null);
+  const [viewByConnection, setViewByConnection] = useState<Record<string, "actions" | "timeline">>({});
   const [search, setSearch] = useState("");
   const [availableOnly, setAvailableOnly] = useState(false);
   const [notice, setNotice] = useState("");
@@ -135,7 +137,7 @@ export default function Dashboard() {
     const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(measure);
     for (const target of document.querySelectorAll<HTMLElement>(".statusbar,.toolbar")) observer?.observe(target);
     return () => { window.removeEventListener("resize", measure); observer?.disconnect(); };
-  }, [activeProfile?.id, activeState, search]);
+  }, [activeProfile?.id, activeState, search, viewByConnection[activeProfile?.id ?? ""]]);
 
   useEffect(() => {
     if (!ready || !activeProfile || !activeRuntime || !streamEnabled[activeProfile.id]) return;
@@ -297,7 +299,7 @@ export default function Dashboard() {
     for (const controller of runControllers.current.get(id) ?? []) controller.abort();
     runControllers.current.delete(id);
     const next = removeProfile(id, currentPersisted.current);
-    try { localStorage.removeItem(`mapi.dashboard.presets.${id}`); } catch { /* storage may be blocked */ }
+    try { localStorage.removeItem(`mapi.dashboard.presets.${id}`); localStorage.removeItem(`mapi.dashboard.sequences.${id}`); localStorage.removeItem(`mapi.dashboard.sequences.${id}.draft`); } catch { /* storage may be blocked */ }
     setPersisted(next);
     setRecords((old) => { const copy = { ...old }; delete copy[id]; return copy; });
     setPresetMap((old) => { const copy = { ...old }; delete copy[id]; return copy; });
@@ -490,6 +492,15 @@ export default function Dashboard() {
             <button className="button small danger" type="button" data-testid="remove-active-connection" onClick={() => requestRemoval(activeProfile.id)}>Remove connection</button>
           </div>
         </section>
+        <div className="connection-view-switch" role="group" aria-label="Connection view">
+          <button className={`button${viewByConnection[activeProfile.id] !== "timeline" ? " primary" : ""}`} aria-pressed={viewByConnection[activeProfile.id] !== "timeline"} onClick={() => setViewByConnection((old) => ({ ...old, [activeProfile.id]: "actions" }))}>Actions</button>
+          <button className={`button${viewByConnection[activeProfile.id] === "timeline" ? " primary" : ""}`} aria-pressed={viewByConnection[activeProfile.id] === "timeline"} onClick={() => { setAction(null); setViewByConnection((old) => ({ ...old, [activeProfile.id]: "timeline" })); }}>Timeline</button>
+        </div>
+        {viewByConnection[activeProfile.id] === "timeline" ? <TimelineEditor key={activeProfile.id} connectionId={activeProfile.id} runtime={activeRuntime} capabilities={capabilities} onRecord={(record) => {
+          const profileId = activeProfile.id;
+          setRecords((old) => { const current = [...(old[profileId] ?? []), record]; const next = [...current.filter((item) => item.saved), ...current.filter((item) => !item.saved).slice(-150)]; saveSessionHistory(profileId, next); return { ...old, [profileId]: next }; });
+          pushEvent(profileId, { type: record.error ? "Timeline action failed" : "Timeline action dispatched", data: { operationId: record.operationId, status: record.status } });
+        }} /> : <>
         <section className="toolbar" aria-label="Operation filters">
           <input className="text-input" type="search" aria-label="Search actions" placeholder="Search actions, paths, or operation IDs…" value={search} onChange={(event) => setSearch(event.target.value)} data-testid="operation-search" />
           <button className={`button small${!availableOnly ? " primary" : ""}`} type="button" onClick={() => setAvailableOnly(false)} aria-pressed={!availableOnly}>All actions</button>
@@ -513,6 +524,7 @@ export default function Dashboard() {
           </div>
           <ResponseInspector latest={latestRecord} events={eventsForActive} capabilities={capabilities} onClearEvents={() => activeProfile && setEvents((old) => ({ ...old, [activeProfile.id]: [] }))} streamActive={Boolean(activeProfile && streamEnabled[activeProfile.id])} onToggleEvents={() => activeProfile && setStreamEnabled((old) => ({ ...old, [activeProfile.id]: !old[activeProfile.id] }))} onCopyResponse={copyLatestResponse} />
         </section>
+        </>}
         <div className="workspace-foot"><span>{copyNotice || "Unavailable controls stay visible with an accessible reason. Browser → MAPI · no backend."}</span><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{profileTransferControls}<button className="button small" type="button" onClick={() => { clearSavedCredentials(); setPersisted((old) => ({ ...old, saveTokens: false, profiles: old.profiles.map((profile) => ({ ...profile, token: undefined, rememberToken: false })) })); }}>Clear saved credentials</button></div></div>
       </>}
     </main>

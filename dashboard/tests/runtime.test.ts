@@ -422,3 +422,48 @@ test("a client attached to a remote world cannot advertise integrated-server LAN
     false,
   );
 });
+
+test("scheduled requests burst within the shared budget and stop rather than delay on exhaustion", async () => {
+  const old = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return json({ protocolVersion: 1 }); };
+  try {
+    const client = createApiClient({ ...profile, token: "timeline-budget-test" });
+    const results = await Promise.all(Array.from({ length: 60 }, () => client.request("GET", "/api/v1/health", { scheduled: true })));
+    assert.equal(results.length, 60); assert.equal(calls, 60);
+    await assert.rejects(client.request("GET", "/api/v1/health", { scheduled: true }), (error: unknown) => error instanceof MapiApiError && error.status === 429);
+    assert.equal(calls, 60);
+    const aborted = new AbortController(); aborted.abort();
+    await assert.rejects(createApiClient({ ...profile, token: "timeline-abort-test" }).request("POST", "/api/v1/process/shutdown", { scheduled: true, signal: aborted.signal }), { name: "AbortError" });
+    assert.equal(calls, 60);
+  } finally { globalThis.fetch = old; }
+});
+
+test("scheduled asynchronous actions return acceptance without blocking for job completion", async () => {
+  const old = globalThis.fetch;
+  const paths: string[] = [];
+  globalThis.fetch = async (input) => { const path = new URL(String(input)).pathname; paths.push(path); return json({ jobId: "pending-job" }, 202); };
+  const runtime = createConnectionRuntime({ ...profile, token: "timeline-admission-test" });
+  try {
+    const action = { id: "testAsync", label: "Async", group: "Test", method: "POST" as const, path: "/api/v1/test", summary: "", parameters: [], security: { requiredScopes: [], destructive: false, sideEffectClass: "local", requiresLease: false, supportedExecutionModes: [] } };
+    const result = await runtime.execute(action, {}, { scheduled: true });
+    assert.equal(result.status, 202); assert.deepEqual(result.response, { jobId: "pending-job" }); assert.deepEqual(paths, ["/api/v1/test"]);
+  } finally { runtime.dispose(); globalThis.fetch = old; }
+});
+
+test("scheduled key holds receive a fresh duration-aware deadline and managed lease", async () => {
+  const old = globalThis.fetch;
+  let payload: Record<string, unknown> | undefined;
+  globalThis.fetch = async (input, init) => {
+    if (String(input).endsWith('/control/lease')) return json({ leaseId: 'timeline-hold-lease', expiresAtEpochMs: Date.now() + 300_000 });
+    payload = JSON.parse(String(init?.body)); return json({ completed: true });
+  };
+  const runtime = createConnectionRuntime({ ...profile, token: "timeline-hold-test" });
+  try {
+    await runtime.leases.acquireExplicit("input", 300);
+    const before = Date.now();
+    const result = await runtime.execute(operations.find((operation) => operation.id === "holdKey")!, { keyCode: 87, ticks: 400 }, { scheduled: true });
+    assert.ok(!result.error); assert.equal(payload?.leaseId, "timeline-hold-lease"); assert.equal(payload?.ticks, 400);
+    assert.ok(Number(payload?.deadlineEpochMs) >= before + 30_000);
+  } finally { runtime.dispose(); globalThis.fetch = old; }
+});
