@@ -51,9 +51,10 @@ final class ClientApiHandler {
     HttpApiRoutes.PostHandler withApiControl(HttpApiRoutes.PostHandler handler) {
         return (exchange, body, grants) -> {
             String leaseId = HttpApiRequest.stringField(body, "leaseId");
-            var context = ConnectionPolicy.captureContext(grants,
-                    server.runtime.config().clientConnectAllowlist(),
-                    () -> server.requireLease("input", leaseId));
+            var config = server.runtime.config();
+            var context = new ConnectionPolicy.RequestContext(grants,
+                    config.clientConnectAllowlist(), () -> server.requireLease("input", leaseId),
+                    config.clientConnectAllowlistEnabled());
             try {
                 ConnectionPolicy.withContext(context, () -> {
                             try {
@@ -310,7 +311,8 @@ final class ClientApiHandler {
         }
         java.util.List<String> allowlist = server.runtime.config().clientConnectAllowlist();
         ConnectionTarget target = parseConnectionTarget(address);
-        if (!ConnectionPolicy.matchesRequestedTarget(target.host(), target.port(), allowlist)) {
+        if (server.runtime.config().clientConnectAllowlistEnabled()
+                && !ConnectionPolicy.matchesRequestedTarget(target.host(), target.port(), allowlist)) {
             throw new ProblemException(ProblemCode.INSUFFICIENT_SCOPE,
                     "address is not on the client.connect.allowlist",
                     Map.of("address", address));

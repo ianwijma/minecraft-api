@@ -1,6 +1,7 @@
 package dev.example.mapi.fabric;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import dev.example.mapi.api.MapiApi;
 import dev.example.mapi.internal.MapiRuntime;
 import dev.example.mapi.internal.command.MapiControlCommand;
@@ -29,6 +30,22 @@ final class FabricMapiServerCommands {
         for (String action : new String[]{"status", "enable", "disable"}) {
             root.then(Commands.literal(action)
                     .executes(command -> run(command.getSource(), action)));
+        }
+        for (String list : new String[]{"allowedOrigins", "allowList"}) {
+            var listRoot = Commands.literal(list);
+            for (String action : new String[]{"enable", "disable"}) {
+                listRoot.then(Commands.literal(action).executes(command ->
+                        MapiControlCommand.executeAllowList((MapiRuntime) MapiApi.require(),
+                                list, action, null, text -> command.getSource().sendSuccess(() -> Component.literal(text), false))));
+            }
+            for (String action : new String[]{"add", "remove"}) {
+                listRoot.then(Commands.literal(action)
+                        .then(Commands.argument("site", StringArgumentType.greedyString())
+                                .executes(command -> MapiControlCommand.executeAllowList(
+                                        (MapiRuntime) MapiApi.require(), list, action,
+                                        StringArgumentType.getString(command, "site"), text -> command.getSource().sendSuccess(() -> Component.literal(text), false)))));
+            }
+            root.then(listRoot);
         }
         dispatcher.register(root);
     }

@@ -6,6 +6,21 @@ import java.util.function.Consumer;
 /** Local command behavior shared by both loader adapters. */
 public final class MapiControlCommand {
 
+    /** Runs a local list command; ordinary feedback never includes config credentials. */
+    public static int executeAllowList(MapiRuntime runtime, String list, String action,
+            String site, Consumer<String> feedback) {
+        try {
+            runtime.updateAllowList(list, action, site);
+            feedback.accept("Minecraft API " + list + ": " + action + " (saved to config).");
+            return 1;
+        } catch (RuntimeException e) {
+            feedback.accept("Minecraft API " + list + " command failed. Use an exact "
+                    + (list.equals("allowedOrigins") ? "http(s) origin without a path" : "host[:port] target")
+                    + " and check the config and server log.");
+            return 0;
+        }
+    }
+
     private MapiControlCommand() {
     }
 

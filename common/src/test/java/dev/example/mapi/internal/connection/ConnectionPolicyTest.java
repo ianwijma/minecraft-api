@@ -16,6 +16,30 @@ import org.junit.jupiter.api.Test;
 class ConnectionPolicyTest {
 
     @Test
+    void disabledListAllowsRequestedRedirectAndResolvedTargetsButStillRequiresScopeAndLease() {
+        var checks = new java.util.concurrent.atomic.AtomicInteger();
+        var context = new ConnectionPolicy.RequestContext(Set.of(Scope.CLIENT_CONNECT), List.of(),
+                checks::incrementAndGet, false);
+        Object owner = new Object();
+        ConnectionPolicy.withContext(context, () -> {
+            assertTrue(ConnectionPolicy.captureConnect(owner, "unlisted.example", 25565));
+            ConnectionPolicy.withConnectionResolver(owner, () -> {
+                ConnectionPolicy.assertResolverAddress("redirect.example", 25566);
+                ConnectionPolicy.verifyResolvedDestination("192.0.2.123", 25566);
+                return null;
+            });
+        });
+        assertEquals(3, checks.get());
+        ConnectionPolicy.withContext(new ConnectionPolicy.RequestContext(Set.of(), List.of(), () -> {}, false),
+                () -> assertThrows(ProblemException.class,
+                        () -> ConnectionPolicy.captureConnect(new Object(), "unlisted.example", 25565)));
+        ConnectionPolicy.withContext(new ConnectionPolicy.RequestContext(Set.of(Scope.CLIENT_CONNECT), List.of(),
+                () -> { throw new IllegalStateException("expired lease"); }, false),
+                () -> assertThrows(IllegalStateException.class,
+                        () -> ConnectionPolicy.captureConnect(new Object(), "unlisted.example", 25565)));
+    }
+
+    @Test
     void requestedTargetsUseExactHostAndOptionalPortRules() {
         List<String> allowlist = List.of("play.example.net", "192.0.2.10:25565");
         assertTrue(ConnectionPolicy.matchesRequestedTarget("PLAY.EXAMPLE.NET.", 25565, allowlist));

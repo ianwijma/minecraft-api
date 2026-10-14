@@ -11,8 +11,10 @@
     scopes = []
     # Exact dashboard origins; https://mapi.wij.ma is included by default and may be removed.
     # Pages repository paths do not belong here. Never use wildcards.
+    allowedOriginsEnabled = true
     allowedOrigins = ["https://mapi.wij.ma"]
 [client.connect]
+    allowlistEnabled = true
     allowlist = []
 [server.lan]
     enabled = false

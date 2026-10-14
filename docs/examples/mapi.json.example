@@ -4,7 +4,9 @@
   "http.token": "auto-generated-at-first-run",
   "http.rateLimitPerMinute": 60,
   "http.scopes": [],
+  "http.allowedOriginsEnabled": true,
   "http.allowedOrigins": ["https://mapi.wij.ma"],
+  "client.connect.allowlistEnabled": true,
   "client.connect.allowlist": [],
   "server.lan.enabled": false
 }

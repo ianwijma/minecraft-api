@@ -42,6 +42,36 @@ environment variables take precedence again. Port and token environment
 overrides continue to apply; a busy port may be replaced for the current
 listener by the explicit enable command as described above.
 
+Use `/mapi allowedOrigins add <origin>` or `remove <origin>` to edit browser
+sources, for example `/mapi allowedOrigins add https://tools.example`.
+Origins must include `http://` or `https://` and have no path, query, fragment,
+credentials, or wildcard. Default ports and host casing are normalized.
+Use `/mapi allowList add <host[:port]>` or `remove <host[:port]>` for Minecraft
+connection targets, for example `/mapi allowList add play.example:25565` or
+`/mapi allowList add [2001:db8::1]:25565`. With enforcement enabled, also add
+the final numeric IP:port and any resolver/redirect targets required by the
+connection policy. Adding an existing entry or removing an absent entry is harmless.
+
+Both commands have independent `enable` and `disable` subcommands. Browser
+controls save `http.allowedOriginsEnabled`; Minecraft controls save
+`client.connect.allowlistEnabled`. Both default to `true`. Disabling a list
+bypasses its membership checks and retains all entries; enabling restores them.
+Disabled browser enforcement accepts any valid HTTP(S) origin and reflects it
+in CORS responses, including permitted preflights. Disabled connection enforcement
+allows requested, redirected, and resolved destinations; scope and input-lease
+checks still apply. Bearer authentication, loopback binding, rate limits, and
+other authorization remain active.
+
+Every successful change takes effect immediately, even with HTTP initially off,
+and saves the list and its switch to the native config. No client or listener
+restart is needed. These controls are client-local or dedicated-console-only.
+Explicit commands override environment values for this process; environment
+variables win again on the next launch. Failed validation or saving leaves the
+active policy unchanged. In-flight connection work keeps its captured policy;
+new API work uses the updated policy. Regression tests exercise list retention across
+restart and re-enablement, live HTTP handler policy capture after commands, and
+the original policy retained by queued connection work.
+
 ## Lifecycle
 
 - **Clients:** starts with the game (available at the main menu, before any
@@ -70,6 +100,8 @@ runs that is `<runDir>/config/`. Environment variables override the file.
 | `http.token` | `MAPI_HTTP_TOKEN` | generated | bearer token (auto-generated on first run; env wins). **Empty = auth disabled** (dangerous; loud warning) |
 | `http.rateLimitPerMinute` | `MAPI_HTTP_RATE_LIMIT_PER_MINUTE` | `60` | per-client request budget |
 | `http.scopes` | `MAPI_HTTP_SCOPES` | all | comma-separated granted scopes (spec §14); absent/blank grants the full set |
+| `http.allowedOriginsEnabled` | `MAPI_HTTP_ALLOWED_ORIGINS_ENABLED` | true | enforce browser-origin membership |
+| `client.connect.allowlistEnabled` | `MAPI_CLIENT_CONNECT_ALLOWLIST_ENABLED` | true | enforce Minecraft connection-target membership |
 | `http.allowedOrigins` | `MAPI_HTTP_ALLOWED_ORIGINS` | `https://mapi.wij.ma` | comma-separated exact browser origins allowed for cross-origin access; scheme, host, and optional port only |
 | `client.connect.allowlist` | `MAPI_CLIENT_CONNECT_ALLOWLIST` | empty (deny all) | comma-separated exact requested hosts and explicit final IP:port approvals; IPv6 literals use brackets |
 | `server.lan.enabled` | `MAPI_SERVER_LAN_ENABLED` | `false` | allow LAN publication |

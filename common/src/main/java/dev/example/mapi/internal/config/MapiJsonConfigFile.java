@@ -41,6 +41,8 @@ public final class MapiJsonConfigFile {
         Path file = configDir.resolve(JSON_FILE_NAME);
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("http.enabled", Boolean.FALSE);
+        values.put("client.connect.allowlistEnabled", Boolean.TRUE);
+        values.put("http.allowedOriginsEnabled", Boolean.TRUE);
         values.put("http.port", MapiConfig.DEFAULT_PORT);
         values.put("http.token", MapiTokens.generate());
         values.put("http.rateLimitPerMinute", MapiConfig.DEFAULT_RATE_LIMIT);
@@ -81,17 +83,30 @@ public final class MapiJsonConfigFile {
         java.util.Set<dev.example.mapi.internal.operation.Scope> scopes =
                 parseScopes(listValue(values.get("http.scopes"), "http.scopes"));
         List<String> origins = listValue(values.get("http.allowedOrigins"), "http.allowedOrigins");
-        List<String> allowlist = stringList(values.get("client.connect.allowlist"),
+        List<String> allowlist = listValue(values.get("client.connect.allowlist"),
                 "client.connect.allowlist");
         boolean lanEnabled = booleanValue(values.get("server.lan.enabled"),
                 "server.lan.enabled", false);
 
         return MapiConfig.fromValues(enabled, port, token, rateLimit, scopes, allowlist,
-                lanEnabled, origins, env, logger);
+                lanEnabled, origins, booleanValue(values.get("client.connect.allowlistEnabled"), "client.connect.allowlistEnabled", true),
+                booleanValue(values.get("http.allowedOriginsEnabled"), "http.allowedOriginsEnabled", true), env, logger);
     }
 
     /** Updates only the enabled flag, preserving all other JSON config values. */
     public static void saveHttpEnabled(Path configDir, boolean enabled) {
+        saveValues(configDir, Map.of("http.enabled", enabled));
+    }
+
+    /** Saves allow-list controls while preserving unrelated JSON values. */
+    public static void saveAllowLists(Path configDir, MapiConfig config) {
+        saveValues(configDir, Map.of("client.connect.allowlistEnabled", config.clientConnectAllowlistEnabled(),
+                "http.allowedOriginsEnabled", config.httpAllowedOriginsEnabled(),
+                "http.allowedOrigins", config.httpAllowedOrigins(),
+                "client.connect.allowlist", config.clientConnectAllowlist()));
+    }
+
+    private static void saveValues(Path configDir, Map<String, Object> updates) {
         Path file = configDir.resolve(JSON_FILE_NAME);
         Path temporary = null;
         try {
@@ -101,7 +116,7 @@ public final class MapiJsonConfigFile {
             }
             Map<String, Object> values = new LinkedHashMap<>();
             document.forEach((key, value) -> values.put(String.valueOf(key), value));
-            values.put("http.enabled", enabled);
+            values.putAll(updates);
             temporary = Files.createTempFile(configDir, ".mapi-", ".json.tmp");
             Files.writeString(temporary, JsonWriter.write(values) + "\n", StandardCharsets.UTF_8);
             try {
@@ -111,7 +126,7 @@ public final class MapiJsonConfigFile {
                 Files.move(temporary, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException | IllegalArgumentException e) {
-            throw new MapiConfigException("Failed to save HTTP enabled flag in mapi.json");
+            throw new MapiConfigException("Failed to save MAPI configuration in mapi.json");
         } finally {
             if (temporary != null) {
                 try {
@@ -159,17 +174,6 @@ public final class MapiJsonConfigFile {
             return out;
         }
         throw new MapiConfigException(key + " must be a list of strings");
-    }
-
-    private static List<String> stringList(Object value, String key) {
-        List<String> raw = listValue(value, key);
-        for (String entry : raw) {
-            if (!entry.matches("[A-Za-z0-9.\\-]+(:[0-9]{1,5})?")) {
-                throw new MapiConfigException(
-                        key + " entry is not host[:port]: '" + entry + "'");
-            }
-        }
-        return List.copyOf(raw);
     }
 
     private static java.util.Set<dev.example.mapi.internal.operation.Scope> parseScopes(

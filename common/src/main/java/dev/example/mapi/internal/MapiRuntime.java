@@ -70,6 +70,7 @@ public final class MapiRuntime implements Mapi {
     private volatile ServerHandle serverHandle;
     private volatile HttpApiServer httpServer;
     private volatile dev.example.mapi.internal.config.MapiConfig config;
+    private dev.example.mapi.internal.config.MapiConfig allowListsOverride;
 
     /**
      * Creates the runtime. Public because loader modules and tests live in
@@ -534,7 +535,58 @@ public final class MapiRuntime implements Mapi {
         if (httpEnabledOverride != null) {
             env.put("MAPI_HTTP_ENABLED", httpEnabledOverride.toString());
         }
-        return platform.loadConfig(platform.configDir(), env, platform.logger());
+        var loaded = platform.loadConfig(platform.configDir(), env, platform.logger());
+        return allowListsOverride == null ? loaded : withAllowLists(loaded, allowListsOverride);
+    }
+
+    private static dev.example.mapi.internal.config.MapiConfig withAllowLists(
+            dev.example.mapi.internal.config.MapiConfig base,
+            dev.example.mapi.internal.config.MapiConfig lists) {
+        return new dev.example.mapi.internal.config.MapiConfig(base.httpEnabled(), base.httpPort(),
+                base.httpToken(), base.rateLimitPerMinute(), base.httpScopes(),
+                lists.clientConnectAllowlist(), base.serverLanEnabled(), lists.httpAllowedOrigins(),
+                lists.clientConnectAllowlistEnabled(), lists.httpAllowedOriginsEnabled());
+    }
+
+    /** Saves a local allow-list change before publishing it to the running listener. */
+    public synchronized void updateAllowList(String list, String action, String site) {
+        boolean origins = switch (list) {
+            case "allowedOrigins" -> true;
+            case "allowList" -> false;
+            default -> throw new IllegalArgumentException("Unknown allow list");
+        };
+        var current = httpServer != null ? config : loadHttpConfig();
+        var entries = new java.util.LinkedHashSet<>(origins
+                ? current.httpAllowedOrigins() : current.clientConnectAllowlist());
+        boolean enabled = origins ? current.httpAllowedOriginsEnabled() : current.clientConnectAllowlistEnabled();
+        switch (action) {
+            case "enable" -> enabled = true;
+            case "disable" -> enabled = false;
+            case "add", "remove" -> {
+                if (site == null || site.isBlank() || site.contains(",")) {
+                    throw new IllegalArgumentException("Supply one site");
+                }
+                var validated = dev.example.mapi.internal.config.MapiConfig.fromValues(false,
+                        current.httpPort(), current.httpToken(), current.rateLimitPerMinute(), current.httpScopes(),
+                        origins ? java.util.List.of() : java.util.List.of(site.trim().toLowerCase(java.util.Locale.ROOT)),
+                        current.serverLanEnabled(), origins ? java.util.List.of(site.trim()) : java.util.List.of(),
+                        Map.of(), platform.logger());
+                String entry = (origins ? validated.httpAllowedOrigins() : validated.clientConnectAllowlist()).getFirst();
+                if (action.equals("add")) entries.add(entry);
+                else entries.removeIf(value -> value.equalsIgnoreCase(entry));
+            }
+            default -> throw new IllegalArgumentException("Unknown allow-list action");
+        }
+        var updated = new dev.example.mapi.internal.config.MapiConfig(current.httpEnabled(),
+                current.httpPort(), current.httpToken(), current.rateLimitPerMinute(), current.httpScopes(),
+                origins ? current.clientConnectAllowlist() : java.util.List.copyOf(entries),
+                current.serverLanEnabled(), origins ? java.util.List.copyOf(entries) : current.httpAllowedOrigins(),
+                origins ? current.clientConnectAllowlistEnabled() : enabled,
+                origins ? enabled : current.httpAllowedOriginsEnabled());
+        platform.saveAllowLists(updated);
+        allowListsOverride = updated;
+        config = updated;
+        if (httpServer != null) httpServer.updateAllowLists(updated);
     }
 
     private synchronized void startHttp() {

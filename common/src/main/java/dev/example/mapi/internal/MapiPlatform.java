@@ -86,6 +86,11 @@ public interface MapiPlatform {
         dev.example.mapi.internal.config.MapiConfig.saveHttpEnabled(configDir(), enabled);
     }
 
+    /** Persists both allow lists and their enforcement flag in native config. */
+    default void saveAllowLists(dev.example.mapi.internal.config.MapiConfig config) {
+        dev.example.mapi.internal.config.MapiConfig.saveAllowLists(configDir(), config);
+    }
+
     /**
      * @return the server-side bridge capabilities for this loader; the
      *     default reports no capabilities (nothing beyond the base runtime)

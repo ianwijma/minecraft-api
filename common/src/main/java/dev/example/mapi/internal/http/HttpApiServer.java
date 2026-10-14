@@ -70,7 +70,7 @@ public final class HttpApiServer {
     static final String API_PREFIX = "/api/v1/";
     private static final int BACKLOG = 32;
 
-    final MapiConfig config;
+    volatile MapiConfig config;
     final MapiRuntime runtime;
     private final Logger logger;
     private final RateLimiter rateLimiter;
@@ -106,6 +106,11 @@ public final class HttpApiServer {
     }
 
 
+
+    /** Publishes config-only allow-list changes without rebinding the listener. */
+    public void updateAllowLists(MapiConfig config) {
+        this.config = config;
+    }
 
     /** @return the operation metadata registry (for introspection endpoints/tests) */
     public OperationRegistry operations() {
@@ -642,14 +647,16 @@ public final class HttpApiServer {
     }
 
     private boolean configuredOrigin(String origin) {
-        return config.httpAllowedOrigins().contains(normalizeOrigin(origin));
+        String normalized = normalizeOrigin(origin);
+        return !normalized.isEmpty() && (!config.httpAllowedOriginsEnabled()
+                || config.httpAllowedOrigins().contains(normalized));
     }
 
     private void prepareCors(HttpExchange exchange) {
         String origin = exchange.getRequestHeaders().getFirst("Origin");
         if (origin == null) return;
         exchange.getResponseHeaders().add("Vary", "Origin");
-        if (config.httpAllowedOrigins().contains(normalizeOrigin(origin))) {
+        if (configuredOrigin(origin)) {
             exchange.getResponseHeaders().set("Access-Control-Allow-Origin", normalizeOrigin(origin));
             exchange.getResponseHeaders().set("Access-Control-Expose-Headers",
                     "Retry-After, X-MAPI-Protocol-Version");
